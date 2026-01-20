@@ -124,6 +124,11 @@ This roadmap addresses the identified gaps and flaws in the specification while 
   - Email alerts for critical failures
 
 #### 2. Data Source Upgrades
+- [ ] **OpenBB Integration** — Unified data access layer
+  - Replace fragmented data sources with OpenBB SDK
+  - Unified API for price, fundamental, and alternative data
+  - Built-in support for multiple providers (Yahoo, Polygon, FRED, etc.)
+  - Cleaner abstraction for data source switching
 - [ ] **Polygon.io Integration** — Replace/backup Yahoo Finance
   - Rate limiting and retry logic
   - Corporate action data from Polygon
@@ -169,6 +174,11 @@ This roadmap addresses the identified gaps and flaws in the specification while 
 ### Critical Fixes
 
 #### 1. Advanced Validation Framework
+- [ ] **PyFolio + Empyrical Integration** — Industry-standard performance analysis
+  - Replace custom metrics with Empyrical (battle-tested calculations)
+  - PyFolio tearsheets for comprehensive performance reports
+  - Drawdown analysis, rolling returns, exposure analysis
+  - Professional-quality visualizations for hypothesis validation
 - [ ] **Statistical Significance Testing** — Comprehensive test suite
   - T-tests for excess returns
   - Bootstrap confidence intervals
@@ -374,6 +384,16 @@ This roadmap addresses the identified gaps and flaws in the specification while 
 - [ ] **Survivorship Bias Mitigation** — Historical index membership
   - Track historical S&P 500 constituents
   - Point-in-time universe in backtests
+
+#### Quant Tools Integration
+- [ ] **AlphaLens** — Factor/signal analysis
+  - Evaluate signals before backtesting
+  - Factor IC, turnover analysis
+  - Signal decay analysis
+- [ ] **RiskFolio-Lib** — Portfolio optimization
+  - Mean-variance optimization
+  - Risk parity allocation
+  - Maximum diversification
 
 #### Research & ML
 - [ ] **Ensemble Models** — Combine multiple models
