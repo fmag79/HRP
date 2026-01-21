@@ -79,9 +79,12 @@ This roadmap addresses the identified gaps and flaws in the specification while 
   - Hypothesis lifecycle (draft → testing → validated/rejected → deployed)
   - Experiment linking
   - Basic validation checks
-- [ ] Phase 3: Dashboard MVP
-  - Streamlit dashboard
-  - Home, Data Health, Hypotheses, Experiments pages
+- [x] Phase 3: Dashboard MVP
+  - Streamlit dashboard (`hrp/dashboard/app.py`)
+  - Home page - system status, recent activity (`hrp/dashboard/pages/home.py`)
+  - Data Health page - ingestion status, data quality (`hrp/dashboard/pages/data_health.py`)
+  - Hypotheses page - browse, create, view (`hrp/dashboard/pages/hypotheses.py`)
+  - Experiments page - MLflow integration, comparison (`hrp/dashboard/pages/experiments.py`)
 
 ### Testing Requirements
 
@@ -449,10 +452,9 @@ This roadmap addresses the identified gaps and flaws in the specification while 
 
 ### v1 Progress
 
-Core deliverables (Phases 0-2) complete. Remaining for v1:
+Core deliverables (Phases 0-3) complete. Remaining for v1:
 - Critical Fixes: Database integrity (FK constraints, indexes), financial accuracy (holiday calendar, corporate actions)
 - Testing: Unit tests for Platform API (70%+ coverage)
-- Dashboard MVP (Phase 3)
 
 ---
 

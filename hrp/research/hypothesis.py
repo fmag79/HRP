@@ -261,8 +261,9 @@ def update_hypothesis(
                 f"Valid transitions: {VALID_TRANSITIONS.get(current_status, set())}"
             )
 
-        # Check validation requirements for 'validated' status
-        if status == "validated":
+        # Check validation requirements for 'validated' status (only when coming from 'testing')
+        # When undeploying (deployed→validated), skip this check
+        if status == "validated" and current_status == "testing":
             validation_result = validate_hypothesis_status(hypothesis_id)
             if not validation_result["can_validate"]:
                 raise ValueError(

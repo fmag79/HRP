@@ -21,7 +21,7 @@ Personal, professional-grade quantitative research platform for systematic tradi
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/hrp.git
+git clone https://github.com/fmag79/hrp.git
 cd hrp
 
 # Create virtual environment
@@ -104,7 +104,7 @@ mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db
 | Phase 0: Foundation | ✅ Complete | Repository, schema, data ingestion |
 | Phase 1: Core Research | ✅ Complete | Backtesting, MLflow, metrics |
 | Phase 2: Hypothesis | ✅ Complete | Hypothesis registry, lineage |
-| Phase 3: Dashboard | 🔴 Not Started | Streamlit UI |
+| Phase 3: Dashboard | ✅ Complete | Streamlit UI |
 
 ### Current Data
 - **10 symbols loaded**: AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, V, UNH, JNJ

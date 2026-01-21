@@ -6,6 +6,7 @@ import os
 import tempfile
 from datetime import date
 from pathlib import Path
+from typing import Generator
 
 import duckdb
 import pandas as pd
@@ -14,15 +15,32 @@ import pytest
 
 @pytest.fixture
 def temp_db():
-    """Create a temporary DuckDB database for testing."""
+    """Create a temporary DuckDB database path for testing.
+
+    Note: We create then delete the file so DuckDB can create a fresh database.
+    NamedTemporaryFile creates an empty file that DuckDB can't open.
+    """
     with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as f:
         db_path = f.name
+
+    # Delete the empty file so DuckDB can create a fresh database
+    os.remove(db_path)
+
+    # Reset the DatabaseManager singleton to ensure fresh state for each test
+    from hrp.data.db import DatabaseManager
+    DatabaseManager.reset()
 
     yield db_path
 
     # Cleanup
+    DatabaseManager.reset()
     if os.path.exists(db_path):
         os.remove(db_path)
+    # Also clean up WAL and other DuckDB files
+    for ext in [".wal", "-journal", "-shm"]:
+        wal_path = db_path + ext
+        if os.path.exists(wal_path):
+            os.remove(wal_path)
 
 
 @pytest.fixture
@@ -60,6 +78,73 @@ def test_symbols():
 
 
 @pytest.fixture
-def test_date_range():
+def test_date_range() -> tuple[date, date]:
     """Standard test date range."""
     return (date(2020, 1, 1), date(2023, 12, 31))
+
+
+@pytest.fixture
+def test_db(temp_db: str) -> Generator[str, None, None]:
+    """Create a test database with HRP schema initialized."""
+    os.environ["HRP_DB_PATH"] = temp_db
+
+    from hrp.data.schema import create_tables
+
+    create_tables(temp_db)
+
+    yield temp_db
+
+    # Reset env var
+    if "HRP_DB_PATH" in os.environ:
+        del os.environ["HRP_DB_PATH"]
+
+
+@pytest.fixture
+def test_api(test_db: str):
+    """Get a PlatformAPI instance for testing."""
+    from hrp.api.platform import PlatformAPI
+
+    return PlatformAPI()
+
+
+@pytest.fixture
+def populated_db(test_db: str, sample_prices: pd.DataFrame) -> Generator[str, None, None]:
+    """Test database with sample price data loaded."""
+    from hrp.data.db import get_db
+
+    db = get_db(test_db)
+
+    # Insert sample prices
+    for _, row in sample_prices.iterrows():
+        db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'test')
+        """,
+            (
+                row["symbol"],
+                row["date"],
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                row["adj_close"],
+                row["volume"],
+            ),
+        )
+
+    yield test_db
+
+
+@pytest.fixture
+def sample_hypothesis() -> dict:
+    """Sample hypothesis data for testing."""
+    return {
+        "title": "Momentum predicts returns",
+        "thesis": "Stocks with high 12-month returns continue outperforming",
+        "prediction": "Top decile momentum > SPY by 3% annually",
+        "falsification": "Sharpe < SPY or p-value > 0.05",
+        "actor": "user",
+        "status": "draft",
+        "tags": ["momentum", "factor"],
+    }

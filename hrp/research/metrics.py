@@ -88,9 +88,11 @@ def _calculate_cagr(returns: pd.Series, periods_per_year: int) -> float:
 
 def _sharpe_ratio(excess_returns: pd.Series, periods_per_year: int) -> float:
     """Calculate Sharpe ratio."""
-    if excess_returns.std() == 0:
+    std = excess_returns.std()
+    # Handle near-zero volatility (floating point precision)
+    if std < 1e-10:
         return 0.0
-    return excess_returns.mean() / excess_returns.std() * np.sqrt(periods_per_year)
+    return excess_returns.mean() / std * np.sqrt(periods_per_year)
 
 
 def _sortino_ratio(returns: pd.Series, risk_free_rate: float, periods_per_year: int) -> float:
@@ -107,12 +109,19 @@ def _downside_volatility(returns: pd.Series, periods_per_year: int) -> float:
     negative_returns = returns[returns < 0]
     if len(negative_returns) == 0:
         return 0.0
-    return negative_returns.std() * np.sqrt(periods_per_year)
+    std = negative_returns.std()
+    # Handle near-zero volatility (floating point precision)
+    if std < 1e-10:
+        return 0.0
+    return std * np.sqrt(periods_per_year)
 
 
 def _max_drawdown(returns: pd.Series) -> float:
     """Calculate maximum drawdown."""
+    # Start with initial equity of 1.0
     cumulative = (1 + returns).cumprod()
+    # Prepend 1.0 for initial equity value
+    cumulative = pd.concat([pd.Series([1.0]), cumulative]).reset_index(drop=True)
     running_max = cumulative.cummax()
     drawdown = (cumulative - running_max) / running_max
     return drawdown.min()
