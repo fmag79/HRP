@@ -13,6 +13,11 @@ import pandas as pd
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.data.quality.reports import (
+    generate_quality_report,
+    get_latest_quality_report,
+    get_quality_history,
+)
 from hrp.research.config import BacktestConfig, BacktestResult
 
 
@@ -690,6 +695,239 @@ class PlatformAPI:
 
         logger.debug(f"Logged lineage event: {event_type} by {actor}")
         return lineage_id
+
+    # =========================================================================
+    # Quality Operations
+    # =========================================================================
+
+    def run_quality_checks(
+        self,
+        check_date: date | None = None,
+        symbols: list[str] | None = None,
+        send_alerts: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Run comprehensive quality checks on price data.
+
+        Performs completeness, anomaly, gap, and freshness checks. Results are
+        stored in the quality_metrics table for tracking over time.
+
+        Args:
+            check_date: Date of the quality check (defaults to today)
+            symbols: Optional list of symbols to check (None = all symbols)
+            send_alerts: Whether to send email alerts for critical issues (default False)
+
+        Returns:
+            Dictionary with check results:
+            {
+                "check_date": str,
+                "overall_status": "pass" | "warning" | "fail" | "error",
+                "checks": {...},  # Results from each check
+                "summary": {...},  # Pass/fail counts
+                "critical_issues": list[str],
+                "metrics_stored": int
+            }
+        """
+        logger.info(f"Running quality checks for {check_date or 'today'}")
+
+        try:
+            # Generate the quality report
+            report = generate_quality_report(
+                check_date=check_date,
+                symbols=symbols,
+                store_results=True,
+            )
+
+            # Send alerts if requested and there are critical issues
+            if send_alerts and report.get("critical_issues"):
+                try:
+                    from hrp.notifications.email import send_quality_alert
+
+                    send_quality_alert(
+                        checks=report["checks"],
+                        summary=report["summary"],
+                        check_date=report["check_date"],
+                        severity="critical" if report["overall_status"] == "fail" else "warning",
+                    )
+                    logger.info("Quality alert email sent successfully")
+                except Exception as e:
+                    logger.error(f"Failed to send quality alert email: {e}")
+                    report.setdefault("errors", []).append(f"Email alert failed: {str(e)}")
+
+            logger.info(
+                f"Quality checks complete: {report['overall_status']} - "
+                f"{report['metrics_stored']} metrics stored"
+            )
+
+            return report
+
+        except Exception as e:
+            logger.error(f"Quality check execution failed: {e}")
+            return {
+                "check_date": str(check_date or datetime.now().date()),
+                "overall_status": "error",
+                "checks": {},
+                "summary": {
+                    "total_checks": 0,
+                    "passed": 0,
+                    "warnings": 0,
+                    "failed": 0,
+                    "errors": 1,
+                },
+                "critical_issues": [f"Quality check failed: {str(e)}"],
+                "metrics_stored": 0,
+            }
+
+    def get_quality_metrics(
+        self,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        check_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get historical quality metrics for a date range.
+
+        Args:
+            start_date: Start date for history (optional)
+            end_date: End date for history (optional)
+            check_type: Filter by check type: 'completeness', 'anomalies', 'gaps', 'freshness' (optional)
+
+        Returns:
+            Dictionary with historical metrics:
+            {
+                "metrics": list[dict],  # List of quality metric records
+                "summary": {
+                    "total_records": int,
+                    "date_range": {...},
+                    "check_types": list[str]
+                }
+            }
+        """
+        logger.debug(
+            f"Retrieving quality metrics: {start_date or 'all'} to {end_date or 'all'}, "
+            f"type={check_type or 'all'}"
+        )
+
+        try:
+            history = get_quality_history(
+                start_date=start_date,
+                end_date=end_date,
+                check_type=check_type,
+            )
+
+            logger.info(
+                f"Retrieved {history['summary']['total_records']} quality metrics"
+            )
+
+            return history
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve quality metrics: {e}")
+            return {
+                "metrics": [],
+                "summary": {
+                    "total_records": 0,
+                    "date_range": {"start": None, "end": None},
+                    "check_types": [],
+                    "error": str(e),
+                },
+            }
+
+    def get_quality_report(self, report_date: date | None = None) -> dict[str, Any] | None:
+        """
+        Get quality report for a specific date.
+
+        Args:
+            report_date: Date to get report for (defaults to latest report)
+
+        Returns:
+            Quality report dictionary or None if no report found:
+            {
+                "check_date": str,
+                "overall_status": str,
+                "checks": {...},
+                "summary": {...},
+                "metrics_count": int
+            }
+        """
+        if report_date:
+            logger.debug(f"Retrieving quality report for {report_date}")
+
+            try:
+                # Get metrics for specific date
+                history = get_quality_history(
+                    start_date=report_date,
+                    end_date=report_date,
+                )
+
+                if not history["metrics"]:
+                    logger.info(f"No quality report found for {report_date}")
+                    return None
+
+                # Reconstruct report from metrics
+                checks = {}
+                for metric in history["metrics"]:
+                    check_type = metric["check_type"]
+                    if check_type not in checks:
+                        checks[check_type] = {
+                            "status": metric["status"],
+                            "details": metric.get("details", {}),
+                        }
+
+                # Calculate summary
+                summary = {
+                    "total_checks": len(checks),
+                    "passed": sum(1 for c in checks.values() if c.get("status") == "pass"),
+                    "warnings": sum(1 for c in checks.values() if c.get("status") == "warning"),
+                    "failed": sum(1 for c in checks.values() if c.get("status") == "fail"),
+                    "errors": sum(1 for c in checks.values() if c.get("status") == "error"),
+                }
+
+                # Determine overall status
+                if summary["errors"] > 0:
+                    overall_status = "error"
+                elif summary["failed"] > 0:
+                    overall_status = "fail"
+                elif summary["warnings"] > 0:
+                    overall_status = "warning"
+                else:
+                    overall_status = "pass"
+
+                report = {
+                    "check_date": str(report_date),
+                    "overall_status": overall_status,
+                    "checks": checks,
+                    "summary": summary,
+                    "metrics_count": len(history["metrics"]),
+                }
+
+                logger.info(f"Retrieved quality report for {report_date}: {overall_status}")
+                return report
+
+            except Exception as e:
+                logger.error(f"Failed to retrieve quality report for {report_date}: {e}")
+                return None
+
+        else:
+            # Get latest report
+            logger.debug("Retrieving latest quality report")
+
+            try:
+                report = get_latest_quality_report()
+
+                if report:
+                    logger.info(
+                        f"Retrieved latest quality report ({report['check_date']}): "
+                        f"{report['overall_status']}"
+                    )
+                else:
+                    logger.info("No quality reports found")
+
+                return report
+
+            except Exception as e:
+                logger.error(f"Failed to retrieve latest quality report: {e}")
+                return None
 
     # =========================================================================
     # Helper Methods
