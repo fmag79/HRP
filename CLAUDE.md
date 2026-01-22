@@ -12,7 +12,7 @@ Three-layer architecture:
 2. **Research Layer** - VectorBT backtesting, MLflow experiments, hypothesis registry
 3. **Control Layer** - Streamlit dashboard, MCP servers, scheduled agents
 
-All external access goes through `hrp/api/platform.py`. Never access DuckDB directly.
+External access goes through `hrp/api/platform.py`. Internal Data Layer modules (`hrp/data/`) may access the database directly via `hrp/data/db.py`.
 
 ## Key Principles
 
@@ -37,7 +37,8 @@ Agents cannot approve deployments or modify deployed strategies.
 - Python 3.11+
 - Type hints required
 - Black formatting (100 char line length)
-- All database access through `hrp/api/platform.py`
+- External database access through `hrp/api/platform.py`
+- Data Layer modules may use `hrp/data/db.py` directly
 - Log all significant actions to lineage table
 
 ## Common Tasks
@@ -66,6 +67,33 @@ prices = api.get_prices(['AAPL', 'MSFT'], start_date, end_date)
 features = api.get_features(['AAPL'], ['momentum_20d', 'volatility_60d'], date)
 ```
 
+### Run data quality checks
+```python
+result = api.run_quality_checks(as_of_date=date.today(), send_alerts=True)
+# Returns: health_score, critical_issues, warning_issues, passed
+```
+
+### Schedule daily data ingestion
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+scheduler.setup_daily_ingestion(
+    symbols=['AAPL', 'MSFT'],  # None for all universe symbols
+    price_job_time='18:00',    # 6 PM ET (after market close)
+    feature_job_time='18:10',  # 6:10 PM ET (after prices loaded)
+)
+scheduler.start()
+```
+
+### Run a job manually
+```python
+from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob
+
+job = PriceIngestionJob(symbols=['AAPL'], start=date.today() - timedelta(days=7))
+result = job.run()  # Returns status, records_fetched, records_inserted
+```
+
 ## File Locations
 
 - Database: `~/hrp-data/hrp.duckdb`
@@ -84,6 +112,16 @@ pytest tests/ -v
 |---------|---------|------|
 | Dashboard | `streamlit run hrp/dashboard/app.py` | 8501 |
 | MLflow UI | `mlflow ui --backend-store-uri ~/hrp-data/mlflow/mlflow.db` | 5000 |
+| Scheduler | `python -m hrp.agents.cli start` | - |
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `HRP_DB_PATH` | Database path (default: `~/hrp-data/hrp.duckdb`) | No |
+| `RESEND_API_KEY` | Resend API key for email notifications | For alerts |
+| `NOTIFICATION_EMAIL` | Email address for notifications | For alerts |
+| `NOTIFICATION_FROM_EMAIL` | From address (default: `noreply@hrp.local`) | No |
 
 ## Current Scope
 

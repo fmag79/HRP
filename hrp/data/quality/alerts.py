@@ -92,9 +92,7 @@ class QualityAlertManager:
         """
 
         try:
-            self._notifier.send_html_email(subject=subject, body=body)
-            logger.info(f"Sent critical quality alert with {len(issues)} issues")
-            return True
+            return self._notifier.send_email(subject=subject, body="", html_body=body)
         except Exception as e:
             logger.error(f"Failed to send critical alert: {e}")
             return False
@@ -186,9 +184,7 @@ class QualityAlertManager:
         """
 
         try:
-            self._notifier.send_html_email(subject=subject, body=body)
-            logger.info(f"Sent daily quality summary for {report.report_date}")
-            return True
+            return self._notifier.send_email(subject=subject, body="", html_body=body)
         except Exception as e:
             logger.error(f"Failed to send daily summary: {e}")
             return False

@@ -431,3 +431,293 @@ class TestQualityIssue:
         assert d["symbol"] == "AAPL"
         assert d["date"] == "2024-01-15"
         assert d["details"]["value"] == 123
+
+
+# =============================================================================
+# Quality Alert Tests
+# =============================================================================
+
+
+class TestQualityAlertManager:
+    """Tests for QualityAlertManager alert sending."""
+
+    def test_send_critical_alert_with_issues(self, test_db):
+        """send_critical_alert should send email when issues present."""
+        from hrp.data.quality.alerts import QualityAlertManager
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_instance.send_email.return_value = True
+            mock_notifier.return_value = mock_instance
+
+            alert_manager = QualityAlertManager()
+
+            issues = [
+                QualityIssue(
+                    check_name="price_anomaly",
+                    severity=IssueSeverity.CRITICAL,
+                    symbol="AAPL",
+                    date=date(2024, 1, 15),
+                    description="Price dropped 60%",
+                ),
+                QualityIssue(
+                    check_name="price_anomaly",
+                    severity=IssueSeverity.CRITICAL,
+                    symbol="MSFT",
+                    date=date(2024, 1, 15),
+                    description="Price spiked 70%",
+                ),
+            ]
+
+            result = alert_manager.send_critical_alert(issues, date(2024, 1, 15))
+
+            assert result is True
+            mock_instance.send_email.assert_called_once()
+            call_kwargs = mock_instance.send_email.call_args[1]
+            assert "CRITICAL" in call_kwargs["subject"]
+            assert "2024-01-15" in call_kwargs["subject"]
+            assert "AAPL" in call_kwargs["html_body"]
+            assert "MSFT" in call_kwargs["html_body"]
+
+    def test_send_critical_alert_no_issues(self, test_db):
+        """send_critical_alert should not send when no issues."""
+        from hrp.data.quality.alerts import QualityAlertManager
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_notifier.return_value = mock_instance
+
+            alert_manager = QualityAlertManager()
+            result = alert_manager.send_critical_alert([], date(2024, 1, 15))
+
+            assert result is False
+            mock_instance.send_email.assert_not_called()
+
+    def test_send_critical_alert_email_failure(self, test_db):
+        """send_critical_alert should return False on email error."""
+        from hrp.data.quality.alerts import QualityAlertManager
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_instance.send_email.side_effect = Exception("SMTP error")
+            mock_notifier.return_value = mock_instance
+
+            alert_manager = QualityAlertManager()
+
+            issues = [
+                QualityIssue(
+                    check_name="test",
+                    severity=IssueSeverity.CRITICAL,
+                    symbol="TEST",
+                    date=date(2024, 1, 15),
+                    description="Test",
+                )
+            ]
+
+            result = alert_manager.send_critical_alert(issues, date(2024, 1, 15))
+            assert result is False
+
+    def test_send_daily_summary(self, test_db):
+        """send_daily_summary should send formatted email."""
+        from hrp.data.quality.alerts import QualityAlertManager
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_instance.send_email.return_value = True
+            mock_notifier.return_value = mock_instance
+
+            alert_manager = QualityAlertManager()
+
+            # Create a report with results
+            report = QualityReport(
+                report_date=date(2024, 1, 15),
+                generated_at=date(2024, 1, 15),
+                checks_run=5,
+                checks_passed=4,
+                total_issues=3,
+                critical_issues=1,
+                warning_issues=2,
+            )
+            # Add mock results
+            report.results = [
+                CheckResult(
+                    check_name="price_anomaly",
+                    passed=True,
+                    issues=[],
+                    run_time_ms=100.0,
+                ),
+                CheckResult(
+                    check_name="completeness",
+                    passed=False,
+                    issues=[
+                        QualityIssue(
+                            check_name="completeness",
+                            severity=IssueSeverity.WARNING,
+                            symbol="TEST",
+                            date=date(2024, 1, 15),
+                            description="Missing",
+                        )
+                    ],
+                    run_time_ms=50.0,
+                ),
+            ]
+
+            result = alert_manager.send_daily_summary(report)
+
+            assert result is True
+            mock_instance.send_email.assert_called_once()
+            call_kwargs = mock_instance.send_email.call_args[1]
+            assert "Daily Data Quality Report" in call_kwargs["subject"]
+            assert "2024-01-15" in call_kwargs["subject"]
+            assert "Health Score" in call_kwargs["html_body"]
+
+    def test_send_daily_summary_email_failure(self, test_db):
+        """send_daily_summary should return False on email error."""
+        from hrp.data.quality.alerts import QualityAlertManager
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_instance.send_email.side_effect = Exception("SMTP error")
+            mock_notifier.return_value = mock_instance
+
+            alert_manager = QualityAlertManager()
+
+            report = QualityReport(
+                report_date=date(2024, 1, 15),
+                generated_at=date(2024, 1, 15),
+                checks_run=5,
+                checks_passed=5,
+                total_issues=0,
+                critical_issues=0,
+                warning_issues=0,
+            )
+            report.results = []
+
+            result = alert_manager.send_daily_summary(report)
+            assert result is False
+
+    def test_process_report_with_critical_issues(self, test_db):
+        """process_report should send critical alert when critical issues exist."""
+        from hrp.data.quality.alerts import QualityAlertManager
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_instance.send_email.return_value = True
+            mock_notifier.return_value = mock_instance
+
+            alert_manager = QualityAlertManager()
+
+            report = QualityReport(
+                report_date=date(2024, 1, 15),
+                generated_at=date(2024, 1, 15),
+                checks_run=5,
+                checks_passed=3,
+                total_issues=2,
+                critical_issues=2,
+                warning_issues=0,
+            )
+            report.results = [
+                CheckResult(
+                    check_name="price_anomaly",
+                    passed=False,
+                    issues=[
+                        QualityIssue(
+                            check_name="price_anomaly",
+                            severity=IssueSeverity.CRITICAL,
+                            symbol="TEST",
+                            date=date(2024, 1, 15),
+                            description="Critical issue",
+                        )
+                    ],
+                )
+            ]
+
+            result = alert_manager.process_report(report, send_summary=True)
+
+            assert result["critical_alert_sent"] is True
+            assert result["summary_sent"] is True
+            # Two calls: critical alert + daily summary
+            assert mock_instance.send_email.call_count == 2
+
+
+class TestRunQualityCheckWithAlerts:
+    """Tests for run_quality_check_with_alerts convenience function."""
+
+    def test_run_with_store_report(self, test_db):
+        """run_quality_check_with_alerts should store report when requested."""
+        from hrp.data.quality.alerts import run_quality_check_with_alerts
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_notifier.return_value = mock_instance
+
+            result = run_quality_check_with_alerts(
+                db_path=test_db,
+                as_of_date=date(2024, 1, 15),
+                send_summary=False,
+                store_report=True,
+            )
+
+            assert "report_date" in result
+            assert "report_id" in result
+            assert result["report_id"] is not None
+            assert "health_score" in result
+            assert "passed" in result
+
+    def test_run_without_store_report(self, test_db):
+        """run_quality_check_with_alerts should not store when store_report=False."""
+        from hrp.data.quality.alerts import run_quality_check_with_alerts
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_notifier.return_value = mock_instance
+
+            result = run_quality_check_with_alerts(
+                db_path=test_db,
+                as_of_date=date(2024, 1, 15),
+                send_summary=False,
+                store_report=False,
+            )
+
+            assert result["report_id"] is None
+
+    def test_run_sends_summary(self, test_db):
+        """run_quality_check_with_alerts should send summary when requested."""
+        from hrp.data.quality.alerts import run_quality_check_with_alerts
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_instance.send_email.return_value = True
+            mock_notifier.return_value = mock_instance
+
+            result = run_quality_check_with_alerts(
+                db_path=test_db,
+                as_of_date=date(2024, 1, 15),
+                send_summary=True,
+                store_report=False,
+            )
+
+            assert result["summary_sent"] is True
+            mock_instance.send_email.assert_called()
+
+    def test_run_returns_issue_counts(self, test_db):
+        """run_quality_check_with_alerts should return issue counts."""
+        from hrp.data.quality.alerts import run_quality_check_with_alerts
+
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_notifier.return_value = mock_instance
+
+            result = run_quality_check_with_alerts(
+                db_path=test_db,
+                as_of_date=date(2024, 1, 15),
+                send_summary=False,
+                store_report=False,
+            )
+
+            assert "total_issues" in result
+            assert "critical_issues" in result
+            assert "warning_issues" in result
+            assert isinstance(result["total_issues"], int)
+            assert isinstance(result["critical_issues"], int)
+            assert isinstance(result["warning_issues"], int)
