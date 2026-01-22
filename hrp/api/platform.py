@@ -218,6 +218,82 @@ class PlatformAPI:
 
         return df
 
+    def adjust_prices_for_splits(
+        self,
+        prices: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Adjust prices for stock splits.
+
+        Takes a prices DataFrame and applies split adjustments to create
+        split-adjusted close prices. Splits are applied backward in time
+        (from most recent to oldest).
+
+        Args:
+            prices: DataFrame from get_prices() with columns:
+                    symbol, date, open, high, low, close, adj_close, volume
+
+        Returns:
+            DataFrame with original columns plus 'split_adjusted_close' column
+        """
+        if prices.empty:
+            logger.warning("Empty prices DataFrame provided to adjust_prices_for_splits")
+            return prices.assign(split_adjusted_close=None)
+
+        # Make a copy to avoid modifying the original
+        df = prices.copy()
+
+        # Ensure date column is datetime
+        df["date"] = pd.to_datetime(df["date"])
+
+        # Get unique symbols from prices
+        symbols = df["symbol"].unique().tolist()
+
+        # Get date range from prices
+        start_date = df["date"].min().date()
+        end_date = df["date"].max().date()
+
+        # Get all split actions for these symbols
+        splits = self.get_corporate_actions(symbols, start_date, end_date)
+
+        # Filter to only splits
+        if not splits.empty:
+            splits = splits[splits["action_type"] == "split"].copy()
+            splits["date"] = pd.to_datetime(splits["date"])
+
+        # Initialize split_adjusted_close with close price
+        df["split_adjusted_close"] = df["close"]
+
+        if splits.empty:
+            logger.debug("No splits found, returning prices with unadjusted close")
+            return df
+
+        # Apply splits symbol by symbol
+        for symbol in symbols:
+            symbol_splits = splits[splits["symbol"] == symbol].sort_values("date", ascending=False)
+
+            if symbol_splits.empty:
+                continue
+
+            # Get mask for this symbol's prices
+            symbol_mask = df["symbol"] == symbol
+
+            # Apply each split backward in time
+            for _, split in symbol_splits.iterrows():
+                split_date = split["date"]
+                split_factor = split["factor"]
+
+                # Adjust all prices BEFORE the split date
+                date_mask = df["date"] < split_date
+                mask = symbol_mask & date_mask
+
+                df.loc[mask, "split_adjusted_close"] *= split_factor
+
+            logger.debug(f"Applied {len(symbol_splits)} splits for {symbol}")
+
+        logger.debug(f"Split adjustment complete for {len(symbols)} symbols")
+        return df
+
     # =========================================================================
     # Hypothesis Operations
     # =========================================================================
