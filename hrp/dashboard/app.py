@@ -167,76 +167,16 @@ def render_home() -> None:
 
 def render_data_health() -> None:
     """Render the Data Health page with ingestion status."""
-    st.title("Data Health")
-    st.markdown("Monitor data ingestion status and quality metrics.")
+    from hrp.dashboard.pages import data_health
 
-    api = get_api()
+    data_health.render()
 
-    if api is None:
-        st.error("Platform API not available. Check database connection.")
-        return
 
-    # Price Data Status
-    st.header("Price Data")
+def render_ingestion_status() -> None:
+    """Render the Data Ingestion Status page."""
+    from hrp.dashboard.pages import ingestion_status
 
-    try:
-        health = api.health_check()
-        tables = health.get("tables", {})
-
-        prices_info = tables.get("prices", {})
-        price_count = prices_info.get("count", 0)
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric("Price Records", f"{price_count:,}")
-
-        with col2:
-            # This would need actual query - showing placeholder
-            st.metric("Symbols Tracked", "N/A")
-
-        with col3:
-            st.metric("Data Quality", "N/A")
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve price data status: {e}")
-        st.error(f"Error: {e}")
-
-    # Feature Store Status
-    st.header("Feature Store")
-
-    try:
-        features_info = tables.get("features", {})
-        feature_count = features_info.get("count", 0)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.metric("Feature Records", f"{feature_count:,}")
-
-        with col2:
-            st.metric("Feature Types", "N/A")
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve feature store status: {e}")
-        st.error(f"Error: {e}")
-
-    # Universe Status
-    st.header("Trading Universe")
-
-    try:
-        universe_info = tables.get("universe", {})
-        universe_count = universe_info.get("count", 0)
-
-        st.metric("Universe Records", f"{universe_count:,}")
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve universe status: {e}")
-        st.error(f"Error: {e}")
-
-    # Data Quality Alerts
-    st.header("Data Quality Alerts")
-    st.info("Data quality monitoring coming soon. Will track missing data, stale prices, and anomalies.")
+    ingestion_status.render()
 
 
 def render_hypotheses() -> None:
@@ -722,7 +662,7 @@ def render_sidebar() -> str:
         st.markdown("### Navigation")
         page = st.selectbox(
             "Select Page",
-            options=["Home", "Data Health", "Hypotheses", "Experiments"],
+            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments"],
             label_visibility="collapsed",
         )
 
@@ -781,6 +721,8 @@ def main() -> None:
         render_home()
     elif page == "Data Health":
         render_data_health()
+    elif page == "Ingestion Status":
+        render_ingestion_status()
     elif page == "Hypotheses":
         render_hypotheses()
     elif page == "Experiments":
