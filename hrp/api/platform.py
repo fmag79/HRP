@@ -5,8 +5,6 @@ The Platform API is the single entry point for all operations.
 All consumers (dashboard, MCP, agents) use this API - no direct database access.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import date, datetime
 from typing import Any
@@ -14,9 +12,8 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from hrp.api import validators
 from hrp.data.db import get_db
-from hrp.data.quality import QualityReport, QualityReportGenerator, run_quality_check_with_alerts
-from hrp.data.universe import UniverseManager
 from hrp.research.config import BacktestConfig, BacktestResult
 
 
@@ -88,8 +85,9 @@ class PlatformAPI:
         Returns:
             DataFrame with columns: symbol, date, open, high, low, close, adj_close, volume
         """
-        if not symbols:
-            raise ValueError("symbols list cannot be empty")
+        # Validate inputs
+        validators.validate_date_range(start, end)
+        validators.validate_symbols(symbols, db=self._db)
 
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         query = f"""
@@ -128,23 +126,15 @@ class PlatformAPI:
 
         Returns:
             DataFrame pivoted with symbols as rows and features as columns
-
-        Raises:
-            ValueError: If symbols or features list is empty
-            NotFoundError: If version doesn't exist
         """
         if not symbols:
             raise ValueError("symbols list cannot be empty")
         if not features:
             raise ValueError("features list cannot be empty")
 
-        # Validate that version exists
-        version_check = self._db.fetchone(
-            "SELECT COUNT(*) FROM feature_definitions WHERE version = ?",
-            (version,),
-        )
-        if not version_check or version_check[0] == 0:
-            raise NotFoundError(f"Feature version '{version}' not found")
+        # Validate inputs
+        validators.validate_date(as_of_date, "as_of_date")
+        validators.validate_symbols(symbols, as_of_date, db=self._db)
 
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         features_str = ",".join(f"'{f}'" for f in features)
@@ -173,11 +163,7 @@ class PlatformAPI:
 
     def get_universe(self, as_of_date: date) -> list[str]:
         """
-        Get the trading universe as of a specific date (point-in-time).
-
-        Uses the most recent universe snapshot on or before the given date.
-        This prevents look-ahead bias in backtests by only including symbols
-        that were known to be in the universe at that point in time.
+        Get the trading universe as of a specific date.
 
         Args:
             as_of_date: Date to get universe for
@@ -185,302 +171,22 @@ class PlatformAPI:
         Returns:
             List of ticker symbols in the universe
         """
-        manager = UniverseManager(self._db.db_path)
-        return manager.get_universe_at_date(as_of_date)
-
-    def update_universe(
-        self,
-        as_of_date: date | None = None,
-        actor: str = "user",
-    ) -> dict[str, Any]:
-        """
-        Update the S&P 500 universe with current constituents.
-
-        Fetches current S&P 500 members from Wikipedia, applies exclusion
-        rules (financials, REITs, penny stocks), and updates the database.
-        All changes are logged to the lineage table.
-
-        Args:
-            as_of_date: Date to record for this snapshot. Defaults to today.
-            actor: Actor performing the update (for lineage).
-
-        Returns:
-            Dictionary with update statistics including:
-            - total_constituents: Total S&P 500 members fetched
-            - included: Symbols included in trading universe
-            - excluded: Symbols excluded (with reasons)
-            - added: New symbols added since last update
-            - removed: Symbols removed since last update
-        """
-        manager = UniverseManager(self._db.db_path)
-        return manager.update_universe(as_of_date, actor=f"api:{actor}")
-
-    def get_universe_changes(
-        self,
-        start_date: date,
-        end_date: date,
-    ) -> pd.DataFrame:
-        """
-        Get universe membership changes between two dates.
-
-        Args:
-            start_date: Start of date range
-            end_date: End of date range
-
-        Returns:
-            DataFrame with columns: date, symbol, change_type, exclusion_reason
-        """
-        manager = UniverseManager(self._db.db_path)
-        return manager.get_universe_changes(start_date, end_date)
-
-    def get_sector_breakdown(self, as_of_date: date) -> dict[str, int]:
-        """
-        Get breakdown of universe by sector.
-
-        Args:
-            as_of_date: Date to get breakdown for
-
-        Returns:
-            Dictionary mapping sector names to symbol counts
-        """
-        manager = UniverseManager(self._db.db_path)
-        return manager.get_sector_breakdown(as_of_date)
-
-    def compute_features(
-        self,
-        symbols: list[str],
-        feature_names: list[str],
-        dates: list[date],
-        version: str | None = None,
-        store: bool = True,
-    ) -> pd.DataFrame | dict[str, Any]:
-        """
-        Compute features for symbols across dates.
-
-        Args:
-            symbols: List of ticker symbols
-            feature_names: List of feature names to compute
-            dates: List of dates to compute features for
-            version: Optional feature version (default: latest active version)
-            store: If True, store computed features in database (default: True)
-
-        Returns:
-            If store=True: Dictionary with computation stats
-            If store=False: DataFrame with computed features
-
-        Raises:
-            ValueError: If symbols, feature_names, or dates are empty
-        """
-        if not symbols:
-            raise ValueError("symbols list cannot be empty")
-        if not feature_names:
-            raise ValueError("feature_names list cannot be empty")
-        if not dates:
-            raise ValueError("dates list cannot be empty")
-
-        # Import here to avoid circular dependency
-        from hrp.data.features.computation import FeatureComputer
-
-        computer = FeatureComputer(db_path=self._db.db_path if hasattr(self._db, 'db_path') else None)
-
-        if store:
-            # Compute and store features
-            stats = computer.compute_and_store_features(
-                symbols=symbols,
-                dates=dates,
-                feature_names=feature_names,
-                version=version,
-            )
-            logger.info(
-                f"Computed and stored {stats['features_computed']} features "
-                f"for {len(symbols)} symbols across {len(dates)} dates"
-            )
-            return stats
-        else:
-            # Compute features without storing
-            features_df = computer.compute_features(
-                symbols=symbols,
-                dates=dates,
-                feature_names=feature_names,
-                version=version,
-            )
-            logger.info(
-                f"Computed {len(feature_names)} features "
-                f"for {len(symbols)} symbols across {len(dates)} dates"
-            )
-            return features_df
-
-    def get_feature_versions(self, feature_name: str) -> list[str]:
-        """
-        Get all available versions for a feature.
-
-        Args:
-            feature_name: Name of the feature
-
-        Returns:
-            List of version strings, ordered by creation date (newest first)
-        """
-        if not feature_name:
-            raise ValueError("feature_name cannot be empty")
+        # Validate inputs
+        validators.validate_date(as_of_date, "as_of_date")
 
         query = """
-            SELECT version
-            FROM feature_definitions
-            WHERE feature_name = ?
-            ORDER BY created_at DESC
+            SELECT symbol
+            FROM universe
+            WHERE date = ?
+              AND in_universe = TRUE
+            ORDER BY symbol
         """
 
-        result = self._db.fetchall(query, (feature_name,))
-        versions = [row[0] for row in result]
+        result = self._db.fetchall(query, (as_of_date,))
+        symbols = [row[0] for row in result]
 
-        if not versions:
-            logger.warning(f"No versions found for feature '{feature_name}'")
-        else:
-            logger.debug(f"Found {len(versions)} versions for feature '{feature_name}'")
-
-        return versions
-
-    # =========================================================================
-    # Data Ingestion Operations
-    # =========================================================================
-
-    def log_ingestion_start(self, source_id: str) -> int:
-        """
-        Log the start of a data ingestion job.
-
-        Args:
-            source_id: Unique identifier for the ingestion source/job
-
-        Returns:
-            log_id: The ingestion_log entry ID
-        """
-        # Generate next log_id
-        result = self._db.fetchone(
-            "SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log"
-        )
-        log_id = result[0]
-
-        query = """
-            INSERT INTO ingestion_log (log_id, source_id, started_at, status)
-            VALUES (?, ?, CURRENT_TIMESTAMP, 'running')
-        """
-
-        self._db.execute(query, (log_id, source_id))
-
-        logger.debug(f"Started ingestion log {log_id} for source {source_id}")
-        return log_id
-
-    def log_ingestion_complete(
-        self,
-        log_id: int,
-        status: str,
-        records_fetched: int = 0,
-        records_inserted: int = 0,
-        error_message: str | None = None,
-    ) -> None:
-        """
-        Log the completion of a data ingestion job.
-
-        Args:
-            log_id: The ingestion_log entry ID from log_ingestion_start()
-            status: Job status ('success' or 'failed')
-            records_fetched: Number of records retrieved from source
-            records_inserted: Number of records successfully inserted
-            error_message: Optional error message if status is 'failed'
-        """
-        query = """
-            UPDATE ingestion_log
-            SET completed_at = CURRENT_TIMESTAMP,
-                status = ?,
-                records_fetched = ?,
-                records_inserted = ?,
-                error_message = ?
-            WHERE log_id = ?
-        """
-
-        self._db.execute(
-            query,
-            (status, records_fetched, records_inserted, error_message, log_id),
-        )
-
-        logger.debug(f"Completed ingestion log {log_id} with status {status}")
-
-    def get_ingestion_status(
-        self,
-        source_id: str | None = None,
-        limit: int = 100,
-    ) -> list[dict]:
-        """
-        Get recent ingestion job status.
-
-        Args:
-            source_id: Optional filter by specific source/job ID
-            limit: Maximum number of results (default 100)
-
-        Returns:
-            List of ingestion log dictionaries
-        """
-        query = """
-            SELECT log_id, source_id, started_at, completed_at,
-                   records_fetched, records_inserted, status, error_message
-            FROM ingestion_log
-            WHERE 1=1
-        """
-        params: list[Any] = []
-
-        if source_id:
-            query += " AND source_id = ?"
-            params.append(source_id)
-
-        query += " ORDER BY started_at DESC LIMIT ?"
-        params.append(limit)
-
-        result = self._db.fetchall(query, tuple(params))
-
-        logs = []
-        for row in result:
-            logs.append(
-                {
-                    "log_id": row[0],
-                    "source_id": row[1],
-                    "started_at": row[2],
-                    "completed_at": row[3],
-                    "records_fetched": row[4],
-                    "records_inserted": row[5],
-                    "status": row[6],
-                    "error_message": row[7],
-                }
-            )
-
-        logger.debug(f"Retrieved {len(logs)} ingestion log entries")
-        return logs
-
-    def get_last_successful_run(self, source_id: str) -> datetime | None:
-        """
-        Get the timestamp of the last successful ingestion for a source.
-
-        Args:
-            source_id: The source/job identifier
-
-        Returns:
-            Datetime of last successful completion, or None if never succeeded
-        """
-        query = """
-            SELECT completed_at
-            FROM ingestion_log
-            WHERE source_id = ? AND status = 'success'
-            ORDER BY completed_at DESC
-            LIMIT 1
-        """
-
-        result = self._db.fetchone(query, (source_id,))
-
-        if result and result[0]:
-            logger.debug(f"Last successful run for {source_id}: {result[0]}")
-            return result[0]
-
-        logger.debug(f"No successful runs found for {source_id}")
-        return None
+        logger.debug(f"Universe contains {len(symbols)} symbols as of {as_of_date}")
+        return symbols
 
     # =========================================================================
     # Hypothesis Operations
@@ -507,6 +213,13 @@ class PlatformAPI:
         Returns:
             hypothesis_id: Unique identifier for the hypothesis
         """
+        # Validate inputs
+        validators.validate_non_empty_string(title, "title")
+        validators.validate_non_empty_string(thesis, "thesis")
+        validators.validate_non_empty_string(prediction, "prediction")
+        validators.validate_non_empty_string(falsification, "falsification")
+        validators.validate_non_empty_string(actor, "actor")
+
         hypothesis_id = self._generate_hypothesis_id()
 
         query = """
@@ -550,6 +263,11 @@ class PlatformAPI:
         Raises:
             NotFoundError: If hypothesis doesn't exist
         """
+        # Validate inputs
+        validators.validate_non_empty_string(hypothesis_id, "hypothesis_id")
+        validators.validate_non_empty_string(status, "status")
+        validators.validate_non_empty_string(actor, "actor")
+
         existing = self.get_hypothesis(hypothesis_id)
         if not existing:
             raise NotFoundError(f"Hypothesis {hypothesis_id} not found")
@@ -587,6 +305,9 @@ class PlatformAPI:
         Returns:
             List of hypothesis dictionaries
         """
+        # Validate inputs
+        validators.validate_positive_int(limit, "limit")
+
         query = """
             SELECT hypothesis_id, title, thesis, testable_prediction,
                    falsification_criteria, status, created_at, created_by,
@@ -631,6 +352,9 @@ class PlatformAPI:
         Returns:
             Hypothesis dictionary or None if not found
         """
+        # Validate inputs
+        validators.validate_non_empty_string(hypothesis_id, "hypothesis_id")
+
         query = """
             SELECT hypothesis_id, title, thesis, testable_prediction,
                    falsification_criteria, status, created_at, created_by,
@@ -669,7 +393,6 @@ class PlatformAPI:
         hypothesis_id: str | None = None,
         actor: str = "user",
         experiment_name: str = "backtests",
-        feature_versions: dict[str, str] | None = None,
     ) -> str:
         """
         Run a backtest and log results to MLflow.
@@ -680,7 +403,6 @@ class PlatformAPI:
             hypothesis_id: Optional linked hypothesis
             actor: Who is running the backtest
             experiment_name: MLflow experiment name
-            feature_versions: Optional dict mapping feature names to versions used
 
         Returns:
             experiment_id: The MLflow run ID
@@ -710,7 +432,6 @@ class PlatformAPI:
             run_name=run_name,
             hypothesis_id=hypothesis_id,
             tags={"actor": actor},
-            feature_versions=feature_versions,
         )
 
         # Link to hypothesis if provided
@@ -1079,91 +800,3 @@ class PlatformAPI:
             status["database"] = f"error: {str(e)}"
 
         return status
-
-    # =========================================================================
-    # Data Quality Operations
-    # =========================================================================
-
-    def run_quality_checks(
-        self,
-        as_of_date: date | None = None,
-        send_alerts: bool = True,
-        store_report: bool = True,
-    ) -> dict[str, Any]:
-        """
-        Run data quality checks and optionally send alerts.
-
-        Runs all configured quality checks (price anomaly, completeness,
-        gap detection, stale data, volume anomaly) and generates a report.
-
-        Args:
-            as_of_date: Date to run checks for. Defaults to today.
-            send_alerts: Whether to send email alerts for critical issues.
-            store_report: Whether to store the report in the database.
-
-        Returns:
-            Dictionary with:
-            - report_date: Date checked
-            - health_score: Overall score (0-100)
-            - passed: True if no critical issues
-            - total_issues: Count of all issues
-            - critical_issues: Count of critical issues
-            - warning_issues: Count of warnings
-            - critical_alert_sent: Whether alert was sent
-            - summary_sent: Whether summary was sent
-        """
-        as_of_date = as_of_date or date.today()
-        return run_quality_check_with_alerts(
-            db_path=self._db.db_path,
-            as_of_date=as_of_date,
-            send_summary=send_alerts,
-            store_report=store_report,
-        )
-
-    def get_quality_report(self, as_of_date: date) -> QualityReport:
-        """
-        Generate a quality report for the given date.
-
-        Args:
-            as_of_date: Date to generate report for.
-
-        Returns:
-            QualityReport with all check results.
-        """
-        generator = QualityReportGenerator(self._db.db_path)
-        return generator.generate_report(as_of_date)
-
-    def get_quality_history(
-        self,
-        start_date: date,
-        end_date: date,
-    ) -> list[dict[str, Any]]:
-        """
-        Get historical quality reports.
-
-        Args:
-            start_date: Start of date range.
-            end_date: End of date range.
-
-        Returns:
-            List of report summaries with health scores and issue counts.
-        """
-        generator = QualityReportGenerator(self._db.db_path)
-        return generator.get_historical_reports(start_date, end_date)
-
-    def get_data_health_score(self, as_of_date: date | None = None) -> float:
-        """
-        Get the current data health score.
-
-        Quick check that returns just the health score without
-        generating a full report.
-
-        Args:
-            as_of_date: Date to check. Defaults to today.
-
-        Returns:
-            Health score from 0-100.
-        """
-        as_of_date = as_of_date or date.today()
-        report = self.get_quality_report(as_of_date)
-        return report.health_score

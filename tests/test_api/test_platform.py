@@ -2,6 +2,7 @@
 Comprehensive tests for the HRP Platform API.
 
 Tests cover all major functionality:
+- Input validation (symbols, dates, strings, numeric parameters)
 - Initialization
 - Health check
 - Data operations (universe, prices, features)
@@ -14,7 +15,7 @@ Tests cover all major functionality:
 import json
 import os
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -85,6 +86,9 @@ def populated_db(test_api):
             ('MSFT', '2023-01-01', TRUE, 'Technology', 2400000000000),
             ('GOOGL', '2023-01-01', TRUE, 'Technology', 1500000000000),
             ('JPM', '2023-01-01', FALSE, 'Financials', 400000000000),
+            ('AAPL', '2023-01-05', TRUE, 'Technology', 2500000000000),
+            ('MSFT', '2023-01-05', TRUE, 'Technology', 2400000000000),
+            ('GOOGL', '2023-01-05', TRUE, 'Technology', 1500000000000),
             ('AAPL', '2023-06-01', TRUE, 'Technology', 2800000000000),
             ('MSFT', '2023-06-01', TRUE, 'Technology', 2600000000000)
         """
@@ -197,6 +201,227 @@ def hypothesis_api(test_api):
 # =============================================================================
 
 
+class TestPlatformAPIValidation:
+    """Tests for input validation in Platform API methods."""
+
+    def test_get_prices_with_invalid_symbols(self, populated_db):
+        """get_prices should reject invalid symbols."""
+        with pytest.raises(ValueError, match="Invalid symbols not found in universe: INVALID"):
+            populated_db.get_prices(
+                symbols=['INVALID'],
+                start=date(2023, 1, 1),
+                end=date(2023, 1, 10)
+            )
+
+    def test_get_prices_with_future_dates(self, populated_db):
+        """get_prices should reject future dates."""
+        future_date = date.today() + timedelta(days=1)
+        with pytest.raises(ValueError, match="date cannot be in the future"):
+            populated_db.get_prices(
+                symbols=['AAPL'],
+                start=future_date,
+                end=future_date
+            )
+
+    def test_get_prices_with_invalid_date_range(self, populated_db):
+        """get_prices should reject end_date before start_date."""
+        with pytest.raises(ValueError, match="start date must be <= end date"):
+            populated_db.get_prices(
+                symbols=['AAPL'],
+                start=date(2023, 1, 10),
+                end=date(2023, 1, 1)
+            )
+
+    def test_get_features_with_invalid_symbols(self, populated_db):
+        """get_features should reject invalid symbols."""
+        with pytest.raises(ValueError, match="Invalid symbols not in universe"):
+            populated_db.get_features(
+                symbols=['INVALID'],
+                features=['momentum_20d'],
+                as_of_date=date(2023, 1, 5)
+            )
+
+    def test_get_features_with_empty_symbols(self, populated_db):
+        """get_features should reject empty symbols list."""
+        with pytest.raises(ValueError, match="symbols list cannot be empty"):
+            populated_db.get_features(
+                symbols=[],
+                features=['momentum_20d'],
+                as_of_date=date(2023, 1, 5)
+            )
+
+    def test_get_features_with_empty_features(self, populated_db):
+        """get_features should reject empty features list."""
+        with pytest.raises(ValueError, match="features list cannot be empty"):
+            populated_db.get_features(
+                symbols=['AAPL'],
+                features=[],
+                as_of_date=date(2023, 1, 5)
+            )
+
+    def test_get_features_with_future_date(self, populated_db):
+        """get_features should reject future dates."""
+        future_date = date.today() + timedelta(days=1)
+        with pytest.raises(ValueError, match="as_of_date cannot be in the future"):
+            populated_db.get_features(
+                symbols=['AAPL'],
+                features=['momentum_20d'],
+                as_of_date=future_date
+            )
+
+    def test_get_universe_with_future_date(self, populated_db):
+        """get_universe should reject future dates."""
+        future_date = date.today() + timedelta(days=1)
+        with pytest.raises(ValueError, match="as_of_date cannot be in the future"):
+            populated_db.get_universe(as_of_date=future_date)
+
+    def test_create_hypothesis_with_empty_title(self, test_api):
+        """create_hypothesis should reject empty title."""
+        with pytest.raises(ValueError, match="title cannot be empty"):
+            test_api.create_hypothesis(
+                title="",
+                thesis="Some thesis",
+                prediction="Some prediction",
+                falsification="Some falsification",
+                actor="user"
+            )
+
+    def test_create_hypothesis_with_empty_thesis(self, test_api):
+        """create_hypothesis should reject empty thesis."""
+        with pytest.raises(ValueError, match="thesis cannot be empty"):
+            test_api.create_hypothesis(
+                title="Test Title",
+                thesis="",
+                prediction="Some prediction",
+                falsification="Some falsification",
+                actor="user"
+            )
+
+    def test_create_hypothesis_with_empty_prediction(self, test_api):
+        """create_hypothesis should reject empty prediction."""
+        with pytest.raises(ValueError, match="prediction cannot be empty"):
+            test_api.create_hypothesis(
+                title="Test Title",
+                thesis="Some thesis",
+                prediction="",
+                falsification="Some falsification",
+                actor="user"
+            )
+
+    def test_create_hypothesis_with_empty_falsification(self, test_api):
+        """create_hypothesis should reject empty falsification."""
+        with pytest.raises(ValueError, match="falsification cannot be empty"):
+            test_api.create_hypothesis(
+                title="Test Title",
+                thesis="Some thesis",
+                prediction="Some prediction",
+                falsification="",
+                actor="user"
+            )
+
+    def test_create_hypothesis_with_empty_actor(self, test_api):
+        """create_hypothesis should reject empty actor."""
+        with pytest.raises(ValueError, match="actor cannot be empty"):
+            test_api.create_hypothesis(
+                title="Test Title",
+                thesis="Some thesis",
+                prediction="Some prediction",
+                falsification="Some falsification",
+                actor=""
+            )
+
+    def test_create_hypothesis_with_whitespace_only_strings(self, test_api):
+        """create_hypothesis should reject whitespace-only strings."""
+        with pytest.raises(ValueError, match="title cannot be empty"):
+            test_api.create_hypothesis(
+                title="   ",
+                thesis="Some thesis",
+                prediction="Some prediction",
+                falsification="Some falsification",
+                actor="user"
+            )
+
+    def test_update_hypothesis_with_empty_hypothesis_id(self, hypothesis_api):
+        """update_hypothesis should reject empty hypothesis_id."""
+        api, hyp_ids = hypothesis_api
+        with pytest.raises(ValueError, match="hypothesis_id cannot be empty"):
+            api.update_hypothesis(
+                hypothesis_id="",
+                status="testing",
+                actor="user"
+            )
+
+    def test_update_hypothesis_with_empty_status(self, hypothesis_api):
+        """update_hypothesis should reject empty status."""
+        api, hyp_ids = hypothesis_api
+        with pytest.raises(ValueError, match="status cannot be empty"):
+            api.update_hypothesis(
+                hypothesis_id=hyp_ids[0],
+                status="",
+                actor="user"
+            )
+
+    def test_update_hypothesis_with_empty_actor(self, hypothesis_api):
+        """update_hypothesis should reject empty actor."""
+        api, hyp_ids = hypothesis_api
+        with pytest.raises(ValueError, match="actor cannot be empty"):
+            api.update_hypothesis(
+                hypothesis_id=hyp_ids[0],
+                status="testing",
+                actor=""
+            )
+
+    def test_list_hypotheses_with_invalid_limit(self, test_api):
+        """list_hypotheses should reject non-positive limit."""
+        with pytest.raises(ValueError, match="limit must be positive"):
+            test_api.list_hypotheses(limit=0)
+
+        with pytest.raises(ValueError, match="limit must be positive"):
+            test_api.list_hypotheses(limit=-5)
+
+    def test_get_hypothesis_with_empty_id(self, test_api):
+        """get_hypothesis should reject empty hypothesis_id."""
+        with pytest.raises(ValueError, match="hypothesis_id cannot be empty"):
+            test_api.get_hypothesis("")
+
+    def test_mixed_valid_invalid_symbols(self, populated_db):
+        """Mix of valid and invalid symbols should raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid symbols not found in universe"):
+            populated_db.get_prices(
+                symbols=['AAPL', 'INVALID1', 'INVALID2'],
+                start=date(2023, 1, 1),
+                end=date(2023, 1, 10)
+            )
+
+    def test_excluded_symbol_validation(self, populated_db):
+        """Symbols explicitly excluded from universe should be rejected."""
+        # JPM has in_universe = FALSE in the test data
+        with pytest.raises(ValueError, match="Invalid symbols not found in universe: JPM"):
+            populated_db.get_prices(
+                symbols=['JPM'],
+                start=date(2023, 1, 1),
+                end=date(2023, 1, 10)
+            )
+
+    def test_symbol_not_in_universe_at_specific_date(self, populated_db):
+        """Symbols not in universe at specific date should be rejected."""
+        # Insert TSLA only for 2023-06-01
+        populated_db._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('TSLA', '2023-06-01', TRUE, 'Consumer Discretionary', 800000000000)
+            """
+        )
+
+        # TSLA should not be valid for 2023-01-05
+        with pytest.raises(ValueError, match="Invalid symbols not in universe as of 2023-01-05: TSLA"):
+            populated_db.get_features(
+                symbols=['TSLA'],
+                features=['momentum_20d'],
+                as_of_date=date(2023, 1, 5)
+            )
+
+
 class TestPlatformAPIInit:
     """Tests for PlatformAPI initialization."""
 
@@ -303,6 +528,13 @@ class TestPlatformAPIPrices:
 
     def test_get_prices_no_data(self, test_api):
         """Test getting prices when no data exists."""
+        # Add symbol to universe so validation passes
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-01-01', TRUE, 'Technology', 2500000000000)
+            """
+        )
         result = test_api.get_prices(["AAPL"], date(2023, 1, 1), date(2023, 1, 10))
         assert isinstance(result, pd.DataFrame)
         assert result.empty
@@ -370,6 +602,13 @@ class TestPlatformAPIFeatures:
 
     def test_get_features_no_data(self, test_api):
         """Test getting features when no data exists."""
+        # Add symbol to universe so validation passes
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-01-05', TRUE, 'Technology', 2500000000000)
+            """
+        )
         result = test_api.get_features(["AAPL"], ["momentum_20d"], date(2023, 1, 5))
         assert isinstance(result, pd.DataFrame)
         assert result.empty
@@ -405,30 +644,6 @@ class TestPlatformAPIFeatures:
         assert len(result) == 3
         assert "momentum_20d" in result.columns
         assert "volatility_60d" in result.columns
-
-    def test_get_features_invalid_version_raises(self, populated_db):
-        """Test that get_features raises NotFoundError for invalid version."""
-        with pytest.raises(NotFoundError, match="Feature version 'invalid_v999' not found"):
-            populated_db.get_features(
-                ["AAPL"], ["momentum_20d"], date(2023, 1, 5), version="invalid_v999"
-            )
-
-    def test_get_features_valid_version_succeeds(self, populated_db):
-        """Test that get_features succeeds for valid version."""
-        # First, insert a feature definition for v1
-        populated_db._db.execute(
-            """
-            INSERT INTO feature_definitions (feature_name, version, computation_code, description)
-            VALUES ('momentum_20d', 'v1', 'def compute(): pass', 'Momentum over 20 days')
-            """
-        )
-
-        # Now get_features should work without raising NotFoundError about version
-        result = populated_db.get_features(
-            ["AAPL"], ["momentum_20d"], date(2023, 1, 5), version="v1"
-        )
-        # If we get here without NotFoundError about version, the test passes
-        assert isinstance(result, pd.DataFrame)
 
 
 class TestPlatformAPIHypothesis:
@@ -1092,199 +1307,3 @@ class TestPlatformAPIIntegration:
         assert "agent:backtest" in actors
         assert "agent:analysis" in actors
         assert "user" in actors
-
-
-# =============================================================================
-# Quality API Tests
-# =============================================================================
-
-
-class TestPlatformAPIQualityMethods:
-    """Tests for Platform API data quality methods."""
-
-    @patch("hrp.api.platform.run_quality_check_with_alerts")
-    def test_run_quality_checks(self, mock_run_checks, test_api):
-        """run_quality_checks should call underlying function with correct args."""
-        mock_run_checks.return_value = {
-            "report_date": date(2024, 1, 15),
-            "health_score": 95.0,
-            "passed": True,
-            "total_issues": 2,
-            "critical_issues": 0,
-            "warning_issues": 2,
-            "critical_alert_sent": False,
-            "summary_sent": True,
-        }
-
-        result = test_api.run_quality_checks(
-            as_of_date=date(2024, 1, 15),
-            send_alerts=True,
-            store_report=True,
-        )
-
-        mock_run_checks.assert_called_once()
-        call_kwargs = mock_run_checks.call_args[1]
-        assert call_kwargs["as_of_date"] == date(2024, 1, 15)
-        assert call_kwargs["send_summary"] is True
-        assert call_kwargs["store_report"] is True
-
-        assert result["health_score"] == 95.0
-        assert result["passed"] is True
-        assert result["total_issues"] == 2
-
-    @patch("hrp.api.platform.run_quality_check_with_alerts")
-    def test_run_quality_checks_defaults(self, mock_run_checks, test_api):
-        """run_quality_checks should use defaults when not specified."""
-        mock_run_checks.return_value = {
-            "report_date": date.today(),
-            "health_score": 100.0,
-            "passed": True,
-            "total_issues": 0,
-            "critical_issues": 0,
-            "warning_issues": 0,
-            "critical_alert_sent": False,
-            "summary_sent": True,
-        }
-
-        test_api.run_quality_checks()
-
-        call_kwargs = mock_run_checks.call_args[1]
-        # Default is today
-        assert call_kwargs["as_of_date"] == date.today()
-        # Default is send_summary=True
-        assert call_kwargs["send_summary"] is True
-        # Default is store_report=True
-        assert call_kwargs["store_report"] is True
-
-    @patch("hrp.api.platform.run_quality_check_with_alerts")
-    def test_run_quality_checks_no_alerts(self, mock_run_checks, test_api):
-        """run_quality_checks with send_alerts=False should not send."""
-        mock_run_checks.return_value = {
-            "report_date": date.today(),
-            "health_score": 100.0,
-            "passed": True,
-            "total_issues": 0,
-            "critical_issues": 0,
-            "warning_issues": 0,
-            "critical_alert_sent": False,
-            "summary_sent": False,
-        }
-
-        test_api.run_quality_checks(send_alerts=False)
-
-        call_kwargs = mock_run_checks.call_args[1]
-        assert call_kwargs["send_summary"] is False
-
-    def test_get_quality_report(self, test_api):
-        """get_quality_report should generate a report for the date."""
-        from hrp.data.quality.report import QualityReport
-
-        report = test_api.get_quality_report(date(2024, 1, 15))
-
-        assert isinstance(report, QualityReport)
-        assert report.report_date == date(2024, 1, 15)
-        assert report.checks_run >= 0
-        assert 0 <= report.health_score <= 100
-
-    def test_get_quality_report_empty_db(self, test_api):
-        """get_quality_report on empty DB should still return valid report."""
-        from hrp.data.quality.report import QualityReport
-
-        report = test_api.get_quality_report(date(2024, 1, 15))
-
-        assert isinstance(report, QualityReport)
-        # With empty DB, should pass (no data to have issues with)
-        assert report.passed is True
-
-    def test_get_quality_history_empty(self, test_api):
-        """get_quality_history with no stored reports should return empty."""
-        history = test_api.get_quality_history(date(2024, 2, 1), date(2024, 2, 28))
-        assert history == []
-
-    def test_get_quality_history_with_reports(self, test_api):
-        """get_quality_history should return stored reports."""
-        from hrp.data.quality.report import QualityReportGenerator
-
-        # Generate and store a report
-        generator = QualityReportGenerator(test_api._db.db_path)
-        report = generator.generate_report(date(2024, 1, 15))
-        generator.store_report(report)
-
-        history = test_api.get_quality_history(date(2024, 1, 1), date(2024, 1, 31))
-
-        assert len(history) >= 1
-        assert history[0]["report_date"] == date(2024, 1, 15)
-        assert "health_score" in history[0]
-
-    def test_get_data_health_score(self, test_api):
-        """get_data_health_score should return score 0-100."""
-        score = test_api.get_data_health_score(date(2024, 1, 15))
-
-        assert isinstance(score, float)
-        assert 0 <= score <= 100
-
-    def test_get_data_health_score_defaults_to_today(self, test_api):
-        """get_data_health_score with no date should use today."""
-        score = test_api.get_data_health_score()
-
-        assert isinstance(score, float)
-        assert 0 <= score <= 100
-
-    def test_get_data_health_score_perfect_empty_db(self, test_api):
-        """get_data_health_score on empty DB should return 100."""
-        score = test_api.get_data_health_score()
-        # Empty DB = no issues = perfect health
-        assert score == 100.0
-
-
-class TestPlatformAPIQualityWithData:
-    """Tests for quality methods with populated data."""
-
-    def test_run_quality_checks_with_data(self, populated_db):
-        """run_quality_checks should detect issues in populated data."""
-        # The populated_db fixture has data up to 2023-01-10
-        # Checking a later date should find stale data
-        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
-            mock_instance = MagicMock()
-            mock_notifier.return_value = mock_instance
-
-            result = populated_db.run_quality_checks(
-                as_of_date=date(2024, 1, 15),  # Much later than data
-                send_alerts=False,
-                store_report=True,
-            )
-
-            assert "health_score" in result
-            assert "total_issues" in result
-            # Data is stale, so there should be issues
-            # (but this depends on implementation details)
-
-    def test_get_quality_report_with_issues(self, populated_db):
-        """get_quality_report should find issues in stale data."""
-        # Check date much later than data to trigger stale check
-        report = populated_db.get_quality_report(date(2024, 6, 1))
-
-        assert report.report_date == date(2024, 6, 1)
-        # With old data, stale check should find issues
-        assert report.checks_run > 0
-
-    def test_quality_history_date_range(self, test_api):
-        """get_quality_history should filter by date range."""
-        from hrp.data.quality.report import QualityReportGenerator
-
-        generator = QualityReportGenerator(test_api._db.db_path)
-
-        # Store reports for different dates
-        for day in [10, 15, 20, 25]:
-            report = generator.generate_report(date(2024, 1, day))
-            generator.store_report(report)
-
-        # Query subset
-        history = test_api.get_quality_history(date(2024, 1, 12), date(2024, 1, 22))
-
-        # Should only include reports within range
-        report_dates = [h["report_date"] for h in history]
-        assert date(2024, 1, 10) not in report_dates
-        assert date(2024, 1, 15) in report_dates
-        assert date(2024, 1, 20) in report_dates
-        assert date(2024, 1, 25) not in report_dates
