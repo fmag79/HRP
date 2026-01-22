@@ -223,3 +223,188 @@ class PolygonSource(DataSourceBase):
         except Exception as e:
             logger.warning(f"Error validating {symbol}: {e}")
             return False
+
+    @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
+    def get_splits(
+        self,
+        symbol: str,
+        start: date,
+        end: date
+    ) -> pd.DataFrame:
+        """
+        Fetch stock splits for a symbol.
+
+        Args:
+            symbol: Stock ticker (e.g., 'AAPL')
+            start: Start date
+            end: End date (inclusive)
+
+        Returns:
+            DataFrame with columns: symbol, date, action_type, factor, source
+        """
+        self.rate_limiter.acquire()
+
+        try:
+            start_str = start.strftime("%Y-%m-%d")
+            end_str = end.strftime("%Y-%m-%d")
+
+            logger.debug(f"Fetching splits for {symbol} from {start_str} to {end_str}")
+
+            # Fetch splits from Polygon
+            splits = self.client.list_splits(
+                ticker=symbol,
+                execution_date_gte=start_str,
+                execution_date_lte=end_str,
+                limit=1000,
+            )
+
+            if not splits:
+                logger.debug(f"No splits found for {symbol} from {start} to {end}")
+                return pd.DataFrame()
+
+            # Convert to DataFrame
+            rows = []
+            for split in splits:
+                # execution_date is the ex-date when split takes effect
+                split_date = datetime.strptime(split.execution_date, "%Y-%m-%d").date()
+
+                # Split factor (e.g., 2.0 for 2-for-1 split)
+                # Polygon returns split_from and split_to (e.g., 1 and 2 for 2:1 split)
+                factor = split.split_to / split.split_from if split.split_from else 1.0
+
+                rows.append({
+                    'symbol': symbol,
+                    'date': split_date,
+                    'action_type': 'split',
+                    'factor': factor,
+                    'source': self.source_name,
+                })
+
+            df = pd.DataFrame(rows)
+            logger.debug(f"Fetched {len(df)} splits for {symbol}")
+            return df
+
+        except BadResponse as e:
+            logger.error(f"Polygon API error fetching splits for {symbol}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching splits for {symbol}: {e}")
+            raise
+
+    @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
+    def get_dividends(
+        self,
+        symbol: str,
+        start: date,
+        end: date
+    ) -> pd.DataFrame:
+        """
+        Fetch dividends for a symbol.
+
+        Args:
+            symbol: Stock ticker (e.g., 'AAPL')
+            start: Start date
+            end: End date (inclusive)
+
+        Returns:
+            DataFrame with columns: symbol, date, action_type, factor, source
+        """
+        self.rate_limiter.acquire()
+
+        try:
+            start_str = start.strftime("%Y-%m-%d")
+            end_str = end.strftime("%Y-%m-%d")
+
+            logger.debug(f"Fetching dividends for {symbol} from {start_str} to {end_str}")
+
+            # Fetch dividends from Polygon
+            dividends = self.client.list_dividends(
+                ticker=symbol,
+                ex_dividend_date_gte=start_str,
+                ex_dividend_date_lte=end_str,
+                limit=1000,
+            )
+
+            if not dividends:
+                logger.debug(f"No dividends found for {symbol} from {start} to {end}")
+                return pd.DataFrame()
+
+            # Convert to DataFrame
+            rows = []
+            for div in dividends:
+                # ex_dividend_date is when stock trades without dividend
+                div_date = datetime.strptime(div.ex_dividend_date, "%Y-%m-%d").date()
+
+                # Cash amount per share
+                cash_amount = div.cash_amount if hasattr(div, 'cash_amount') else 0.0
+
+                rows.append({
+                    'symbol': symbol,
+                    'date': div_date,
+                    'action_type': 'dividend',
+                    'factor': cash_amount,
+                    'source': self.source_name,
+                })
+
+            df = pd.DataFrame(rows)
+            logger.debug(f"Fetched {len(df)} dividends for {symbol}")
+            return df
+
+        except BadResponse as e:
+            logger.error(f"Polygon API error fetching dividends for {symbol}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching dividends for {symbol}: {e}")
+            raise
+
+    def get_corporate_actions(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+        action_types: list[str] | None = None
+    ) -> pd.DataFrame:
+        """
+        Fetch corporate actions for a symbol.
+
+        Args:
+            symbol: Stock ticker (e.g., 'AAPL')
+            start: Start date
+            end: End date (inclusive)
+            action_types: List of action types to fetch ('split', 'dividend').
+                         If None, fetches all types.
+
+        Returns:
+            DataFrame with columns: symbol, date, action_type, factor, source
+        """
+        if action_types is None:
+            action_types = ['split', 'dividend']
+
+        all_actions = []
+
+        # Fetch splits
+        if 'split' in action_types:
+            try:
+                splits_df = self.get_splits(symbol, start, end)
+                if not splits_df.empty:
+                    all_actions.append(splits_df)
+            except Exception as e:
+                logger.warning(f"Error fetching splits for {symbol}: {e}")
+
+        # Fetch dividends
+        if 'dividend' in action_types:
+            try:
+                dividends_df = self.get_dividends(symbol, start, end)
+                if not dividends_df.empty:
+                    all_actions.append(dividends_df)
+            except Exception as e:
+                logger.warning(f"Error fetching dividends for {symbol}: {e}")
+
+        if not all_actions:
+            return pd.DataFrame(columns=['symbol', 'date', 'action_type', 'factor', 'source'])
+
+        # Combine and sort by date
+        df = pd.concat(all_actions, ignore_index=True)
+        df = df.sort_values(['date', 'action_type']).reset_index(drop=True)
+
+        return df
