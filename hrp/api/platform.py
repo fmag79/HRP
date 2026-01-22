@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.data.quality import QualityReport, QualityReportGenerator, run_quality_check_with_alerts
 from hrp.data.universe import UniverseManager
 from hrp.research.config import BacktestConfig, BacktestResult
 
@@ -1078,3 +1079,91 @@ class PlatformAPI:
             status["database"] = f"error: {str(e)}"
 
         return status
+
+    # =========================================================================
+    # Data Quality Operations
+    # =========================================================================
+
+    def run_quality_checks(
+        self,
+        as_of_date: date | None = None,
+        send_alerts: bool = True,
+        store_report: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Run data quality checks and optionally send alerts.
+
+        Runs all configured quality checks (price anomaly, completeness,
+        gap detection, stale data, volume anomaly) and generates a report.
+
+        Args:
+            as_of_date: Date to run checks for. Defaults to today.
+            send_alerts: Whether to send email alerts for critical issues.
+            store_report: Whether to store the report in the database.
+
+        Returns:
+            Dictionary with:
+            - report_date: Date checked
+            - health_score: Overall score (0-100)
+            - passed: True if no critical issues
+            - total_issues: Count of all issues
+            - critical_issues: Count of critical issues
+            - warning_issues: Count of warnings
+            - critical_alert_sent: Whether alert was sent
+            - summary_sent: Whether summary was sent
+        """
+        as_of_date = as_of_date or date.today()
+        return run_quality_check_with_alerts(
+            db_path=self._db.db_path,
+            as_of_date=as_of_date,
+            send_summary=send_alerts,
+            store_report=store_report,
+        )
+
+    def get_quality_report(self, as_of_date: date) -> QualityReport:
+        """
+        Generate a quality report for the given date.
+
+        Args:
+            as_of_date: Date to generate report for.
+
+        Returns:
+            QualityReport with all check results.
+        """
+        generator = QualityReportGenerator(self._db.db_path)
+        return generator.generate_report(as_of_date)
+
+    def get_quality_history(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]:
+        """
+        Get historical quality reports.
+
+        Args:
+            start_date: Start of date range.
+            end_date: End of date range.
+
+        Returns:
+            List of report summaries with health scores and issue counts.
+        """
+        generator = QualityReportGenerator(self._db.db_path)
+        return generator.get_historical_reports(start_date, end_date)
+
+    def get_data_health_score(self, as_of_date: date | None = None) -> float:
+        """
+        Get the current data health score.
+
+        Quick check that returns just the health score without
+        generating a full report.
+
+        Args:
+            as_of_date: Date to check. Defaults to today.
+
+        Returns:
+            Health score from 0-100.
+        """
+        as_of_date = as_of_date or date.today()
+        report = self.get_quality_report(as_of_date)
+        return report.health_score
