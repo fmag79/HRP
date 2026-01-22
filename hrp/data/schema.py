@@ -24,7 +24,8 @@ TABLES = {
             sector VARCHAR,
             market_cap DECIMAL(18,2),
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date)
+            PRIMARY KEY (symbol, date),
+            CHECK (market_cap IS NULL OR market_cap >= 0)
         )
     """,
     "prices": """
@@ -39,7 +40,10 @@ TABLES = {
             volume BIGINT,
             source VARCHAR NOT NULL DEFAULT 'unknown',
             ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date)
+            PRIMARY KEY (symbol, date),
+            CHECK (close > 0),
+            CHECK (volume IS NULL OR volume >= 0),
+            CHECK (high IS NULL OR low IS NULL OR high >= low)
         )
     """,
     "fundamentals": """
@@ -73,7 +77,8 @@ TABLES = {
             factor DECIMAL(12,6),
             source VARCHAR,
             ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date, action_type)
+            PRIMARY KEY (symbol, date, action_type),
+            CHECK (factor IS NULL OR factor > 0)
         )
     """,
     "data_sources": """
@@ -82,7 +87,8 @@ TABLES = {
             source_type VARCHAR NOT NULL,
             api_name VARCHAR,
             last_fetch TIMESTAMP,
-            status VARCHAR NOT NULL DEFAULT 'active'
+            status VARCHAR NOT NULL DEFAULT 'active',
+            CHECK (status IN ('active', 'inactive', 'deprecated'))
         )
     """,
     "ingestion_log": """
@@ -94,7 +100,10 @@ TABLES = {
             records_fetched INTEGER NOT NULL DEFAULT 0,
             records_inserted INTEGER NOT NULL DEFAULT 0,
             status VARCHAR NOT NULL DEFAULT 'running',
-            error_message VARCHAR
+            error_message VARCHAR,
+            CHECK (records_fetched >= 0),
+            CHECK (records_inserted >= 0),
+            CHECK (status IN ('running', 'completed', 'failed'))
         )
     """,
     "hypotheses": """
@@ -109,7 +118,9 @@ TABLES = {
             created_by VARCHAR NOT NULL DEFAULT 'user',
             updated_at TIMESTAMP,
             outcome TEXT,
-            confidence_score DECIMAL(3,2)
+            confidence_score DECIMAL(3,2),
+            CHECK (confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1)),
+            CHECK (status IN ('draft', 'active', 'validated', 'falsified', 'archived'))
         )
     """,
     "hypothesis_experiments": """
