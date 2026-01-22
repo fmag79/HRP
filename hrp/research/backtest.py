@@ -21,7 +21,7 @@ def get_price_data(
     symbols: list[str],
     start: date,
     end: date,
-    adjust_splits: bool = False,
+    adjust_splits: bool = True,
 ) -> pd.DataFrame:
     """
     Load price data from database.
@@ -30,7 +30,7 @@ def get_price_data(
         symbols: List of ticker symbols
         start: Start date (inclusive)
         end: End date (inclusive)
-        adjust_splits: If True, apply split adjustments to close prices
+        adjust_splits: If True, apply split adjustments to close prices (default: True)
 
     Returns:
         DataFrame with MultiIndex columns (symbol, field)
