@@ -439,6 +439,88 @@ This roadmap addresses the identified gaps and flaws in the specification while 
 
 ---
 
+## QSAT Framework Evaluation
+
+> Reference: Quant Scientist Algorithmic Trading Framework v2.0
+> Added: 2025-01-22 for later evaluation
+
+The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP could adopt:
+
+### Gap Analysis
+
+| QSAT Stage | HRP Status | Priority |
+|------------|-----------|----------|
+| 1. Hypothesis Formation | ✅ Have registry | Low |
+| 2. Preliminary Analysis | ⚠️ Missing filters | Medium |
+| 3. Build Backtest | ❌ Missing IC decay, parameter stability | **High** |
+| 4. Assess Risk & Reward | ❌ Missing CVaR, IC, PyFolio | **High** |
+| 5. Paper Trade | ❌ Not started | Medium |
+| 6. Live Trade | ❌ Future | Low |
+
+### Capabilities to Evaluate
+
+#### Backtesting Rigor (Stage 3) — **High Priority**
+- [ ] **Parameter Stability Testing** — Ensure strategy isn't overfit to specific parameters
+  - Vary parameters ±10-20% and measure performance degradation
+  - Reject strategies sensitive to small parameter changes
+- [ ] **IC Decay Analysis** — Measure how signal strength degrades over time
+  - Information Coefficient at various forward horizons (1d, 5d, 20d)
+  - Reject signals that decay too quickly
+- [ ] **Entry/Exit Optimization** — Systematic optimization with guardrails
+  - Grid search with cross-validation
+  - Out-of-sample validation requirement
+
+#### Risk Assessment (Stage 4) — **High Priority**
+- [ ] **CVaR (Conditional Value at Risk)** — Tail risk metric
+  - Expected loss in worst X% of scenarios
+  - More informative than VaR for fat-tailed returns
+- [ ] **Information Coefficient (IC)** — Signal quality metric
+  - Correlation between predictions and subsequent returns
+  - Track IC over time for signal degradation
+- [ ] **PyFolio Integration** — Professional tearsheets (already in V3 roadmap)
+  - Drawdown analysis, rolling returns, exposure analysis
+  - Benchmark comparison visualizations
+
+#### Signal Analysis (Stage 2-3) — **Medium Priority**
+- [ ] **Alphalens Integration** — Evaluate signals BEFORE backtesting (already in Later)
+  - Factor returns by quantile
+  - Turnover analysis
+  - IC by sector/time period
+- [ ] **Filter Framework** — Pre-backtest signal filters
+  - Liquidity filters (min volume, min market cap)
+  - Sector exposure limits
+  - Correlation filters (avoid redundant signals)
+
+#### Execution Path (Stage 5-6) — **Medium Priority**
+- [ ] **IBKR Paper Trading** — Validate strategies in real market conditions
+  - Compare paper results to backtest expectations
+  - Measure slippage, fill rates, execution quality
+- [ ] **Backtest-to-Live Comparison** — Systematic tracking
+  - Dashboard showing live vs expected performance
+  - Alert on significant divergence
+
+### Tool Stack Comparison
+
+| Category | QSAT Uses | HRP Uses/Planned |
+|----------|-----------|------------------|
+| Data | OpenBB | Yahoo Finance (OpenBB in V2) |
+| Backtesting | Zipline Reloaded | VectorBT |
+| Performance | PyFolio | Custom metrics (PyFolio in V3) |
+| Signal Analysis | Alphalens | None (Alphalens in Later) |
+| Portfolio Opt | Riskfolio-Lib | None (Riskfolio in Later) |
+| Execution | IBKR API | None (IBKR in Later) |
+| Stats | scipy, statsmodels | scipy (statsmodels partial) |
+
+### Recommended Priority Order
+
+1. **V3 Addition:** Parameter stability testing, IC decay analysis
+2. **V3 Addition:** CVaR metric in risk assessment
+3. **V2 Acceleration:** OpenBB integration (move from "nice-to-have" to required)
+4. **V3 Acceleration:** PyFolio + Alphalens (bundle together)
+5. **V4/V5:** IBKR paper trading integration
+
+---
+
 ## Version Summary
 
 | Version | Focus | Critical Fixes | Timeline | Status |
