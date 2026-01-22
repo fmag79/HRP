@@ -5,8 +5,9 @@ The registry tracks feature computation logic, versions, and metadata
 in the feature_definitions table.
 """
 
+import inspect
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from loguru import logger
 
@@ -34,6 +35,44 @@ class FeatureRegistry:
         """
         self.db = get_db(db_path)
         logger.debug("Feature registry initialized")
+
+    def register_feature(
+        self,
+        feature_name: str,
+        computation_fn: Callable,
+        version: str,
+        description: str | None = None,
+        is_active: bool = True,
+    ) -> None:
+        """
+        Register a new feature with a callable computation function.
+
+        Args:
+            feature_name: Unique identifier for the feature
+            computation_fn: Callable function to compute the feature
+            version: Version string (e.g., 'v1', 'v2')
+            description: Optional human-readable description
+            is_active: Whether this version is active (default: True)
+
+        Raises:
+            Exception: If feature+version already exists
+        """
+        # Serialize the function to string
+        try:
+            # Try to get source code for regular functions
+            computation_code = inspect.getsource(computation_fn).strip()
+        except (OSError, TypeError):
+            # For lambdas and built-in functions, use repr
+            computation_code = repr(computation_fn)
+
+        # Use the existing register method
+        self.register(
+            feature_name=feature_name,
+            version=version,
+            computation_code=computation_code,
+            description=description,
+            is_active=is_active,
+        )
 
     def register(
         self,
