@@ -7,13 +7,14 @@ and logging to the ingestion_log table.
 
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Any
 
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.data.ingestion.prices import TEST_SYMBOLS, ingest_prices
 
 
 class JobStatus(Enum):
@@ -300,3 +301,69 @@ class IngestionJob(ABC):
     def __repr__(self) -> str:
         """String representation of the job."""
         return f"<{self.__class__.__name__} id={self.job_id} status={self.status.value}>"
+
+
+class PriceIngestionJob(IngestionJob):
+    """
+    Scheduled job for daily price data ingestion.
+
+    Wraps the ingest_prices() function with retry logic and logging.
+    """
+
+    def __init__(
+        self,
+        symbols: list[str] | None = None,
+        start: date | None = None,
+        end: date | None = None,
+        source: str = "yfinance",
+        job_id: str = "price_ingestion",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        dependencies: list[str] | None = None,
+    ):
+        """
+        Initialize price ingestion job.
+
+        Args:
+            symbols: List of stock tickers to ingest (default: TEST_SYMBOLS)
+            start: Start date (default: yesterday)
+            end: End date (default: today)
+            source: Data source to use (default: 'yfinance')
+            job_id: Unique identifier for this job
+            max_retries: Maximum number of retry attempts
+            retry_backoff: Exponential backoff multiplier (seconds)
+            dependencies: List of job IDs that must complete before this job runs
+        """
+        super().__init__(job_id, max_retries, retry_backoff, dependencies)
+        self.symbols = symbols or TEST_SYMBOLS
+        self.start = start or (date.today() - timedelta(days=1))
+        self.end = end or date.today()
+        self.source = source
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute price data ingestion.
+
+        Returns:
+            Dictionary with job execution stats
+        """
+        logger.info(
+            f"Ingesting prices for {len(self.symbols)} symbols from {self.start} to {self.end}"
+        )
+
+        # Call the underlying ingest_prices function
+        result = ingest_prices(
+            symbols=self.symbols,
+            start=self.start,
+            end=self.end,
+            source=self.source,
+        )
+
+        # Convert to standardized format expected by base class logging
+        return {
+            "records_fetched": result["rows_fetched"],
+            "records_inserted": result["rows_inserted"],
+            "symbols_success": result["symbols_success"],
+            "symbols_failed": result["symbols_failed"],
+            "failed_symbols": result.get("failed_symbols", []),
+        }
