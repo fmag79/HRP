@@ -8,7 +8,7 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator, List, Set, Union
+from typing import Any, Generator, List, Optional, Set, Tuple, Union
 
 import duckdb
 from loguru import logger
@@ -16,6 +16,38 @@ from loguru import logger
 # Default data directory
 DEFAULT_DATA_DIR = Path.home() / "hrp-data"
 DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "hrp.duckdb"
+
+
+class MaterializedRelation:
+    """
+    A relation-like object that holds materialized query results.
+
+    Used to return query results that don't depend on an active connection.
+    Provides the same API as DuckDBPyRelation for backward compatibility.
+    """
+
+    def __init__(self, rows: List[Tuple[Any, ...]]):
+        """Initialize with materialized rows."""
+        self._rows = rows
+        self._index = 0
+
+    def fetchall(self) -> List[Tuple[Any, ...]]:
+        """Fetch all rows."""
+        return self._rows
+
+    def fetchone(self) -> Optional[Tuple[Any, ...]]:
+        """Fetch one row."""
+        if self._index < len(self._rows):
+            row = self._rows[self._index]
+            self._index += 1
+            return row
+        return None
+
+    def fetchmany(self, size: int = 1) -> List[Tuple[Any, ...]]:
+        """Fetch multiple rows."""
+        result = self._rows[self._index : self._index + size]
+        self._index += len(result)
+        return result
 
 
 class ConnectionPool:
@@ -179,7 +211,7 @@ class DatabaseManager:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls, db_path: Union[Path, str, None] = None):
+    def __new__(cls, db_path: Union[Path, str, None] = None, max_connections: int = 5):
         """Singleton pattern for database manager."""
         if cls._instance is None:
             with cls._lock:
@@ -226,24 +258,50 @@ class DatabaseManager:
                 logger.error(f"Database error: {e}")
                 raise
 
-    def execute(self, query: str, params: Union[tuple, None] = None) -> duckdb.DuckDBPyRelation:
-        """Execute a query and return the relation."""
+    def execute(self, query: str, params: Union[tuple, None] = None) -> MaterializedRelation:
+        """
+        Execute a query and return a relation-like object with materialized results.
+
+        Returns a MaterializedRelation that provides fetchall() and fetchone() methods
+        but doesn't depend on an active database connection.
+
+        For better performance with large result sets, use fetchdf() instead.
+        """
         with self._pool.connection() as conn:
             if params:
-                return conn.execute(query, params)
-            return conn.execute(query)
+                result = conn.execute(query, params)
+            else:
+                result = conn.execute(query)
+            # Materialize the result before releasing connection
+            rows = result.fetchall()
+            return MaterializedRelation(rows)
 
     def fetchall(self, query: str, params: Union[tuple, None] = None) -> List[tuple]:
         """Execute a query and fetch all results."""
-        return self.execute(query, params).fetchall()
+        with self._pool.connection() as conn:
+            if params:
+                result = conn.execute(query, params).fetchall()
+            else:
+                result = conn.execute(query).fetchall()
+            return result
 
     def fetchone(self, query: str, params: Union[tuple, None] = None) -> Union[tuple, None]:
         """Execute a query and fetch one result."""
-        return self.execute(query, params).fetchone()
+        with self._pool.connection() as conn:
+            if params:
+                result = conn.execute(query, params).fetchone()
+            else:
+                result = conn.execute(query).fetchone()
+            return result
 
     def fetchdf(self, query: str, params: Union[tuple, None] = None) -> Any:
         """Execute a query and return a pandas DataFrame."""
-        return self.execute(query, params).df()
+        with self._pool.connection() as conn:
+            if params:
+                result = conn.execute(query, params).df()
+            else:
+                result = conn.execute(query).df()
+            return result
 
     def close(self) -> None:
         """Close all connections in the pool."""

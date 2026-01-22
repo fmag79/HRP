@@ -5,6 +5,7 @@ Run with: python -m hrp.data.schema --init
 """
 
 import argparse
+from typing import Dict, Union
 
 from loguru import logger
 
@@ -144,7 +145,7 @@ INDEXES = [
 ]
 
 
-def create_tables(db_path: str | None = None) -> None:
+def create_tables(db_path: Union[str, None] = None) -> None:
     """Create all tables in the database."""
     db = get_db(db_path)
 
@@ -160,7 +161,7 @@ def create_tables(db_path: str | None = None) -> None:
     logger.info(f"Schema initialized with {len(TABLES)} tables and {len(INDEXES)} indexes")
 
 
-def drop_all_tables(db_path: str | None = None) -> None:
+def drop_all_tables(db_path: Union[str, None] = None) -> None:
     """Drop all tables (use with caution!)."""
     db = get_db(db_path)
 
@@ -172,7 +173,7 @@ def drop_all_tables(db_path: str | None = None) -> None:
     logger.warning("All tables dropped")
 
 
-def get_table_counts(db_path: str | None = None) -> dict[str, int]:
+def get_table_counts(db_path: Union[str, None] = None) -> Dict[str, int]:
     """Get row counts for all tables."""
     db = get_db(db_path)
     counts = {}
@@ -188,7 +189,7 @@ def get_table_counts(db_path: str | None = None) -> dict[str, int]:
     return counts
 
 
-def verify_schema(db_path: str | None = None) -> bool:
+def verify_schema(db_path: Union[str, None] = None) -> bool:
     """Verify that all tables exist."""
     db = get_db(db_path)
 
