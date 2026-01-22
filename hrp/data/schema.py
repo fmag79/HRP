@@ -159,6 +159,7 @@ TABLES = {
 
 # Indexes for performance
 INDEXES = [
+    # Existing indexes
     "CREATE INDEX IF NOT EXISTS idx_prices_symbol_date ON prices(symbol, date)",
     "CREATE INDEX IF NOT EXISTS idx_features_symbol_date ON features(symbol, date, feature_name)",
     "CREATE INDEX IF NOT EXISTS idx_universe_date ON universe(date)",
@@ -166,6 +167,16 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_lineage_timestamp ON lineage(timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status)",
     "CREATE INDEX IF NOT EXISTS idx_feature_definitions_name_version ON feature_definitions(feature_name, version)",
+    # New composite indexes for query optimization
+    "CREATE INDEX IF NOT EXISTS idx_fundamentals_symbol_date ON fundamentals(symbol, report_date)",
+    "CREATE INDEX IF NOT EXISTS idx_corporate_actions_symbol_date ON corporate_actions(symbol, date)",
+    "CREATE INDEX IF NOT EXISTS idx_universe_symbol_date ON universe(symbol, date)",
+    "CREATE INDEX IF NOT EXISTS idx_universe_in_universe ON universe(in_universe, date)",
+    "CREATE INDEX IF NOT EXISTS idx_ingestion_log_source ON ingestion_log(source_id, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_ingestion_log_status ON ingestion_log(status, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_hypothesis_experiments_exp ON hypothesis_experiments(experiment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_experiment ON lineage(experiment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_event_type ON lineage(event_type, timestamp)",
 ]
 
 
