@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "001-database-integrity-constraints-indexes",
+  "state": "building",
+  "subtasks": {
+    "completed": 6,
+    "total": 13,
+    "in_progress": 1,
+    "failed": 0
+  },
+  "phase": {
+    "current": "Validate Against Sample Data",
+    "id": null,
+    "total": 2
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 8,
+    "started_at": "2026-01-21T19:05:33.835679"
+  },
+  "last_update": "2026-01-21T19:31:01.379499"
+}

@@ -1,0 +1,39 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/**)",
+      "Write(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/**)",
+      "Edit(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/**)",
+      "Glob(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/**)",
+      "Grep(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/**)",
+      "Read(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/.auto-claude/specs/001-database-integrity-constraints-indexes/**)",
+      "Write(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/.auto-claude/specs/001-database-integrity-constraints-indexes/**)",
+      "Edit(/Users/fer/Documents/GitHub/HRP/.auto-claude/worktrees/tasks/001-database-integrity-constraints-indexes/.auto-claude/specs/001-database-integrity-constraints-indexes/**)",
+      "Read(/Users/fer/Documents/GitHub/HRP/.auto-claude/**)",
+      "Write(/Users/fer/Documents/GitHub/HRP/.auto-claude/**)",
+      "Edit(/Users/fer/Documents/GitHub/HRP/.auto-claude/**)",
+      "Glob(/Users/fer/Documents/GitHub/HRP/.auto-claude/**)",
+      "Grep(/Users/fer/Documents/GitHub/HRP/.auto-claude/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__get-library-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}

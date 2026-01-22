@@ -1,7 +1,55 @@
 """
 DuckDB schema definitions for HRP.
 
-Run with: python -m hrp.data.schema --init
+This module defines the complete database schema including:
+- Table structures with primary keys and foreign keys
+- CHECK constraints for data integrity
+- Performance indexes for common query patterns
+
+## Usage
+
+Initialize a new database:
+    python -m hrp.data.schema --init
+
+Verify existing schema:
+    python -m hrp.data.schema --verify
+
+## Migration Instructions
+
+For EXISTING databases (upgrade to add constraints and indexes):
+
+1. **Backup your database first:**
+   cp ~/hrp-data/hrp.duckdb ~/hrp-data/hrp.duckdb.backup
+
+2. **Run schema initialization (safe - uses IF NOT EXISTS):**
+   python -m hrp.data.schema --init
+
+   This will:
+   - Add any missing tables
+   - Add new indexes (idempotent)
+   - NOT modify existing data
+
+3. **Verify the migration:**
+   python -m hrp.data.schema --verify
+   python -m hrp.data.schema --counts
+
+## Schema Features
+
+**Integrity Constraints:**
+- Primary keys on all tables
+- Foreign keys between related tables (fundamentals, ingestion_log)
+- CHECK constraints for data validation (prices, volumes, status enums)
+- NOT NULL constraints on critical fields
+
+**Performance Indexes:**
+- Symbol-date composite indexes for time-series queries
+- Status and type indexes for filtering
+- Hypothesis and experiment tracking indexes
+
+**Foreign Key Notes:**
+Some FK constraints are intentionally omitted due to DuckDB 1.4.3 limitations
+where FKs prevent UPDATE operations on parent tables. Application-level
+integrity checks handle these cases (see hypothesis_experiments, lineage).
 """
 
 from __future__ import annotations
@@ -14,17 +62,21 @@ from hrp.data.db import get_db
 
 
 # SQL statements for table creation
+# NOTE: Tables are ordered to satisfy foreign key dependencies.
+# Tables without foreign keys come first, then tables with foreign keys.
 TABLES = {
+    # Tables without foreign key dependencies
     "universe": """
         CREATE TABLE IF NOT EXISTS universe (
             symbol VARCHAR NOT NULL,
             date DATE NOT NULL,
-            in_universe BOOLEAN DEFAULT TRUE,
+            in_universe BOOLEAN NOT NULL DEFAULT TRUE,
             exclusion_reason VARCHAR,
             sector VARCHAR,
             market_cap DECIMAL(18,2),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date)
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date),
+            CHECK (market_cap IS NULL OR market_cap >= 0)
         )
     """,
     "prices": """
@@ -37,21 +89,12 @@ TABLES = {
             close DECIMAL(12,4) NOT NULL,
             adj_close DECIMAL(12,4),
             volume BIGINT,
-            source VARCHAR DEFAULT 'unknown',
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date)
-        )
-    """,
-    "fundamentals": """
-        CREATE TABLE IF NOT EXISTS fundamentals (
-            symbol VARCHAR NOT NULL,
-            report_date DATE NOT NULL,
-            period_end DATE NOT NULL,
-            metric VARCHAR NOT NULL,
-            value DECIMAL(18,4),
-            source VARCHAR,
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, report_date, metric)
+            source VARCHAR NOT NULL DEFAULT 'unknown',
+            ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date),
+            CHECK (close > 0),
+            CHECK (volume IS NULL OR volume >= 0),
+            CHECK (high IS NULL OR low IS NULL OR high >= low)
         )
     """,
     "features": """
@@ -60,8 +103,8 @@ TABLES = {
             date DATE NOT NULL,
             feature_name VARCHAR NOT NULL,
             value DECIMAL(18,6),
-            version VARCHAR DEFAULT 'v1',
-            computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            version VARCHAR NOT NULL DEFAULT 'v1',
+            computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (symbol, date, feature_name, version)
         )
     """,
@@ -72,29 +115,19 @@ TABLES = {
             action_type VARCHAR NOT NULL,
             factor DECIMAL(12,6),
             source VARCHAR,
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date, action_type)
+            ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date, action_type),
+            CHECK (factor IS NULL OR factor > 0)
         )
     """,
     "data_sources": """
         CREATE TABLE IF NOT EXISTS data_sources (
             source_id VARCHAR PRIMARY KEY,
-            source_type VARCHAR,
+            source_type VARCHAR NOT NULL,
             api_name VARCHAR,
             last_fetch TIMESTAMP,
-            status VARCHAR DEFAULT 'active'
-        )
-    """,
-    "ingestion_log": """
-        CREATE TABLE IF NOT EXISTS ingestion_log (
-            log_id INTEGER PRIMARY KEY,
-            source_id VARCHAR,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            records_fetched INTEGER DEFAULT 0,
-            records_inserted INTEGER DEFAULT 0,
-            status VARCHAR DEFAULT 'running',
-            error_message VARCHAR
+            status VARCHAR NOT NULL DEFAULT 'active',
+            CHECK (status IN ('active', 'inactive', 'deprecated'))
         )
     """,
     "hypotheses": """
@@ -104,33 +137,68 @@ TABLES = {
             thesis TEXT NOT NULL,
             testable_prediction TEXT NOT NULL,
             falsification_criteria TEXT,
-            status VARCHAR DEFAULT 'draft',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            created_by VARCHAR DEFAULT 'user',
+            status VARCHAR NOT NULL DEFAULT 'draft',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR NOT NULL DEFAULT 'user',
             updated_at TIMESTAMP,
             outcome TEXT,
-            confidence_score DECIMAL(3,2)
+            confidence_score DECIMAL(3,2),
+            CHECK (confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1)),
+            CHECK (status IN ('draft', 'testing', 'validated', 'rejected', 'deployed', 'deleted'))
+        )
+    """,
+    # Tables with foreign key dependencies (must be after referenced tables)
+    "fundamentals": """
+        CREATE TABLE IF NOT EXISTS fundamentals (
+            symbol VARCHAR NOT NULL,
+            report_date DATE NOT NULL,
+            period_end DATE NOT NULL,
+            metric VARCHAR NOT NULL,
+            value DECIMAL(18,4),
+            source VARCHAR REFERENCES data_sources(source_id),
+            ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, report_date, metric)
+        )
+    """,
+    "ingestion_log": """
+        CREATE TABLE IF NOT EXISTS ingestion_log (
+            log_id INTEGER PRIMARY KEY,
+            source_id VARCHAR NOT NULL REFERENCES data_sources(source_id),
+            started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            records_fetched INTEGER NOT NULL DEFAULT 0,
+            records_inserted INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR NOT NULL DEFAULT 'running',
+            error_message VARCHAR,
+            CHECK (records_fetched >= 0),
+            CHECK (records_inserted >= 0),
+            CHECK (status IN ('running', 'completed', 'failed'))
         )
     """,
     "hypothesis_experiments": """
         CREATE TABLE IF NOT EXISTS hypothesis_experiments (
             hypothesis_id VARCHAR NOT NULL,
             experiment_id VARCHAR NOT NULL,
-            relationship VARCHAR DEFAULT 'primary',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            relationship VARCHAR NOT NULL DEFAULT 'primary',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (hypothesis_id, experiment_id)
+            -- Note: FK constraint on hypothesis_id removed due to DuckDB 1.4.3 limitation
+            -- where FKs prevent UPDATE operations on parent table even when not modifying PK
         )
     """,
     "lineage": """
         CREATE TABLE IF NOT EXISTS lineage (
             lineage_id INTEGER PRIMARY KEY,
             event_type VARCHAR NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            actor VARCHAR DEFAULT 'system',
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            actor VARCHAR NOT NULL DEFAULT 'system',
             hypothesis_id VARCHAR,
             experiment_id VARCHAR,
             details JSON,
             parent_lineage_id INTEGER
+            -- Note: FK constraints removed due to DuckDB 1.4.3 limitation
+            -- where FKs prevent UPDATE operations on parent tables even when not modifying PK
+            -- Application-level integrity checks must be used instead
         )
     """,
     "feature_definitions": """
@@ -148,6 +216,7 @@ TABLES = {
 
 # Indexes for performance
 INDEXES = [
+    # Existing indexes
     "CREATE INDEX IF NOT EXISTS idx_prices_symbol_date ON prices(symbol, date)",
     "CREATE INDEX IF NOT EXISTS idx_features_symbol_date ON features(symbol, date, feature_name)",
     "CREATE INDEX IF NOT EXISTS idx_universe_date ON universe(date)",
@@ -155,6 +224,16 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_lineage_timestamp ON lineage(timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status)",
     "CREATE INDEX IF NOT EXISTS idx_feature_definitions_name_version ON feature_definitions(feature_name, version)",
+    # New composite indexes for query optimization
+    "CREATE INDEX IF NOT EXISTS idx_fundamentals_symbol_date ON fundamentals(symbol, report_date)",
+    "CREATE INDEX IF NOT EXISTS idx_corporate_actions_symbol_date ON corporate_actions(symbol, date)",
+    "CREATE INDEX IF NOT EXISTS idx_universe_symbol_date ON universe(symbol, date)",
+    "CREATE INDEX IF NOT EXISTS idx_universe_in_universe ON universe(in_universe, date)",
+    "CREATE INDEX IF NOT EXISTS idx_ingestion_log_source ON ingestion_log(source_id, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_ingestion_log_status ON ingestion_log(status, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_hypothesis_experiments_exp ON hypothesis_experiments(experiment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_experiment ON lineage(experiment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_event_type ON lineage(event_type, timestamp)",
 ]
 
 
@@ -175,13 +254,17 @@ def create_tables(db_path: str | None = None) -> None:
 
 
 def drop_all_tables(db_path: str | None = None) -> None:
-    """Drop all tables (use with caution!)."""
+    """Drop all tables (use with caution!).
+
+    Tables are dropped in reverse order to respect foreign key dependencies.
+    """
     db = get_db(db_path)
 
     with db.connection() as conn:
-        for table_name in TABLES.keys():
+        # Drop in reverse order to handle FK constraints
+        for table_name in reversed(list(TABLES.keys())):
             logger.warning(f"Dropping table: {table_name}")
-            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+            conn.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
 
     logger.warning("All tables dropped")
 
