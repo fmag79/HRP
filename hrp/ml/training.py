@@ -265,6 +265,7 @@ def select_features(
 def train_model(
     config: MLConfig,
     symbols: list[str],
+    hypothesis_id: str | None = None,
     log_to_mlflow: bool = False,
 ) -> TrainingResult:
     """
@@ -273,15 +274,22 @@ def train_model(
     Args:
         config: MLConfig specifying model type, features, and date ranges
         symbols: List of stock symbols to train on
+        hypothesis_id: Optional hypothesis ID (enables test set guard to prevent overfitting)
         log_to_mlflow: Whether to log experiment to MLflow (default False)
 
     Returns:
         TrainingResult with trained model, config, metrics, and feature importance
+        
+    Raises:
+        OverfittingError: If hypothesis_id provided and test set evaluation limit exceeded
     """
     logger.info(
         f"Training {config.model_type} model on {len(symbols)} symbols "
         f"with {len(config.features)} features"
     )
+    
+    if hypothesis_id:
+        logger.info(f"Test set guard enabled for hypothesis: {hypothesis_id}")
 
     # Load data
     data = load_training_data(config, symbols)
@@ -307,12 +315,11 @@ def train_model(
     logger.debug(f"Fitting model on {len(X_train)} training samples")
     model.fit(X_train, y_train)
 
-    # Generate predictions
+    # Generate predictions for train and validation (always allowed)
     y_train_pred = model.predict(X_train)
     y_val_pred = model.predict(X_val)
-    y_test_pred = model.predict(X_test)
 
-    # Calculate metrics
+    # Calculate train and validation metrics
     metrics = {
         "train_mse": float(mean_squared_error(y_train, y_train_pred)),
         "train_mae": float(mean_absolute_error(y_train, y_train_pred)),
@@ -320,14 +327,43 @@ def train_model(
         "val_mse": float(mean_squared_error(y_val, y_val_pred)),
         "val_mae": float(mean_absolute_error(y_val, y_val_pred)),
         "val_r2": float(r2_score(y_val, y_val_pred)),
-        "test_mse": float(mean_squared_error(y_test, y_test_pred)),
-        "test_mae": float(mean_absolute_error(y_test, y_test_pred)),
-        "test_r2": float(r2_score(y_test, y_test_pred)),
         "n_train_samples": len(X_train),
         "n_val_samples": len(X_val),
         "n_test_samples": len(X_test),
         "n_features": len(selected_features),
     }
+
+    # Test set evaluation (guarded if hypothesis_id provided)
+    if hypothesis_id:
+        from hrp.risk.overfitting import TestSetGuard
+        
+        guard = TestSetGuard(hypothesis_id)
+        
+        with guard.evaluate(metadata={
+            "model_type": config.model_type,
+            "n_features": len(selected_features),
+            "n_symbols": len(symbols),
+        }):
+            y_test_pred = model.predict(X_test)
+            metrics["test_mse"] = float(mean_squared_error(y_test, y_test_pred))
+            metrics["test_mae"] = float(mean_absolute_error(y_test, y_test_pred))
+            metrics["test_r2"] = float(r2_score(y_test, y_test_pred))
+        
+        logger.info(
+            f"Test set evaluation {guard.evaluation_count}/{guard.max_evaluations} "
+            f"for {hypothesis_id}"
+        )
+    else:
+        # Unguarded evaluation (for ad-hoc experiments without hypothesis)
+        y_test_pred = model.predict(X_test)
+        metrics["test_mse"] = float(mean_squared_error(y_test, y_test_pred))
+        metrics["test_mae"] = float(mean_absolute_error(y_test, y_test_pred))
+        metrics["test_r2"] = float(r2_score(y_test, y_test_pred))
+        
+        logger.warning(
+            "Test set evaluated without guard (no hypothesis_id provided). "
+            "Consider using hypothesis_id to prevent overfitting."
+        )
 
     logger.info(
         f"Model trained: train_mse={metrics['train_mse']:.6f}, "

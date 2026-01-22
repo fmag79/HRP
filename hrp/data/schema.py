@@ -219,6 +219,16 @@ TABLES = {
             PRIMARY KEY (feature_name, version)
         )
     """,
+    "test_set_evaluations": """
+        CREATE TABLE IF NOT EXISTS test_set_evaluations (
+            id INTEGER PRIMARY KEY DEFAULT nextval('ingestion_log_seq'),
+            hypothesis_id VARCHAR NOT NULL,
+            evaluated_at TIMESTAMP NOT NULL,
+            override BOOLEAN DEFAULT FALSE,
+            override_reason TEXT,
+            metadata TEXT
+        )
+    """,
 }
 
 # Indexes for performance
@@ -241,6 +251,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_hypothesis_experiments_exp ON hypothesis_experiments(experiment_id)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_experiment ON lineage(experiment_id)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_event_type ON lineage(event_type, timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_test_evaluations_hypothesis ON test_set_evaluations(hypothesis_id)",
 ]
 
 
