@@ -179,6 +179,45 @@ class PlatformAPI:
         logger.debug(f"Universe contains {len(symbols)} symbols as of {as_of_date}")
         return symbols
 
+    def get_corporate_actions(
+        self,
+        symbols: List[str],
+        start: date,
+        end: date,
+    ) -> pd.DataFrame:
+        """
+        Get corporate actions for symbols over a date range.
+
+        Args:
+            symbols: List of ticker symbols
+            start: Start date (inclusive)
+            end: End date (inclusive)
+
+        Returns:
+            DataFrame with columns: symbol, date, action_type, factor, source
+        """
+        if not symbols:
+            raise ValueError("symbols list cannot be empty")
+
+        symbols_str = ",".join(f"'{s}'" for s in symbols)
+        query = f"""
+            SELECT symbol, date, action_type, factor, source
+            FROM corporate_actions
+            WHERE symbol IN ({symbols_str})
+              AND date >= ?
+              AND date <= ?
+            ORDER BY date, symbol, action_type
+        """
+
+        df = self._db.fetchdf(query, (start, end))
+
+        if df.empty:
+            logger.warning(f"No corporate actions found for {symbols} from {start} to {end}")
+        else:
+            logger.debug(f"Retrieved {len(df)} corporate action records for {len(symbols)} symbols")
+
+        return df
+
     # =========================================================================
     # Hypothesis Operations
     # =========================================================================
