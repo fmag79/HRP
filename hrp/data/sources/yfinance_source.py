@@ -174,9 +174,6 @@ class YFinanceSource(DataSourceBase):
         try:
             ticker = yf.Ticker(symbol)
 
-            # yfinance end date is exclusive, so add 1 day
-            end_exclusive = pd.Timestamp(end) + pd.Timedelta(days=1)
-
             # Get actions (dividends and splits)
             actions = ticker.actions
 
@@ -184,8 +181,17 @@ class YFinanceSource(DataSourceBase):
                 logger.debug(f"No corporate actions for {symbol} from {start} to {end}")
                 return pd.DataFrame()
 
+            # Convert start/end to timezone-aware timestamps if actions index is timezone-aware
+            start_ts = pd.Timestamp(start)
+            end_ts = pd.Timestamp(end) + pd.Timedelta(days=1)  # yfinance end date is exclusive
+
+            if actions.index.tz is not None:
+                # Make timestamps timezone-aware to match the actions index
+                start_ts = start_ts.tz_localize(actions.index.tz)
+                end_ts = end_ts.tz_localize(actions.index.tz)
+
             # Filter by date range
-            actions = actions.loc[start:end_exclusive]
+            actions = actions.loc[start_ts:end_ts]
 
             if actions.empty:
                 logger.debug(f"No corporate actions for {symbol} in date range {start} to {end}")
