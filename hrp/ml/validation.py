@@ -67,3 +67,61 @@ class WalkForwardConfig:
             f"WalkForwardConfig created: {self.model_type}, "
             f"{self.n_folds} folds, {self.window_type} window"
         )
+
+
+@dataclass
+class FoldResult:
+    """
+    Result from a single walk-forward fold.
+
+    Attributes:
+        fold_index: Zero-based index of this fold
+        train_start: Training period start date
+        train_end: Training period end date
+        test_start: Test period start date
+        test_end: Test period end date
+        metrics: Dict of evaluation metrics (mse, mae, r2, ic)
+        model: Trained model object for this fold
+        n_train_samples: Number of training samples
+        n_test_samples: Number of test samples
+    """
+
+    fold_index: int
+    train_start: date
+    train_end: date
+    test_start: date
+    test_end: date
+    metrics: dict[str, float]
+    model: Any
+    n_train_samples: int
+    n_test_samples: int
+
+
+@dataclass
+class WalkForwardResult:
+    """
+    Aggregated result from walk-forward validation.
+
+    Attributes:
+        config: Configuration used for validation
+        fold_results: List of results from each fold
+        aggregate_metrics: Mean and std of metrics across folds
+        stability_score: Coefficient of variation (std/mean) of MSE
+        symbols: List of symbols used in validation
+    """
+
+    config: WalkForwardConfig
+    fold_results: list[FoldResult]
+    aggregate_metrics: dict[str, float]
+    stability_score: float
+    symbols: list[str]
+
+    @property
+    def is_stable(self) -> bool:
+        """Return True if model is stable (stability_score <= 1.0)."""
+        return self.stability_score <= 1.0
+
+    @property
+    def mean_ic(self) -> float:
+        """Return mean information coefficient across folds."""
+        return self.aggregate_metrics.get("mean_ic", float("nan"))
