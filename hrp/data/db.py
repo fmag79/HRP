@@ -188,21 +188,22 @@ class DatabaseManager:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, db_path: Union[Path, str, None] = None):
+    def __init__(self, db_path: Union[Path, str, None] = None, max_connections: int = 5):
         """Initialize the database manager."""
         if self._initialized:
             return
 
         self.db_path = Path(db_path) if db_path else self._get_db_path()
+        self.max_connections = max_connections
         self._initialized = True
 
         # Ensure data directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Initialize connection pool
-        self._pool = ConnectionPool(self.db_path, max_size=5)
+        self._pool = ConnectionPool(self.db_path, max_size=self.max_connections)
 
-        logger.info(f"Database manager initialized: {self.db_path}")
+        logger.info(f"Database manager initialized: {self.db_path} (max_connections={self.max_connections})")
 
     def _get_db_path(self) -> Path:
         """Get database path from environment or default."""
@@ -260,6 +261,6 @@ class DatabaseManager:
 
 
 # Convenience function for quick access
-def get_db(db_path: Union[Path, str, None] = None) -> DatabaseManager:
+def get_db(db_path: Union[Path, str, None] = None, max_connections: int = 5) -> DatabaseManager:
     """Get the database manager instance."""
-    return DatabaseManager(db_path)
+    return DatabaseManager(db_path, max_connections)
