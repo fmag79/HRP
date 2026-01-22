@@ -61,6 +61,13 @@ from loguru import logger
 from hrp.data.db import get_db
 
 
+# Sequences for auto-incrementing IDs
+SEQUENCES = [
+    "CREATE SEQUENCE IF NOT EXISTS ingestion_log_seq START 1",
+    "CREATE SEQUENCE IF NOT EXISTS lineage_seq START 1",
+    "CREATE SEQUENCE IF NOT EXISTS quality_reports_seq START 1",
+]
+
 # SQL statements for table creation
 # NOTE: Tables are ordered to satisfy foreign key dependencies.
 # Tables without foreign keys come first, then tables with foreign keys.
@@ -162,7 +169,7 @@ TABLES = {
     """,
     "ingestion_log": """
         CREATE TABLE IF NOT EXISTS ingestion_log (
-            log_id INTEGER PRIMARY KEY,
+            log_id INTEGER PRIMARY KEY DEFAULT nextval('ingestion_log_seq'),
             source_id VARCHAR NOT NULL REFERENCES data_sources(source_id),
             started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP,
@@ -188,7 +195,7 @@ TABLES = {
     """,
     "lineage": """
         CREATE TABLE IF NOT EXISTS lineage (
-            lineage_id INTEGER PRIMARY KEY,
+            lineage_id INTEGER PRIMARY KEY DEFAULT nextval('lineage_seq'),
             event_type VARCHAR NOT NULL,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             actor VARCHAR NOT NULL DEFAULT 'system',
@@ -242,6 +249,11 @@ def create_tables(db_path: str | None = None) -> None:
     db = get_db(db_path)
 
     with db.connection() as conn:
+        # Create sequences first (needed for auto-increment PKs)
+        for seq_sql in SEQUENCES:
+            logger.debug(f"Creating sequence: {seq_sql}")
+            conn.execute(seq_sql)
+
         for table_name, create_sql in TABLES.items():
             logger.info(f"Creating table: {table_name}")
             conn.execute(create_sql)
@@ -250,7 +262,7 @@ def create_tables(db_path: str | None = None) -> None:
             logger.debug(f"Creating index: {index_sql[:50]}...")
             conn.execute(index_sql)
 
-    logger.info(f"Schema initialized with {len(TABLES)} tables and {len(INDEXES)} indexes")
+    logger.info(f"Schema initialized with {len(SEQUENCES)} sequences, {len(TABLES)} tables and {len(INDEXES)} indexes")
 
 
 def drop_all_tables(db_path: str | None = None) -> None:

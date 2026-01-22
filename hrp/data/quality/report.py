@@ -287,6 +287,9 @@ class QualityReportGenerator:
         Returns:
             List of report summaries (without full JSON).
         """
+        # Ensure table exists before querying
+        self._ensure_quality_tables()
+
         query = """
             SELECT
                 report_id, report_date, generated_at, checks_run, checks_passed,
@@ -324,6 +327,9 @@ class QualityReportGenerator:
         Returns:
             List of {date, health_score, critical_issues} dicts.
         """
+        # Ensure table exists before querying
+        self._ensure_quality_tables()
+
         query = """
             SELECT report_date, health_score, critical_issues
             FROM quality_reports
@@ -345,10 +351,14 @@ class QualityReportGenerator:
     def _ensure_quality_tables(self) -> None:
         """Ensure quality reporting tables exist."""
         with self._db.connection() as conn:
+            # Create sequence for auto-increment PK
+            conn.execute(
+                "CREATE SEQUENCE IF NOT EXISTS quality_reports_seq START 1"
+            )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS quality_reports (
-                    report_id INTEGER PRIMARY KEY,
+                    report_id INTEGER PRIMARY KEY DEFAULT nextval('quality_reports_seq'),
                     report_date DATE NOT NULL,
                     generated_at TIMESTAMP NOT NULL,
                     checks_run INTEGER NOT NULL,

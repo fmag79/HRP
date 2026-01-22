@@ -108,9 +108,9 @@ class IngestionScheduler:
         for job in self.scheduler.get_jobs():
             job_info = {
                 "id": job.id,
-                "name": job.name or job.id,
-                "next_run": job.next_run_time,
-                "trigger": str(job.trigger),
+                "name": getattr(job, "name", None) or job.id,
+                "next_run": getattr(job, "next_run_time", None),
+                "trigger": str(getattr(job, "trigger", "unknown")),
             }
             jobs.append(job_info)
             logger.debug(f"Job: {job_info}")
@@ -131,12 +131,13 @@ class IngestionScheduler:
             logger.warning(f"Job not found: {job_id}")
             return None
 
+        func = getattr(job, "func", None)
         return {
             "id": job.id,
-            "name": job.name or job.id,
-            "next_run": job.next_run_time,
-            "trigger": str(job.trigger),
-            "func": job.func.__name__ if job.func else None,
+            "name": getattr(job, "name", None) or job.id,
+            "next_run": getattr(job, "next_run_time", None),
+            "trigger": str(getattr(job, "trigger", "unknown")),
+            "func": func.__name__ if func else None,
         }
 
     def pause_job(self, job_id: str) -> None:

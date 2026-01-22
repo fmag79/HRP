@@ -188,11 +188,13 @@ def clear_job_history(
         params.append(status)
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
-    query = f"DELETE FROM ingestion_log WHERE {where_clause}"
+    count_query = f"SELECT COUNT(*) FROM ingestion_log WHERE {where_clause}"
+    delete_query = f"DELETE FROM ingestion_log WHERE {where_clause}"
 
     with db.connection() as conn:
-        result = conn.execute(query, params)
-        rows_deleted = result.rowcount if hasattr(result, 'rowcount') else 0
+        # Count rows to delete first (DuckDB rowcount is unreliable)
+        rows_deleted = conn.execute(count_query, params).fetchone()[0]
+        conn.execute(delete_query, params)
 
     logger.info(f"Deleted {rows_deleted} records from ingestion_log")
     return rows_deleted

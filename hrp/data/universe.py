@@ -111,16 +111,19 @@ class UniverseManager:
                 date_added = None
                 date_str = str(row.get("Date added", ""))
                 if date_str and date_str != "nan":
-                    try:
-                        # Try parsing common date formats
-                        for fmt in ["%Y-%m-%d", "%B %d, %Y", "%Y"]:
-                            try:
-                                date_added = datetime.strptime(date_str.split()[0], fmt).date()
-                                break
-                            except ValueError:
-                                continue
-                    except Exception:
-                        pass
+                    parsed = False
+                    for fmt in ["%Y-%m-%d", "%B %d, %Y", "%Y"]:
+                        try:
+                            date_added = datetime.strptime(date_str.split()[0], fmt).date()
+                            parsed = True
+                            break
+                        except (ValueError, IndexError):
+                            continue
+
+                    if not parsed:
+                        logger.warning(
+                            f"Could not parse date for {row.get('Symbol', 'unknown')}: '{date_str}'"
+                        )
 
                 constituent = ConstituentInfo(
                     symbol=str(row["Symbol"]).replace(".", "-"),  # BRK.B -> BRK-B

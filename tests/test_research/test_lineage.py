@@ -58,6 +58,8 @@ def test_db():
 
     # Create required tables
     with db.connection() as conn:
+        # Create sequence for lineage auto-increment PK
+        conn.execute("CREATE SEQUENCE IF NOT EXISTS lineage_seq START 1")
         # Create lineage table
         conn.execute(TABLES["lineage"])
         # Create hypothesis_experiments table (needed for get_hypothesis_chain)

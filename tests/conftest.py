@@ -148,3 +148,61 @@ def sample_hypothesis() -> dict:
         "status": "draft",
         "tags": ["momentum", "factor"],
     }
+
+
+@pytest.fixture
+def test_db_with_sources(test_db: str) -> Generator[str, None, None]:
+    """
+    Test database with data_sources entries for scheduled jobs.
+
+    Required for tests that use ingestion_log table (FK constraint).
+    """
+    from hrp.data.db import get_db
+
+    db = get_db(test_db)
+
+    with db.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO data_sources (source_id, source_type, status)
+            VALUES
+                ('price_ingestion', 'scheduled_job', 'active'),
+                ('feature_computation', 'scheduled_job', 'active'),
+                ('yfinance', 'api', 'active'),
+                ('polygon', 'api', 'active'),
+                ('test', 'test', 'active')
+            """
+        )
+
+    yield test_db
+
+
+@pytest.fixture
+def populated_db_with_sources(
+    test_db_with_sources: str, sample_prices: pd.DataFrame
+) -> Generator[str, None, None]:
+    """Test database with sample price data and data_sources loaded."""
+    from hrp.data.db import get_db
+
+    db = get_db(test_db_with_sources)
+
+    # Insert sample prices
+    for _, row in sample_prices.iterrows():
+        db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'test')
+        """,
+            (
+                row["symbol"],
+                row["date"],
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                row["adj_close"],
+                row["volume"],
+            ),
+        )
+
+    yield test_db_with_sources

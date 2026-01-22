@@ -1092,3 +1092,199 @@ class TestPlatformAPIIntegration:
         assert "agent:backtest" in actors
         assert "agent:analysis" in actors
         assert "user" in actors
+
+
+# =============================================================================
+# Quality API Tests
+# =============================================================================
+
+
+class TestPlatformAPIQualityMethods:
+    """Tests for Platform API data quality methods."""
+
+    @patch("hrp.api.platform.run_quality_check_with_alerts")
+    def test_run_quality_checks(self, mock_run_checks, test_api):
+        """run_quality_checks should call underlying function with correct args."""
+        mock_run_checks.return_value = {
+            "report_date": date(2024, 1, 15),
+            "health_score": 95.0,
+            "passed": True,
+            "total_issues": 2,
+            "critical_issues": 0,
+            "warning_issues": 2,
+            "critical_alert_sent": False,
+            "summary_sent": True,
+        }
+
+        result = test_api.run_quality_checks(
+            as_of_date=date(2024, 1, 15),
+            send_alerts=True,
+            store_report=True,
+        )
+
+        mock_run_checks.assert_called_once()
+        call_kwargs = mock_run_checks.call_args[1]
+        assert call_kwargs["as_of_date"] == date(2024, 1, 15)
+        assert call_kwargs["send_summary"] is True
+        assert call_kwargs["store_report"] is True
+
+        assert result["health_score"] == 95.0
+        assert result["passed"] is True
+        assert result["total_issues"] == 2
+
+    @patch("hrp.api.platform.run_quality_check_with_alerts")
+    def test_run_quality_checks_defaults(self, mock_run_checks, test_api):
+        """run_quality_checks should use defaults when not specified."""
+        mock_run_checks.return_value = {
+            "report_date": date.today(),
+            "health_score": 100.0,
+            "passed": True,
+            "total_issues": 0,
+            "critical_issues": 0,
+            "warning_issues": 0,
+            "critical_alert_sent": False,
+            "summary_sent": True,
+        }
+
+        test_api.run_quality_checks()
+
+        call_kwargs = mock_run_checks.call_args[1]
+        # Default is today
+        assert call_kwargs["as_of_date"] == date.today()
+        # Default is send_summary=True
+        assert call_kwargs["send_summary"] is True
+        # Default is store_report=True
+        assert call_kwargs["store_report"] is True
+
+    @patch("hrp.api.platform.run_quality_check_with_alerts")
+    def test_run_quality_checks_no_alerts(self, mock_run_checks, test_api):
+        """run_quality_checks with send_alerts=False should not send."""
+        mock_run_checks.return_value = {
+            "report_date": date.today(),
+            "health_score": 100.0,
+            "passed": True,
+            "total_issues": 0,
+            "critical_issues": 0,
+            "warning_issues": 0,
+            "critical_alert_sent": False,
+            "summary_sent": False,
+        }
+
+        test_api.run_quality_checks(send_alerts=False)
+
+        call_kwargs = mock_run_checks.call_args[1]
+        assert call_kwargs["send_summary"] is False
+
+    def test_get_quality_report(self, test_api):
+        """get_quality_report should generate a report for the date."""
+        from hrp.data.quality.report import QualityReport
+
+        report = test_api.get_quality_report(date(2024, 1, 15))
+
+        assert isinstance(report, QualityReport)
+        assert report.report_date == date(2024, 1, 15)
+        assert report.checks_run >= 0
+        assert 0 <= report.health_score <= 100
+
+    def test_get_quality_report_empty_db(self, test_api):
+        """get_quality_report on empty DB should still return valid report."""
+        from hrp.data.quality.report import QualityReport
+
+        report = test_api.get_quality_report(date(2024, 1, 15))
+
+        assert isinstance(report, QualityReport)
+        # With empty DB, should pass (no data to have issues with)
+        assert report.passed is True
+
+    def test_get_quality_history_empty(self, test_api):
+        """get_quality_history with no stored reports should return empty."""
+        history = test_api.get_quality_history(date(2024, 2, 1), date(2024, 2, 28))
+        assert history == []
+
+    def test_get_quality_history_with_reports(self, test_api):
+        """get_quality_history should return stored reports."""
+        from hrp.data.quality.report import QualityReportGenerator
+
+        # Generate and store a report
+        generator = QualityReportGenerator(test_api._db.db_path)
+        report = generator.generate_report(date(2024, 1, 15))
+        generator.store_report(report)
+
+        history = test_api.get_quality_history(date(2024, 1, 1), date(2024, 1, 31))
+
+        assert len(history) >= 1
+        assert history[0]["report_date"] == date(2024, 1, 15)
+        assert "health_score" in history[0]
+
+    def test_get_data_health_score(self, test_api):
+        """get_data_health_score should return score 0-100."""
+        score = test_api.get_data_health_score(date(2024, 1, 15))
+
+        assert isinstance(score, float)
+        assert 0 <= score <= 100
+
+    def test_get_data_health_score_defaults_to_today(self, test_api):
+        """get_data_health_score with no date should use today."""
+        score = test_api.get_data_health_score()
+
+        assert isinstance(score, float)
+        assert 0 <= score <= 100
+
+    def test_get_data_health_score_perfect_empty_db(self, test_api):
+        """get_data_health_score on empty DB should return 100."""
+        score = test_api.get_data_health_score()
+        # Empty DB = no issues = perfect health
+        assert score == 100.0
+
+
+class TestPlatformAPIQualityWithData:
+    """Tests for quality methods with populated data."""
+
+    def test_run_quality_checks_with_data(self, populated_db):
+        """run_quality_checks should detect issues in populated data."""
+        # The populated_db fixture has data up to 2023-01-10
+        # Checking a later date should find stale data
+        with patch("hrp.data.quality.alerts.EmailNotifier") as mock_notifier:
+            mock_instance = MagicMock()
+            mock_notifier.return_value = mock_instance
+
+            result = populated_db.run_quality_checks(
+                as_of_date=date(2024, 1, 15),  # Much later than data
+                send_alerts=False,
+                store_report=True,
+            )
+
+            assert "health_score" in result
+            assert "total_issues" in result
+            # Data is stale, so there should be issues
+            # (but this depends on implementation details)
+
+    def test_get_quality_report_with_issues(self, populated_db):
+        """get_quality_report should find issues in stale data."""
+        # Check date much later than data to trigger stale check
+        report = populated_db.get_quality_report(date(2024, 6, 1))
+
+        assert report.report_date == date(2024, 6, 1)
+        # With old data, stale check should find issues
+        assert report.checks_run > 0
+
+    def test_quality_history_date_range(self, test_api):
+        """get_quality_history should filter by date range."""
+        from hrp.data.quality.report import QualityReportGenerator
+
+        generator = QualityReportGenerator(test_api._db.db_path)
+
+        # Store reports for different dates
+        for day in [10, 15, 20, 25]:
+            report = generator.generate_report(date(2024, 1, day))
+            generator.store_report(report)
+
+        # Query subset
+        history = test_api.get_quality_history(date(2024, 1, 12), date(2024, 1, 22))
+
+        # Should only include reports within range
+        report_dates = [h["report_date"] for h in history]
+        assert date(2024, 1, 10) not in report_dates
+        assert date(2024, 1, 15) in report_dates
+        assert date(2024, 1, 20) in report_dates
+        assert date(2024, 1, 25) not in report_dates

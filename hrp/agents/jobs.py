@@ -19,6 +19,10 @@ from hrp.data.ingestion.prices import TEST_SYMBOLS, ingest_prices
 from hrp.notifications.email import EmailNotifier
 
 
+# Transient errors that should be retried (network/IO issues)
+TRANSIENT_ERRORS = (ConnectionError, TimeoutError, OSError)
+
+
 class JobStatus(Enum):
     """Status of a scheduled job."""
 
@@ -112,24 +116,36 @@ class IngestionJob(ABC):
 
             except Exception as e:
                 error_msg = str(e)
+                error_type = type(e).__name__
+                is_transient = isinstance(e, TRANSIENT_ERRORS)
                 self.last_error = error_msg
-                logger.error(f"Job {self.job_id} failed (attempt {attempt + 1}): {e}")
 
-                # Check if we should retry
-                if attempt < self.max_retries:
+                logger.error(
+                    f"Job {self.job_id} failed (attempt {attempt + 1}): {error_type}: {e}",
+                    extra={"error_type": error_type, "transient": is_transient},
+                )
+
+                # Only retry transient errors (network/IO issues)
+                if attempt < self.max_retries and is_transient:
                     self.status = JobStatus.RETRYING
                     backoff_time = self.retry_backoff ** attempt
                     logger.warning(f"Retrying job {self.job_id} in {backoff_time:.1f} seconds...")
                     time.sleep(backoff_time)
                 else:
-                    # Final failure
+                    # Final failure (or non-transient error - fail immediately)
                     self.status = JobStatus.FAILED
                     self._log_failure(error_msg)
                     self._send_failure_notification(error_msg)
-                    logger.error(f"Job {self.job_id} failed after {self.max_retries + 1} attempts")
+                    if is_transient:
+                        logger.error(f"Job {self.job_id} failed after {self.max_retries + 1} attempts")
+                    else:
+                        logger.error(
+                            f"Job {self.job_id} failed with non-transient error (no retry): {error_type}"
+                        )
                     return {
                         "status": "failed",
                         "error": error_msg,
+                        "error_type": error_type,
                         "retry_count": self.retry_count,
                     }
 
@@ -166,7 +182,7 @@ class IngestionJob(ABC):
                     return False
 
                 status, completed_at = result
-                if status != "success":
+                if status != "completed":
                     logger.warning(f"Dependency {dep_job_id} did not complete successfully (status: {status})")
                     return False
 
@@ -179,20 +195,27 @@ class IngestionJob(ABC):
 
     def _log_start(self) -> None:
         """Log job start to ingestion_log table."""
-        db = get_db()
-        with db.connection() as conn:
-            result = conn.execute(
-                """
-                INSERT INTO ingestion_log (source_id, started_at, status)
-                VALUES (?, CURRENT_TIMESTAMP, 'running')
-                RETURNING log_id
-                """,
-                (self.job_id,),
-            ).fetchone()
+        try:
+            db = get_db()
+            with db.connection() as conn:
+                result = conn.execute(
+                    """
+                    INSERT INTO ingestion_log (source_id, started_at, status)
+                    VALUES (?, CURRENT_TIMESTAMP, 'running')
+                    RETURNING log_id
+                    """,
+                    (self.job_id,),
+                ).fetchone()
 
-            if result:
-                self.log_id = result[0]
-                logger.debug(f"Created ingestion log entry {self.log_id} for job {self.job_id}")
+                if result:
+                    self.log_id = result[0]
+                    logger.debug(f"Created ingestion log entry {self.log_id} for job {self.job_id}")
+                else:
+                    logger.error(f"INSERT returned no result for job {self.job_id}")
+                    self.log_id = None
+        except Exception as e:
+            logger.error(f"Failed to create ingestion log for {self.job_id}: {e}")
+            self.log_id = None
 
     def _log_success(self, result: dict[str, Any]) -> None:
         """
@@ -211,7 +234,7 @@ class IngestionJob(ABC):
                 """
                 UPDATE ingestion_log
                 SET completed_at = CURRENT_TIMESTAMP,
-                    status = 'success',
+                    status = 'completed',
                     records_fetched = ?,
                     records_inserted = ?,
                     error_message = NULL
@@ -279,8 +302,12 @@ class IngestionJob(ABC):
                 timestamp=datetime.now().isoformat(),
             )
         except Exception as e:
-            # Don't let notification failures break the job
-            logger.warning(f"Failed to send failure notification for job {self.job_id}: {e}")
+            # Don't let notification failures break the job, but log as error
+            # so operators see it in monitoring
+            logger.error(
+                f"ALERT: Failed to send failure notification for job {self.job_id}: {e}",
+                extra={"notification_failed": True, "job_id": self.job_id},
+            )
 
     def get_last_successful_run(self) -> datetime | None:
         """
@@ -295,7 +322,7 @@ class IngestionJob(ABC):
                 """
                 SELECT completed_at
                 FROM ingestion_log
-                WHERE source_id = ? AND status = 'success'
+                WHERE source_id = ? AND status = 'completed'
                 ORDER BY completed_at DESC
                 LIMIT 1
                 """,
