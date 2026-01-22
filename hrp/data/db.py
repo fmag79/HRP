@@ -194,11 +194,13 @@ class DatabaseManager:
             return
 
         self.db_path = Path(db_path) if db_path else self._get_db_path()
-        self._local = threading.local()
         self._initialized = True
 
         # Ensure data directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Initialize connection pool
+        self._pool = ConnectionPool(self.db_path, max_size=5)
 
         logger.info(f"Database manager initialized: {self.db_path}")
 
@@ -206,13 +208,6 @@ class DatabaseManager:
         """Get database path from environment or default."""
         data_dir = os.getenv("HRP_DATA_DIR", str(DEFAULT_DATA_DIR))
         return Path(data_dir).expanduser() / "hrp.duckdb"
-
-    def _get_connection(self) -> duckdb.DuckDBPyConnection:
-        """Get thread-local connection."""
-        if not hasattr(self._local, "connection") or self._local.connection is None:
-            self._local.connection = duckdb.connect(str(self.db_path))
-            logger.debug(f"Created new connection for thread {threading.current_thread().name}")
-        return self._local.connection
 
     @contextmanager
     def connection(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
@@ -223,19 +218,19 @@ class DatabaseManager:
             with db.connection() as conn:
                 result = conn.execute("SELECT * FROM prices").fetchall()
         """
-        conn = self._get_connection()
-        try:
-            yield conn
-        except Exception as e:
-            logger.error(f"Database error: {e}")
-            raise
+        with self._pool.connection() as conn:
+            try:
+                yield conn
+            except Exception as e:
+                logger.error(f"Database error: {e}")
+                raise
 
     def execute(self, query: str, params: Union[tuple, None] = None) -> duckdb.DuckDBPyRelation:
         """Execute a query and return the relation."""
-        conn = self._get_connection()
-        if params:
-            return conn.execute(query, params)
-        return conn.execute(query)
+        with self._pool.connection() as conn:
+            if params:
+                return conn.execute(query, params)
+            return conn.execute(query)
 
     def fetchall(self, query: str, params: Union[tuple, None] = None) -> List[tuple]:
         """Execute a query and fetch all results."""
@@ -250,11 +245,10 @@ class DatabaseManager:
         return self.execute(query, params).df()
 
     def close(self) -> None:
-        """Close the thread-local connection."""
-        if hasattr(self._local, "connection") and self._local.connection is not None:
-            self._local.connection.close()
-            self._local.connection = None
-            logger.debug(f"Closed connection for thread {threading.current_thread().name}")
+        """Close all connections in the pool."""
+        if hasattr(self, "_pool"):
+            self._pool.close_all()
+            logger.debug("Closed all pooled connections")
 
     @classmethod
     def reset(cls) -> None:
