@@ -172,6 +172,60 @@ class IngestionScheduler:
         """Check if scheduler is running."""
         return self.scheduler.running
 
+    def setup_daily_ingestion(
+        self,
+        symbols: list[str] | None = None,
+        price_job_time: str = "18:00",
+        feature_job_time: str = "18:10",
+    ) -> None:
+        """
+        Configure daily data ingestion pipeline with dependency chain.
+
+        Sets up two scheduled jobs:
+        1. Price ingestion at 6:00 PM ET (configurable)
+        2. Feature computation at 6:10 PM ET (configurable)
+
+        The feature job has a dependency on price ingestion completing successfully.
+
+        Args:
+            symbols: List of stock tickers to ingest (None = TEST_SYMBOLS for prices, all DB symbols for features)
+            price_job_time: Time to run price ingestion (HH:MM format, default: 18:00)
+            feature_job_time: Time to run feature computation (HH:MM format, default: 18:10)
+        """
+        from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob
+
+        # Parse time strings
+        price_hour, price_minute = map(int, price_job_time.split(":"))
+        feature_hour, feature_minute = map(int, feature_job_time.split(":"))
+
+        # Create job instances
+        price_job = PriceIngestionJob(symbols=symbols)
+        feature_job = FeatureComputationJob(symbols=None)  # None = all symbols in DB
+
+        # Schedule price ingestion job
+        self.add_job(
+            func=price_job.run,
+            job_id="price_ingestion",
+            trigger=CronTrigger(hour=price_hour, minute=price_minute, timezone=ET_TIMEZONE),
+            name="Daily Price Ingestion",
+        )
+        logger.info(f"Scheduled price ingestion at {price_job_time} ET")
+
+        # Schedule feature computation job (depends on prices)
+        self.add_job(
+            func=feature_job.run,
+            job_id="feature_computation",
+            trigger=CronTrigger(
+                hour=feature_hour, minute=feature_minute, timezone=ET_TIMEZONE
+            ),
+            name="Daily Feature Computation",
+        )
+        logger.info(f"Scheduled feature computation at {feature_job_time} ET")
+
+        logger.info(
+            "Daily ingestion pipeline configured: prices → features (dependency enforced)"
+        )
+
     def __repr__(self) -> str:
         """String representation of the scheduler."""
         status = "running" if self.running else "stopped"
