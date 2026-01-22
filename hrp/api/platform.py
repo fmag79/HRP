@@ -124,11 +124,23 @@ class PlatformAPI:
 
         Returns:
             DataFrame pivoted with symbols as rows and features as columns
+
+        Raises:
+            ValueError: If symbols or features list is empty
+            NotFoundError: If version doesn't exist
         """
         if not symbols:
             raise ValueError("symbols list cannot be empty")
         if not features:
             raise ValueError("features list cannot be empty")
+
+        # Validate that version exists
+        version_check = self._db.fetchone(
+            "SELECT COUNT(*) FROM feature_definitions WHERE version = ?",
+            (version,),
+        )
+        if not version_check or version_check[0] == 0:
+            raise NotFoundError(f"Feature version '{version}' not found")
 
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         features_str = ",".join(f"'{f}'" for f in features)
