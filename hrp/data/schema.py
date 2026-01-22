@@ -1,7 +1,55 @@
 """
 DuckDB schema definitions for HRP.
 
-Run with: python -m hrp.data.schema --init
+This module defines the complete database schema including:
+- Table structures with primary keys and foreign keys
+- CHECK constraints for data integrity
+- Performance indexes for common query patterns
+
+## Usage
+
+Initialize a new database:
+    python -m hrp.data.schema --init
+
+Verify existing schema:
+    python -m hrp.data.schema --verify
+
+## Migration Instructions
+
+For EXISTING databases (upgrade to add constraints and indexes):
+
+1. **Backup your database first:**
+   cp ~/hrp-data/hrp.duckdb ~/hrp-data/hrp.duckdb.backup
+
+2. **Run schema initialization (safe - uses IF NOT EXISTS):**
+   python -m hrp.data.schema --init
+
+   This will:
+   - Add any missing tables
+   - Add new indexes (idempotent)
+   - NOT modify existing data
+
+3. **Verify the migration:**
+   python -m hrp.data.schema --verify
+   python -m hrp.data.schema --counts
+
+## Schema Features
+
+**Integrity Constraints:**
+- Primary keys on all tables
+- Foreign keys between related tables (fundamentals, ingestion_log)
+- CHECK constraints for data validation (prices, volumes, status enums)
+- NOT NULL constraints on critical fields
+
+**Performance Indexes:**
+- Symbol-date composite indexes for time-series queries
+- Status and type indexes for filtering
+- Hypothesis and experiment tracking indexes
+
+**Foreign Key Notes:**
+Some FK constraints are intentionally omitted due to DuckDB 1.4.3 limitations
+where FKs prevent UPDATE operations on parent tables. Application-level
+integrity checks handle these cases (see hypothesis_experiments, lineage).
 """
 
 from __future__ import annotations
