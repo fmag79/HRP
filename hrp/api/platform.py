@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.data.universe import UniverseManager
 from hrp.research.config import BacktestConfig, BacktestResult
 
 
@@ -171,7 +172,11 @@ class PlatformAPI:
 
     def get_universe(self, as_of_date: date) -> list[str]:
         """
-        Get the trading universe as of a specific date.
+        Get the trading universe as of a specific date (point-in-time).
+
+        Uses the most recent universe snapshot on or before the given date.
+        This prevents look-ahead bias in backtests by only including symbols
+        that were known to be in the universe at that point in time.
 
         Args:
             as_of_date: Date to get universe for
@@ -179,19 +184,66 @@ class PlatformAPI:
         Returns:
             List of ticker symbols in the universe
         """
-        query = """
-            SELECT symbol
-            FROM universe
-            WHERE date = ?
-              AND in_universe = TRUE
-            ORDER BY symbol
+        manager = UniverseManager(self._db.db_path)
+        return manager.get_universe_at_date(as_of_date)
+
+    def update_universe(
+        self,
+        as_of_date: date | None = None,
+        actor: str = "user",
+    ) -> dict[str, Any]:
         """
+        Update the S&P 500 universe with current constituents.
 
-        result = self._db.fetchall(query, (as_of_date,))
-        symbols = [row[0] for row in result]
+        Fetches current S&P 500 members from Wikipedia, applies exclusion
+        rules (financials, REITs, penny stocks), and updates the database.
+        All changes are logged to the lineage table.
 
-        logger.debug(f"Universe contains {len(symbols)} symbols as of {as_of_date}")
-        return symbols
+        Args:
+            as_of_date: Date to record for this snapshot. Defaults to today.
+            actor: Actor performing the update (for lineage).
+
+        Returns:
+            Dictionary with update statistics including:
+            - total_constituents: Total S&P 500 members fetched
+            - included: Symbols included in trading universe
+            - excluded: Symbols excluded (with reasons)
+            - added: New symbols added since last update
+            - removed: Symbols removed since last update
+        """
+        manager = UniverseManager(self._db.db_path)
+        return manager.update_universe(as_of_date, actor=f"api:{actor}")
+
+    def get_universe_changes(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        """
+        Get universe membership changes between two dates.
+
+        Args:
+            start_date: Start of date range
+            end_date: End of date range
+
+        Returns:
+            DataFrame with columns: date, symbol, change_type, exclusion_reason
+        """
+        manager = UniverseManager(self._db.db_path)
+        return manager.get_universe_changes(start_date, end_date)
+
+    def get_sector_breakdown(self, as_of_date: date) -> dict[str, int]:
+        """
+        Get breakdown of universe by sector.
+
+        Args:
+            as_of_date: Date to get breakdown for
+
+        Returns:
+            Dictionary mapping sector names to symbol counts
+        """
+        manager = UniverseManager(self._db.db_path)
+        return manager.get_sector_breakdown(as_of_date)
 
     def compute_features(
         self,
