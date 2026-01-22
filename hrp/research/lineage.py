@@ -5,6 +5,8 @@ Tracks all significant actions for auditability and provides query capabilities
 to understand the history of hypotheses, experiments, and system events.
 """
 
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta, timezone

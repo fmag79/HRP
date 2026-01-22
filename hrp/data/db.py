@@ -4,6 +4,8 @@ DuckDB connection management for HRP.
 Provides thread-safe connection pooling and query helpers.
 """
 
+from __future__ import annotations
+
 import os
 import threading
 from contextlib import contextmanager

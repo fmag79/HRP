@@ -12,6 +12,7 @@ import pandas as pd
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.data.sources.polygon_source import PolygonSource
 from hrp.data.sources.yfinance_source import YFinanceSource
 
 
@@ -34,27 +35,49 @@ def ingest_prices(
     symbols: list[str],
     start: date,
     end: date,
-    source: str = "yfinance",
+    source: str = "polygon",
 ) -> dict[str, Any]:
     """
     Ingest price data for given symbols.
+
+    Supports multiple data sources with automatic fallback:
+    - polygon: Official Polygon.io data (requires API key)
+    - yfinance: Free Yahoo Finance data (fallback)
+
+    If Polygon fails to initialize (missing API key), falls back to YFinance.
+    If Polygon fails for a specific symbol, tries YFinance before giving up.
 
     Args:
         symbols: List of stock tickers
         start: Start date
         end: End date
-        source: Data source to use ('yfinance')
+        source: Data source to use ('polygon' or 'yfinance', default: 'polygon')
 
     Returns:
         Dictionary with ingestion stats
     """
     db = get_db()
 
-    # Initialize data source
-    if source == "yfinance":
-        data_source = YFinanceSource()
+    # Initialize primary data source with fallback
+    primary_source = None
+    fallback_source = None
+
+    if source == "polygon":
+        try:
+            primary_source = PolygonSource()
+            fallback_source = YFinanceSource()
+            logger.info("Using Polygon.io as primary source with YFinance fallback")
+        except ValueError as e:
+            # Polygon initialization failed (likely missing API key)
+            logger.warning(f"Polygon.io unavailable ({e}), falling back to YFinance")
+            primary_source = YFinanceSource()
+            fallback_source = None
+    elif source == "yfinance":
+        primary_source = YFinanceSource()
+        fallback_source = None
+        logger.info("Using YFinance as primary source")
     else:
-        raise ValueError(f"Unknown source: {source}")
+        raise ValueError(f"Unknown source: {source}. Use 'polygon' or 'yfinance'")
 
     stats = {
         "symbols_requested": len(symbols),
@@ -63,32 +86,60 @@ def ingest_prices(
         "rows_fetched": 0,
         "rows_inserted": 0,
         "failed_symbols": [],
+        "fallback_used": 0,
     }
 
     for symbol in symbols:
-        try:
-            logger.info(f"Fetching {symbol} from {start} to {end}")
+        df = pd.DataFrame()
+        used_fallback = False
 
-            # Fetch data
-            df = data_source.get_daily_bars(symbol, start, end)
+        try:
+            logger.info(f"Fetching {symbol} from {start} to {end} using {primary_source.source_name}")
+
+            # Try primary source
+            df = primary_source.get_daily_bars(symbol, start, end)
 
             if df.empty:
-                logger.warning(f"No data for {symbol}")
-                stats["symbols_failed"] += 1
-                stats["failed_symbols"].append(symbol)
-                continue
+                logger.warning(f"No data for {symbol} from {primary_source.source_name}")
 
+        except Exception as e:
+            logger.warning(f"Primary source failed for {symbol}: {e}")
+
+        # Try fallback if primary failed and fallback is available
+        if df.empty and fallback_source is not None:
+            try:
+                logger.info(f"Trying fallback source {fallback_source.source_name} for {symbol}")
+                df = fallback_source.get_daily_bars(symbol, start, end)
+                used_fallback = True
+
+                if df.empty:
+                    logger.warning(f"No data for {symbol} from fallback source")
+
+            except Exception as e:
+                logger.error(f"Fallback source also failed for {symbol}: {e}")
+
+        # Process results
+        if df.empty:
+            logger.error(f"Failed to fetch data for {symbol} from any source")
+            stats["symbols_failed"] += 1
+            stats["failed_symbols"].append(symbol)
+            continue
+
+        try:
             stats["rows_fetched"] += len(df)
+            if used_fallback:
+                stats["fallback_used"] += 1
 
             # Insert into database (upsert)
             rows_inserted = _upsert_prices(db, df)
             stats["rows_inserted"] += rows_inserted
             stats["symbols_success"] += 1
 
-            logger.info(f"Inserted {rows_inserted} rows for {symbol}")
+            source_used = fallback_source.source_name if used_fallback else primary_source.source_name
+            logger.info(f"Inserted {rows_inserted} rows for {symbol} from {source_used}")
 
         except Exception as e:
-            logger.error(f"Failed to ingest {symbol}: {e}")
+            logger.error(f"Failed to insert {symbol} into database: {e}")
             stats["symbols_failed"] += 1
             stats["failed_symbols"].append(symbol)
 
@@ -96,6 +147,8 @@ def ingest_prices(
         f"Ingestion complete: {stats['symbols_success']}/{stats['symbols_requested']} symbols, "
         f"{stats['rows_inserted']} rows inserted"
     )
+    if stats["fallback_used"] > 0:
+        logger.info(f"Fallback source used for {stats['fallback_used']} symbols")
 
     return stats
 
@@ -210,9 +263,9 @@ def main():
     parser.add_argument(
         "--source",
         type=str,
-        default="yfinance",
-        choices=["yfinance"],
-        help="Data source",
+        default="polygon",
+        choices=["polygon", "yfinance"],
+        help="Data source (default: polygon with yfinance fallback)",
     )
     parser.add_argument(
         "--stats",
