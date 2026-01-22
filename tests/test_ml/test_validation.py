@@ -460,3 +460,21 @@ class TestWalkForwardValidate:
                 result = walk_forward_validate(config, symbols=["AAPL", "MSFT"])
 
             assert len(result.fold_results) == 3
+
+
+class TestModuleExports:
+    """Test that validation module is properly exported."""
+
+    def test_import_from_ml_module(self):
+        """Test importing from hrp.ml."""
+        from hrp.ml import (
+            WalkForwardConfig,
+            WalkForwardResult,
+            FoldResult,
+            walk_forward_validate,
+        )
+
+        assert WalkForwardConfig is not None
+        assert WalkForwardResult is not None
+        assert FoldResult is not None
+        assert walk_forward_validate is not None
