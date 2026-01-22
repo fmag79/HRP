@@ -7,6 +7,8 @@ draft -> testing -> validated/rejected -> deployed
 All database access goes through hrp.data.db.get_db().
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Literal

@@ -4,6 +4,8 @@ Corporate actions ingestion for HRP.
 Fetches and stores corporate actions data (splits, dividends) from configured sources.
 """
 
+from __future__ import annotations
+
 import argparse
 from datetime import date, timedelta
 from typing import Any

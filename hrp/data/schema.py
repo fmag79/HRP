@@ -4,6 +4,8 @@ DuckDB schema definitions for HRP.
 Run with: python -m hrp.data.schema --init
 """
 
+from __future__ import annotations
+
 import argparse
 
 from loguru import logger

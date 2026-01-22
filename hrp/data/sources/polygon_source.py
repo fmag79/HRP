@@ -5,6 +5,8 @@ Official data source with rate limiting and retry logic.
 Requires POLYGON_API_KEY environment variable.
 """
 
+from __future__ import annotations
+
 from datetime import date, datetime, timedelta
 from typing import Any
 
