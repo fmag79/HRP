@@ -17,6 +17,40 @@ from pytz import timezone
 ET_TIMEZONE = timezone("US/Eastern")
 
 
+def _parse_time(time_str: str, param_name: str) -> tuple[int, int]:
+    """
+    Parse HH:MM time string with validation.
+
+    Args:
+        time_str: Time string in HH:MM format
+        param_name: Parameter name for error messages
+
+    Returns:
+        Tuple of (hour, minute)
+
+    Raises:
+        ValueError: If time string is invalid
+    """
+    if not isinstance(time_str, str):
+        raise ValueError(f"{param_name} must be a string, got {type(time_str).__name__}")
+
+    parts = time_str.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"{param_name} must be in HH:MM format, got '{time_str}'")
+
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise ValueError(f"{param_name} contains non-numeric values: '{time_str}'")
+
+    if not (0 <= hour <= 23):
+        raise ValueError(f"Hour must be 0-23, got {hour} in '{time_str}'")
+    if not (0 <= minute <= 59):
+        raise ValueError(f"Minute must be 0-59, got {minute} in '{time_str}'")
+
+    return hour, minute
+
+
 class IngestionScheduler:
     """
     Background scheduler for automated data ingestion.
@@ -195,9 +229,9 @@ class IngestionScheduler:
         """
         from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob
 
-        # Parse time strings
-        price_hour, price_minute = map(int, price_job_time.split(":"))
-        feature_hour, feature_minute = map(int, feature_job_time.split(":"))
+        # Parse and validate time strings
+        price_hour, price_minute = _parse_time(price_job_time, "price_job_time")
+        feature_hour, feature_minute = _parse_time(feature_job_time, "feature_job_time")
 
         # Create job instances
         price_job = PriceIngestionJob(symbols=symbols)

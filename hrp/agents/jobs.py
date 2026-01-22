@@ -64,10 +64,41 @@ class IngestionJob(ABC):
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
         self.dependencies = dependencies or []
-        self.status = JobStatus.PENDING
+        self._status = JobStatus.PENDING
         self.log_id: int | None = None
         self.retry_count = 0
         self.last_error: str | None = None
+
+    @property
+    def status(self) -> JobStatus:
+        """Get current job status (read-only from external code)."""
+        return self._status
+
+    def _set_status(self, new_status: JobStatus) -> None:
+        """
+        Internal method for controlled status transitions.
+
+        Validates that the transition is allowed and logs warnings
+        for invalid transitions.
+
+        Args:
+            new_status: The new status to set
+        """
+        valid_transitions = {
+            JobStatus.PENDING: {JobStatus.RUNNING},
+            JobStatus.RUNNING: {JobStatus.SUCCESS, JobStatus.FAILED, JobStatus.RETRYING},
+            JobStatus.RETRYING: {JobStatus.RUNNING, JobStatus.FAILED},
+            JobStatus.SUCCESS: set(),  # Terminal state
+            JobStatus.FAILED: set(),   # Terminal state
+        }
+
+        if new_status not in valid_transitions.get(self._status, set()):
+            logger.warning(
+                f"Invalid status transition for job {self.job_id}: "
+                f"{self._status.value} -> {new_status.value}"
+            )
+
+        self._status = new_status
 
     @abstractmethod
     def execute(self) -> dict[str, Any]:
@@ -105,11 +136,11 @@ class IngestionJob(ABC):
 
                 # Execute job
                 logger.info(f"Starting job {self.job_id} (attempt {attempt + 1}/{self.max_retries + 1})")
-                self.status = JobStatus.RUNNING
+                self._set_status(JobStatus.RUNNING)
                 result = self.execute()
 
                 # Success
-                self.status = JobStatus.SUCCESS
+                self._set_status(JobStatus.SUCCESS)
                 self._log_success(result)
                 logger.info(f"Job {self.job_id} completed successfully")
                 return result
@@ -127,13 +158,13 @@ class IngestionJob(ABC):
 
                 # Only retry transient errors (network/IO issues)
                 if attempt < self.max_retries and is_transient:
-                    self.status = JobStatus.RETRYING
+                    self._set_status(JobStatus.RETRYING)
                     backoff_time = self.retry_backoff ** attempt
                     logger.warning(f"Retrying job {self.job_id} in {backoff_time:.1f} seconds...")
                     time.sleep(backoff_time)
                 else:
                     # Final failure (or non-transient error - fail immediately)
-                    self.status = JobStatus.FAILED
+                    self._set_status(JobStatus.FAILED)
                     self._log_failure(error_msg)
                     self._send_failure_notification(error_msg)
                     if is_transient:
