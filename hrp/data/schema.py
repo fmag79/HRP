@@ -53,7 +53,7 @@ TABLES = {
             period_end DATE NOT NULL,
             metric VARCHAR NOT NULL,
             value DECIMAL(18,4),
-            source VARCHAR,
+            source VARCHAR REFERENCES data_sources(source_id),
             ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (symbol, report_date, metric)
         )
@@ -94,7 +94,7 @@ TABLES = {
     "ingestion_log": """
         CREATE TABLE IF NOT EXISTS ingestion_log (
             log_id INTEGER PRIMARY KEY,
-            source_id VARCHAR NOT NULL,
+            source_id VARCHAR NOT NULL REFERENCES data_sources(source_id),
             started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP,
             records_fetched INTEGER NOT NULL DEFAULT 0,
@@ -125,7 +125,7 @@ TABLES = {
     """,
     "hypothesis_experiments": """
         CREATE TABLE IF NOT EXISTS hypothesis_experiments (
-            hypothesis_id VARCHAR NOT NULL,
+            hypothesis_id VARCHAR NOT NULL REFERENCES hypotheses(hypothesis_id),
             experiment_id VARCHAR NOT NULL,
             relationship VARCHAR NOT NULL DEFAULT 'primary',
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -138,10 +138,10 @@ TABLES = {
             event_type VARCHAR NOT NULL,
             timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             actor VARCHAR NOT NULL DEFAULT 'system',
-            hypothesis_id VARCHAR,
+            hypothesis_id VARCHAR REFERENCES hypotheses(hypothesis_id),
             experiment_id VARCHAR,
             details JSON,
-            parent_lineage_id INTEGER
+            parent_lineage_id INTEGER REFERENCES lineage(lineage_id)
         )
     """,
     "feature_definitions": """
