@@ -16,6 +16,7 @@ from loguru import logger
 from hrp.data.db import get_db
 from hrp.data.ingestion.features import compute_features
 from hrp.data.ingestion.prices import TEST_SYMBOLS, ingest_prices
+from hrp.notifications.email import EmailNotifier
 
 
 class JobStatus(Enum):
@@ -88,6 +89,7 @@ class IngestionJob(ABC):
             error_msg = f"Dependencies not met for job {self.job_id}"
             logger.error(error_msg)
             self._log_failure(error_msg)
+            self._send_failure_notification(error_msg)
             return {"status": "failed", "error": error_msg}
 
         # Retry loop
@@ -123,6 +125,7 @@ class IngestionJob(ABC):
                     # Final failure
                     self.status = JobStatus.FAILED
                     self._log_failure(error_msg)
+                    self._send_failure_notification(error_msg)
                     logger.error(f"Job {self.job_id} failed after {self.max_retries + 1} attempts")
                     return {
                         "status": "failed",
@@ -258,6 +261,26 @@ class IngestionJob(ABC):
                 (error_msg, self.log_id),
             )
             logger.debug(f"Updated ingestion log {self.log_id} with failure status")
+
+    def _send_failure_notification(self, error_msg: str) -> None:
+        """
+        Send email notification for job failure.
+
+        Args:
+            error_msg: Error message to include in notification
+        """
+        try:
+            notifier = EmailNotifier()
+            notifier.send_failure_notification(
+                job_name=self.job_id,
+                error_message=error_msg,
+                retry_count=self.retry_count,
+                max_retries=self.max_retries,
+                timestamp=datetime.now().isoformat(),
+            )
+        except Exception as e:
+            # Don't let notification failures break the job
+            logger.warning(f"Failed to send failure notification for job {self.job_id}: {e}")
 
     def get_last_successful_run(self) -> datetime | None:
         """
