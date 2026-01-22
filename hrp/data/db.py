@@ -26,27 +26,48 @@ class ConnectionPool:
     Connections are created on-demand up to max_size and reused when released.
     """
 
-    def __init__(self, db_path: Union[str, Path], max_size: int = 5):
+    def __init__(self, db_path: Union[str, Path], max_size: int = 5, idle_timeout: int = 300):
         """
         Initialize connection pool.
 
         Args:
             db_path: Path to the DuckDB database file
             max_size: Maximum number of connections in the pool
+            idle_timeout: Seconds before idle connections are closed (default: 300)
         """
         self.db_path = str(db_path)
         self.max_size = max_size
+        self.idle_timeout = idle_timeout
         self._pool: List[duckdb.DuckDBPyConnection] = []
         self._in_use: Set[duckdb.DuckDBPyConnection] = set()
         self._lock = threading.Lock()
         self._condition = threading.Condition(self._lock)
         logger.debug(f"ConnectionPool initialized: {self.db_path}, max_size={self.max_size}")
 
+    def _is_connection_valid(self, conn: duckdb.DuckDBPyConnection) -> bool:
+        """
+        Check if a connection is still valid and usable.
+
+        Args:
+            conn: The connection to check
+
+        Returns:
+            True if connection is valid, False otherwise
+        """
+        try:
+            # Try a simple query to verify connection works
+            conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception as e:
+            logger.debug(f"Connection validation failed: {e}")
+            return False
+
     def acquire(self) -> duckdb.DuckDBPyConnection:
         """
         Acquire a connection from the pool.
 
         Waits if all connections are in use and max_size is reached.
+        Validates connections from pool and creates new ones if invalid.
 
         Returns:
             A DuckDB connection
@@ -58,10 +79,25 @@ class ConnectionPool:
                 self._condition.wait()
 
             # Get connection from pool or create new one
+            conn = None
             if self._pool:
-                conn = self._pool.pop()
-                logger.debug(f"Reusing connection from pool (pool size: {len(self._pool)})")
-            else:
+                # Try to get a valid connection from pool
+                while self._pool:
+                    candidate = self._pool.pop()
+                    if self._is_connection_valid(candidate):
+                        conn = candidate
+                        logger.debug(f"Reusing connection from pool (pool size: {len(self._pool)})")
+                        break
+                    else:
+                        # Connection is invalid, close it and try next
+                        logger.debug("Discarding invalid connection from pool")
+                        try:
+                            candidate.close()
+                        except Exception:
+                            pass  # Ignore errors when closing invalid connection
+
+            # Create new connection if we didn't get a valid one from pool
+            if conn is None:
                 conn = duckdb.connect(self.db_path)
                 logger.debug(
                     f"Created new connection to {self.db_path} "
@@ -75,14 +111,28 @@ class ConnectionPool:
         """
         Release a connection back to the pool.
 
+        Validates connection health before returning to pool.
+        Invalid connections are closed and discarded.
+
         Args:
             conn: The connection to release
         """
         with self._condition:
             if conn in self._in_use:
                 self._in_use.remove(conn)
-                self._pool.append(conn)
-                logger.debug(f"Connection released to pool (pool size: {len(self._pool)})")
+
+                # Check if connection is still valid
+                if self._is_connection_valid(conn):
+                    self._pool.append(conn)
+                    logger.debug(f"Connection released to pool (pool size: {len(self._pool)})")
+                else:
+                    # Connection is invalid, close it instead of returning to pool
+                    logger.debug("Discarding invalid connection on release")
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass  # Ignore errors when closing invalid connection
+
                 self._condition.notify()
             else:
                 logger.warning("Attempted to release connection not in use")
