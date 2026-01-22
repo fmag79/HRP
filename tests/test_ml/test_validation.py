@@ -2,9 +2,10 @@
 
 from datetime import date
 
+import pandas as pd
 import pytest
 
-from hrp.ml.validation import WalkForwardConfig, FoldResult, WalkForwardResult
+from hrp.ml.validation import WalkForwardConfig, FoldResult, WalkForwardResult, generate_folds
 
 
 class TestWalkForwardConfig:
@@ -138,3 +139,104 @@ class TestWalkForwardResult:
         assert len(result.fold_results) == 3
         assert result.stability_score == 0.09
         assert result.aggregate_metrics["mean_mse"] == 0.0011
+
+
+class TestGenerateFolds:
+    """Tests for generate_folds function."""
+
+    @pytest.fixture
+    def sample_dates(self):
+        """Generate sample business dates."""
+        return pd.date_range("2015-01-01", "2023-12-31", freq="B").date.tolist()
+
+    def test_generate_folds_count(self, sample_dates):
+        """Test that correct number of folds are generated."""
+        config = WalkForwardConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            start_date=date(2015, 1, 1),
+            end_date=date(2023, 12, 31),
+            n_folds=5,
+        )
+        folds = generate_folds(config, sample_dates)
+        assert len(folds) == 5
+
+    def test_generate_folds_no_overlap(self, sample_dates):
+        """Test that test periods do not overlap."""
+        config = WalkForwardConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            start_date=date(2015, 1, 1),
+            end_date=date(2023, 12, 31),
+            n_folds=5,
+        )
+        folds = generate_folds(config, sample_dates)
+
+        # Check test periods don't overlap
+        for i in range(len(folds) - 1):
+            _, _, _, test_end_i = folds[i]
+            _, _, test_start_next, _ = folds[i + 1]
+            assert test_end_i < test_start_next
+
+    def test_generate_folds_expanding_window(self, sample_dates):
+        """Test expanding window: train_start is always the same."""
+        config = WalkForwardConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            start_date=date(2015, 1, 1),
+            end_date=date(2023, 12, 31),
+            n_folds=3,
+            window_type="expanding",
+        )
+        folds = generate_folds(config, sample_dates)
+
+        # All folds should have the same train_start
+        train_starts = [f[0] for f in folds]
+        assert all(ts == train_starts[0] for ts in train_starts)
+
+        # train_end should increase with each fold
+        train_ends = [f[1] for f in folds]
+        assert train_ends == sorted(train_ends)
+
+    def test_generate_folds_rolling_window(self, sample_dates):
+        """Test rolling window: train window size is constant."""
+        config = WalkForwardConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            start_date=date(2015, 1, 1),
+            end_date=date(2023, 12, 31),
+            n_folds=3,
+            window_type="rolling",
+        )
+        folds = generate_folds(config, sample_dates)
+
+        # Calculate training period lengths (in days)
+        train_lengths = []
+        for train_start, train_end, _, _ in folds:
+            length = (train_end - train_start).days
+            train_lengths.append(length)
+
+        # All training periods should be approximately the same length
+        # (allow 15% variance due to business days)
+        avg_length = sum(train_lengths) / len(train_lengths)
+        for length in train_lengths:
+            assert abs(length - avg_length) / avg_length < 0.15
+
+    def test_generate_folds_train_before_test(self, sample_dates):
+        """Test that train_end < test_start for all folds."""
+        config = WalkForwardConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            start_date=date(2015, 1, 1),
+            end_date=date(2023, 12, 31),
+            n_folds=5,
+        )
+        folds = generate_folds(config, sample_dates)
+
+        for train_start, train_end, test_start, test_end in folds:
+            assert train_end < test_start

@@ -125,3 +125,77 @@ class WalkForwardResult:
     def mean_ic(self) -> float:
         """Return mean information coefficient across folds."""
         return self.aggregate_metrics.get("mean_ic", float("nan"))
+
+
+def generate_folds(
+    config: WalkForwardConfig,
+    available_dates: list[date],
+) -> list[tuple[date, date, date, date]]:
+    """
+    Generate train/test date ranges for walk-forward validation.
+
+    Args:
+        config: Walk-forward configuration
+        available_dates: List of available dates in the data (sorted)
+
+    Returns:
+        List of tuples: (train_start, train_end, test_start, test_end)
+    """
+    # Filter dates to config range
+    dates = [d for d in available_dates if config.start_date <= d <= config.end_date]
+
+    if len(dates) < config.min_train_periods + config.n_folds:
+        raise ValueError(
+            f"Insufficient data: {len(dates)} dates available, "
+            f"need at least {config.min_train_periods + config.n_folds}"
+        )
+
+    n_dates = len(dates)
+    n_folds = config.n_folds
+
+    # Calculate test period size (divide remaining dates after min_train equally)
+    # Reserve min_train_periods for the first fold's training
+    test_dates_total = n_dates - config.min_train_periods
+    test_period_size = test_dates_total // n_folds
+
+    if test_period_size < 1:
+        raise ValueError(
+            f"Test period too small: {test_period_size} dates. "
+            f"Reduce n_folds or min_train_periods."
+        )
+
+    folds = []
+
+    for fold_idx in range(n_folds):
+        # Test period: fixed size, non-overlapping
+        test_start_idx = config.min_train_periods + fold_idx * test_period_size
+        test_end_idx = test_start_idx + test_period_size - 1
+
+        # Handle last fold: include remaining dates
+        if fold_idx == n_folds - 1:
+            test_end_idx = n_dates - 1
+
+        test_start = dates[test_start_idx]
+        test_end = dates[test_end_idx]
+
+        # Train period depends on window type
+        if config.window_type == "expanding":
+            # Expanding: always start from the beginning
+            train_start = dates[0]
+        else:
+            # Rolling: fixed window size ending just before test
+            train_start_idx = max(0, test_start_idx - config.min_train_periods)
+            train_start = dates[train_start_idx]
+
+        # Train ends one day before test starts
+        train_end_idx = test_start_idx - 1
+        train_end = dates[train_end_idx]
+
+        folds.append((train_start, train_end, test_start, test_end))
+
+        logger.debug(
+            f"Fold {fold_idx}: train [{train_start} to {train_end}], "
+            f"test [{test_start} to {test_end}]"
+        )
+
+    return folds
