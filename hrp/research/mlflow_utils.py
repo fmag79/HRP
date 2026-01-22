@@ -2,6 +2,7 @@
 MLflow integration for experiment tracking.
 """
 
+import json
 import os
 from datetime import date
 from pathlib import Path
@@ -64,6 +65,7 @@ def log_backtest(
     run_name: str = None,
     hypothesis_id: str = None,
     tags: dict = None,
+    feature_versions: dict[str, str] = None,
 ) -> str:
     """
     Log a backtest result to MLflow.
@@ -74,6 +76,7 @@ def log_backtest(
         run_name: Optional run name
         hypothesis_id: Optional linked hypothesis ID
         tags: Additional tags
+        feature_versions: Dict mapping feature names to versions
 
     Returns:
         MLflow run ID
@@ -97,6 +100,12 @@ def log_backtest(
         # Log cost model
         mlflow.log_param("spread_bps", config.costs.spread_bps)
         mlflow.log_param("slippage_bps", config.costs.slippage_bps)
+
+        # Log feature versions
+        if feature_versions:
+            mlflow.log_param("feature_versions", json.dumps(feature_versions))
+            for feature_name, version in feature_versions.items():
+                mlflow.log_param(f"feature_version_{feature_name}", version)
 
         # Log metrics
         for metric_name, metric_value in result.metrics.items():

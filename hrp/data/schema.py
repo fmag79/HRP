@@ -133,6 +133,17 @@ TABLES = {
             parent_lineage_id INTEGER
         )
     """,
+    "feature_definitions": """
+        CREATE TABLE IF NOT EXISTS feature_definitions (
+            feature_name VARCHAR NOT NULL,
+            version VARCHAR NOT NULL,
+            computation_code TEXT NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE,
+            PRIMARY KEY (feature_name, version)
+        )
+    """,
 }
 
 # Indexes for performance
@@ -143,6 +154,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_lineage_hypothesis ON lineage(hypothesis_id)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_timestamp ON lineage(timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status)",
+    "CREATE INDEX IF NOT EXISTS idx_feature_definitions_name_version ON feature_definitions(feature_name, version)",
 ]
 
 

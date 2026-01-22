@@ -126,11 +126,23 @@ class PlatformAPI:
 
         Returns:
             DataFrame pivoted with symbols as rows and features as columns
+
+        Raises:
+            ValueError: If symbols or features list is empty
+            NotFoundError: If version doesn't exist
         """
         if not symbols:
             raise ValueError("symbols list cannot be empty")
         if not features:
             raise ValueError("features list cannot be empty")
+
+        # Validate that version exists
+        version_check = self._db.fetchone(
+            "SELECT COUNT(*) FROM feature_definitions WHERE version = ?",
+            (version,),
+        )
+        if not version_check or version_check[0] == 0:
+            raise NotFoundError(f"Feature version '{version}' not found")
 
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         features_str = ",".join(f"'{f}'" for f in features)
@@ -180,6 +192,100 @@ class PlatformAPI:
 
         logger.debug(f"Universe contains {len(symbols)} symbols as of {as_of_date}")
         return symbols
+
+    def compute_features(
+        self,
+        symbols: list[str],
+        feature_names: list[str],
+        dates: list[date],
+        version: str | None = None,
+        store: bool = True,
+    ) -> pd.DataFrame | dict[str, Any]:
+        """
+        Compute features for symbols across dates.
+
+        Args:
+            symbols: List of ticker symbols
+            feature_names: List of feature names to compute
+            dates: List of dates to compute features for
+            version: Optional feature version (default: latest active version)
+            store: If True, store computed features in database (default: True)
+
+        Returns:
+            If store=True: Dictionary with computation stats
+            If store=False: DataFrame with computed features
+
+        Raises:
+            ValueError: If symbols, feature_names, or dates are empty
+        """
+        if not symbols:
+            raise ValueError("symbols list cannot be empty")
+        if not feature_names:
+            raise ValueError("feature_names list cannot be empty")
+        if not dates:
+            raise ValueError("dates list cannot be empty")
+
+        # Import here to avoid circular dependency
+        from hrp.data.features.computation import FeatureComputer
+
+        computer = FeatureComputer(db_path=self._db.db_path if hasattr(self._db, 'db_path') else None)
+
+        if store:
+            # Compute and store features
+            stats = computer.compute_and_store_features(
+                symbols=symbols,
+                dates=dates,
+                feature_names=feature_names,
+                version=version,
+            )
+            logger.info(
+                f"Computed and stored {stats['features_computed']} features "
+                f"for {len(symbols)} symbols across {len(dates)} dates"
+            )
+            return stats
+        else:
+            # Compute features without storing
+            features_df = computer.compute_features(
+                symbols=symbols,
+                dates=dates,
+                feature_names=feature_names,
+                version=version,
+            )
+            logger.info(
+                f"Computed {len(feature_names)} features "
+                f"for {len(symbols)} symbols across {len(dates)} dates"
+            )
+            return features_df
+
+    def get_feature_versions(self, feature_name: str) -> list[str]:
+        """
+        Get all available versions for a feature.
+
+        Args:
+            feature_name: Name of the feature
+
+        Returns:
+            List of version strings, ordered by creation date (newest first)
+        """
+        if not feature_name:
+            raise ValueError("feature_name cannot be empty")
+
+        query = """
+            SELECT version
+            FROM feature_definitions
+            WHERE feature_name = ?
+            ORDER BY created_at DESC
+        """
+
+        result = self._db.fetchall(query, (feature_name,))
+        versions = [row[0] for row in result]
+
+        if not versions:
+            logger.warning(f"No versions found for feature '{feature_name}'")
+        else:
+            logger.debug(f"Found {len(versions)} versions for feature '{feature_name}'")
+
+        return versions
 
     # =========================================================================
     # Hypothesis Operations
@@ -368,6 +474,7 @@ class PlatformAPI:
         hypothesis_id: str | None = None,
         actor: str = "user",
         experiment_name: str = "backtests",
+        feature_versions: dict[str, str] | None = None,
     ) -> str:
         """
         Run a backtest and log results to MLflow.
@@ -378,6 +485,7 @@ class PlatformAPI:
             hypothesis_id: Optional linked hypothesis
             actor: Who is running the backtest
             experiment_name: MLflow experiment name
+            feature_versions: Optional dict mapping feature names to versions used
 
         Returns:
             experiment_id: The MLflow run ID
@@ -407,6 +515,7 @@ class PlatformAPI:
             run_name=run_name,
             hypothesis_id=hypothesis_id,
             tags={"actor": actor},
+            feature_versions=feature_versions,
         )
 
         # Link to hypothesis if provided

@@ -406,6 +406,30 @@ class TestPlatformAPIFeatures:
         assert "momentum_20d" in result.columns
         assert "volatility_60d" in result.columns
 
+    def test_get_features_invalid_version_raises(self, populated_db):
+        """Test that get_features raises NotFoundError for invalid version."""
+        with pytest.raises(NotFoundError, match="Feature version 'invalid_v999' not found"):
+            populated_db.get_features(
+                ["AAPL"], ["momentum_20d"], date(2023, 1, 5), version="invalid_v999"
+            )
+
+    def test_get_features_valid_version_succeeds(self, populated_db):
+        """Test that get_features succeeds for valid version."""
+        # First, insert a feature definition for v1
+        populated_db._db.execute(
+            """
+            INSERT INTO feature_definitions (feature_name, version, computation_code, description)
+            VALUES ('momentum_20d', 'v1', 'def compute(): pass', 'Momentum over 20 days')
+            """
+        )
+
+        # Now get_features should work without raising NotFoundError about version
+        result = populated_db.get_features(
+            ["AAPL"], ["momentum_20d"], date(2023, 1, 5), version="v1"
+        )
+        # If we get here without NotFoundError about version, the test passes
+        assert isinstance(result, pd.DataFrame)
+
 
 class TestPlatformAPIHypothesis:
     """Tests for hypothesis management operations."""
