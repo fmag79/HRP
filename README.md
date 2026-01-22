@@ -92,10 +92,74 @@ mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db
 | Universe | S&P 500 (ex-financials, REITs) | International |
 | Deployment | Paper trading | Live trading (future) |
 
+## Usage Examples
+
+### Running a Backtest
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import date
+
+api = PlatformAPI()
+
+# Create hypothesis
+hypothesis_id = api.create_hypothesis(
+    title="Momentum predicts returns",
+    thesis="Stocks with high 12-month momentum continue outperforming",
+    prediction="Top decile momentum > SPY by 3% annually",
+    falsification="Sharpe < SPY or p-value > 0.05",
+    actor='user'
+)
+
+# Run backtest
+experiment_id = api.run_backtest(
+    config={
+        'symbols': ['AAPL', 'MSFT', 'GOOGL'],
+        'start_date': '2020-01-01',
+        'end_date': '2023-12-31',
+        'initial_capital': 100000,
+    },
+    hypothesis_id=hypothesis_id
+)
+```
+
+### Walk-Forward Validation
+
+```python
+from hrp.ml import WalkForwardConfig, walk_forward_validate
+
+# Configure walk-forward validation
+config = WalkForwardConfig(
+    model_type='ridge',
+    target='returns_20d',
+    features=['momentum_20d', 'volatility_20d', 'rsi_14d'],
+    start_date=date(2015, 1, 1),
+    end_date=date(2023, 12, 31),
+    n_folds=5,
+    window_type='expanding',  # Train on increasing data
+    feature_selection=True,
+    max_features=20,
+)
+
+# Run validation
+result = walk_forward_validate(
+    config=config,
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    log_to_mlflow=True,
+)
+
+# Analyze results
+print(f"Stability Score: {result.stability_score:.4f}")
+print(f"Mean IC: {result.mean_ic:.4f}")
+print(f"Model is stable: {result.is_stable}")
+```
+
 ## Documentation
 
 - [Full Specification](docs/plans/2025-01-19-hrp-spec.md)
 - [Implementation Roadmap](docs/plans/Roadmap.md)
+- [ML Framework MVP](docs/plans/2025-01-22-ml-framework-mvp.md)
+- [Walk-Forward Validation Design](docs/plans/2025-01-22-walk-forward-validation-design.md)
 
 ## Development Status
 

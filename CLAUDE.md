@@ -94,6 +94,40 @@ job = PriceIngestionJob(symbols=['AAPL'], start=date.today() - timedelta(days=7)
 result = job.run()  # Returns status, records_fetched, records_inserted
 ```
 
+### Run walk-forward validation
+```python
+from hrp.ml import WalkForwardConfig, walk_forward_validate
+from datetime import date
+
+config = WalkForwardConfig(
+    model_type='ridge',
+    target='returns_20d',
+    features=['momentum_20d', 'volatility_20d', 'rsi_14d'],
+    start_date=date(2015, 1, 1),
+    end_date=date(2023, 12, 31),
+    n_folds=5,
+    window_type='expanding',  # or 'rolling'
+    feature_selection=True,
+    max_features=20,
+)
+
+result = walk_forward_validate(
+    config=config,
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    log_to_mlflow=True,
+)
+
+# Check results
+print(f"Stability Score: {result.stability_score:.4f}")  # Lower is better
+print(f"Mean IC: {result.mean_ic:.4f}")  # Information coefficient
+print(f"Model is stable: {result.is_stable}")  # stability_score <= 1.0
+
+# Per-fold results
+for fold in result.fold_results:
+    print(f"Fold {fold.fold_index}: IC={fold.metrics['ic']:.4f}, "
+          f"MSE={fold.metrics['mse']:.6f}")
+```
+
 ## File Locations
 
 - Database: `~/hrp-data/hrp.duckdb`

@@ -228,11 +228,11 @@ This roadmap addresses the identified gaps and flaws in the specification while 
 
 ### Deliverables
 
-- [ ] Phase 5: ML Framework (enhanced)
-  - ML model registry
-  - Training pipeline with validation
-  - Walk-forward validation
-  - Overfitting guards
+- [x] Phase 5: ML Framework (MVP Complete)
+  - [x] ML model registry
+  - [x] Training pipeline with validation
+  - [x] Walk-forward validation (expanding/rolling windows, stability score)
+  - [ ] Overfitting guards (future)
 - [ ] Phase 8: Risk & Validation (enhanced)
   - Full statistical validation
   - Risk limits enforcement
