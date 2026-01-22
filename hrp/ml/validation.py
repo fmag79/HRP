@@ -17,7 +17,8 @@ from loguru import logger
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from hrp.ml.models import SUPPORTED_MODELS
+from hrp.ml.models import SUPPORTED_MODELS, get_model
+from hrp.ml.training import _fetch_features, select_features
 
 
 @dataclass
@@ -294,3 +295,205 @@ def aggregate_fold_metrics(
     )
 
     return aggregate, stability_score
+
+
+def walk_forward_validate(
+    config: WalkForwardConfig,
+    symbols: list[str],
+    log_to_mlflow: bool = False,
+) -> WalkForwardResult:
+    """
+    Run walk-forward validation.
+
+    Args:
+        config: Walk-forward configuration
+        symbols: List of symbols to validate on
+        log_to_mlflow: Whether to log results to MLflow
+
+    Returns:
+        WalkForwardResult with per-fold and aggregate metrics
+    """
+    logger.info(
+        f"Starting walk-forward validation: {config.model_type}, "
+        f"{config.n_folds} folds, {config.window_type} window"
+    )
+
+    # Fetch all data once
+    all_data = _fetch_features(
+        symbols=symbols,
+        features=config.features,
+        start_date=config.start_date,
+        end_date=config.end_date,
+        target=config.target,
+    )
+
+    if all_data.empty:
+        raise ValueError(f"No data found for symbols {symbols}")
+
+    # Drop NaN rows
+    all_data = all_data.dropna()
+
+    # Get available dates
+    available_dates = sorted(all_data.index.get_level_values("date").unique())
+    available_dates = [d.date() if hasattr(d, "date") else d for d in available_dates]
+
+    # Generate fold date ranges
+    folds = generate_folds(config, available_dates)
+
+    # Process each fold
+    fold_results = []
+
+    for fold_idx, (train_start, train_end, test_start, test_end) in enumerate(folds):
+        logger.info(f"Processing fold {fold_idx + 1}/{len(folds)}")
+
+        try:
+            fold_result = _process_fold(
+                fold_idx=fold_idx,
+                train_start=train_start,
+                train_end=train_end,
+                test_start=test_start,
+                test_end=test_end,
+                config=config,
+                all_data=all_data,
+            )
+            fold_results.append(fold_result)
+        except Exception as e:
+            logger.warning(f"Fold {fold_idx} failed: {e}")
+            continue
+
+    if not fold_results:
+        raise ValueError("All folds failed, cannot compute results")
+
+    # Aggregate metrics
+    fold_metrics = [fr.metrics for fr in fold_results]
+    aggregate_metrics, stability_score = aggregate_fold_metrics(fold_metrics)
+
+    result = WalkForwardResult(
+        config=config,
+        fold_results=fold_results,
+        aggregate_metrics=aggregate_metrics,
+        stability_score=stability_score,
+        symbols=symbols,
+    )
+
+    logger.info(
+        f"Walk-forward complete: {len(fold_results)} folds, "
+        f"mean_mse={aggregate_metrics.get('mean_mse', 'nan'):.6f}, "
+        f"stability={stability_score:.4f}"
+    )
+
+    if log_to_mlflow:
+        _log_to_mlflow(result)
+
+    return result
+
+
+def _process_fold(
+    fold_idx: int,
+    train_start: date,
+    train_end: date,
+    test_start: date,
+    test_end: date,
+    config: WalkForwardConfig,
+    all_data: pd.DataFrame,
+) -> FoldResult:
+    """
+    Process a single walk-forward fold.
+
+    Args:
+        fold_idx: Index of this fold
+        train_start, train_end: Training period
+        test_start, test_end: Test period
+        config: Walk-forward configuration
+        all_data: Full dataset
+
+    Returns:
+        FoldResult with trained model and metrics
+    """
+    # Split data by date
+    dates = all_data.index.get_level_values("date")
+
+    # Convert to comparable format
+    if hasattr(dates[0], "date"):
+        train_mask = (dates.date >= train_start) & (dates.date <= train_end)
+        test_mask = (dates.date >= test_start) & (dates.date <= test_end)
+    else:
+        train_mask = (dates >= pd.Timestamp(train_start)) & (dates <= pd.Timestamp(train_end))
+        test_mask = (dates >= pd.Timestamp(test_start)) & (dates <= pd.Timestamp(test_end))
+
+    train_data = all_data.loc[train_mask]
+    test_data = all_data.loc[test_mask]
+
+    # Separate features and target
+    X_train = train_data[config.features]
+    y_train = train_data[config.target]
+    X_test = test_data[config.features]
+    y_test = test_data[config.target]
+
+    # Feature selection (on training data only)
+    selected_features = list(config.features)
+    if config.feature_selection and len(config.features) > config.max_features:
+        selected_features = select_features(X_train, y_train, config.max_features)
+        X_train = X_train[selected_features]
+        X_test = X_test[selected_features]
+
+    # Train model
+    model = get_model(config.model_type, config.hyperparameters)
+    model.fit(X_train, y_train)
+
+    # Predict on test
+    y_pred = model.predict(X_test)
+
+    # Compute metrics
+    metrics = compute_fold_metrics(y_test, y_pred)
+
+    return FoldResult(
+        fold_index=fold_idx,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        metrics=metrics,
+        model=model,
+        n_train_samples=len(X_train),
+        n_test_samples=len(X_test),
+    )
+
+
+def _log_to_mlflow(result: WalkForwardResult) -> None:
+    """Log walk-forward results to MLflow."""
+    try:
+        import mlflow
+
+        experiment_name = f"hrp_walkforward_{result.config.model_type}"
+        mlflow.set_experiment(experiment_name)
+
+        with mlflow.start_run(run_name=f"wf_{result.config.n_folds}folds"):
+            # Log config
+            mlflow.log_param("model_type", result.config.model_type)
+            mlflow.log_param("n_folds", result.config.n_folds)
+            mlflow.log_param("window_type", result.config.window_type)
+            mlflow.log_param("n_features", len(result.config.features))
+
+            # Log aggregate metrics
+            for key, value in result.aggregate_metrics.items():
+                if not np.isnan(value):
+                    mlflow.log_metric(key, value)
+
+            mlflow.log_metric("stability_score", result.stability_score)
+
+            # Log per-fold metrics as nested runs
+            for fold in result.fold_results:
+                with mlflow.start_run(run_name=f"fold_{fold.fold_index}", nested=True):
+                    for key, value in fold.metrics.items():
+                        if not np.isnan(value):
+                            mlflow.log_metric(key, value)
+                    mlflow.log_param("n_train_samples", fold.n_train_samples)
+                    mlflow.log_param("n_test_samples", fold.n_test_samples)
+
+        logger.info(f"Logged walk-forward results to MLflow: {experiment_name}")
+
+    except ImportError:
+        logger.warning("MLflow not installed, skipping logging")
+    except Exception as e:
+        logger.error(f"Failed to log to MLflow: {e}")

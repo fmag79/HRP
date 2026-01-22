@@ -1,6 +1,7 @@
 """Tests for walk-forward validation."""
 
 from datetime import date
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from hrp.ml.validation import (
     generate_folds,
     compute_fold_metrics,
     aggregate_fold_metrics,
+    walk_forward_validate,
 )
 
 
@@ -352,3 +354,109 @@ class TestAggregateFoldMetrics:
 
         # Zero variance = zero stability score
         assert stability == 0.0
+
+
+class TestWalkForwardValidate:
+    """Tests for walk_forward_validate function."""
+
+    @pytest.fixture
+    def sample_config(self):
+        """Create sample WalkForwardConfig."""
+        return WalkForwardConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d", "volatility_20d"],
+            start_date=date(2015, 1, 1),
+            end_date=date(2020, 12, 31),
+            n_folds=3,
+            feature_selection=False,
+        )
+
+    @pytest.fixture
+    def mock_features_df(self):
+        """Create mock features DataFrame."""
+        dates = pd.date_range("2015-01-01", "2020-12-31", freq="B")
+        symbols = ["AAPL", "MSFT"]
+        index = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+
+        np.random.seed(42)
+        n = len(index)
+
+        # Create features with weak signal
+        momentum = np.random.randn(n) * 0.1
+        volatility = np.abs(np.random.randn(n)) * 0.2
+        target = 0.1 * momentum + np.random.randn(n) * 0.05
+
+        return pd.DataFrame(
+            {
+                "momentum_20d": momentum,
+                "volatility_20d": volatility,
+                "returns_20d": target,
+            },
+            index=index,
+        )
+
+    def test_walk_forward_validate_returns_result(self, sample_config, mock_features_df):
+        """Test walk_forward_validate returns WalkForwardResult."""
+        with patch("hrp.ml.validation._fetch_features") as mock_fetch:
+            mock_fetch.return_value = mock_features_df
+
+            result = walk_forward_validate(
+                config=sample_config,
+                symbols=["AAPL", "MSFT"],
+            )
+
+        assert isinstance(result, WalkForwardResult)
+        assert len(result.fold_results) == 3
+        assert result.config == sample_config
+
+    def test_walk_forward_validate_fold_metrics(self, sample_config, mock_features_df):
+        """Test that each fold has valid metrics."""
+        with patch("hrp.ml.validation._fetch_features") as mock_fetch:
+            mock_fetch.return_value = mock_features_df
+
+            result = walk_forward_validate(
+                config=sample_config,
+                symbols=["AAPL", "MSFT"],
+            )
+
+        for fold in result.fold_results:
+            assert "mse" in fold.metrics
+            assert "ic" in fold.metrics
+            assert fold.n_train_samples > 0
+            assert fold.n_test_samples > 0
+
+    def test_walk_forward_validate_aggregate_metrics(self, sample_config, mock_features_df):
+        """Test aggregate metrics are computed."""
+        with patch("hrp.ml.validation._fetch_features") as mock_fetch:
+            mock_fetch.return_value = mock_features_df
+
+            result = walk_forward_validate(
+                config=sample_config,
+                symbols=["AAPL", "MSFT"],
+            )
+
+        assert "mean_mse" in result.aggregate_metrics
+        assert "std_mse" in result.aggregate_metrics
+        assert result.stability_score >= 0
+
+    def test_walk_forward_validate_expanding_vs_rolling(self, mock_features_df):
+        """Test both window types produce results."""
+        for window_type in ["expanding", "rolling"]:
+            config = WalkForwardConfig(
+                model_type="ridge",
+                target="returns_20d",
+                features=["momentum_20d", "volatility_20d"],
+                start_date=date(2015, 1, 1),
+                end_date=date(2020, 12, 31),
+                n_folds=3,
+                window_type=window_type,
+                feature_selection=False,
+            )
+
+            with patch("hrp.ml.validation._fetch_features") as mock_fetch:
+                mock_fetch.return_value = mock_features_df
+
+                result = walk_forward_validate(config, symbols=["AAPL", "MSFT"])
+
+            assert len(result.fold_results) == 3
