@@ -895,6 +895,392 @@ class TestPlatformAPIExperimentLinking:
         assert experiments == []
 
 
+class TestPlatformAPIQuality:
+    """Tests for data quality operations."""
+
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_returns_report(self, mock_generate, test_api):
+        """Test that run_quality_checks returns a quality report."""
+        mock_generate.return_value = {
+            "check_date": "2023-01-15",
+            "overall_status": "pass",
+            "checks": {
+                "completeness": {"status": "pass", "details": "All symbols complete"},
+                "anomalies": {"status": "pass", "details": "No anomalies detected"},
+                "gaps": {"status": "pass", "details": "No gaps found"},
+                "freshness": {"status": "pass", "details": "Data is fresh"},
+            },
+            "summary": {
+                "total_checks": 4,
+                "passed": 4,
+                "warnings": 0,
+                "failed": 0,
+                "errors": 0,
+            },
+            "critical_issues": [],
+            "metrics_stored": 4,
+        }
+
+        result = test_api.run_quality_checks(check_date=date(2023, 1, 15))
+
+        assert result["check_date"] == "2023-01-15"
+        assert result["overall_status"] == "pass"
+        assert result["summary"]["passed"] == 4
+        assert result["metrics_stored"] == 4
+
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_with_symbols(self, mock_generate, test_api):
+        """Test running quality checks with specific symbols."""
+        mock_generate.return_value = {
+            "check_date": "2023-01-15",
+            "overall_status": "pass",
+            "checks": {},
+            "summary": {"total_checks": 0, "passed": 0, "warnings": 0, "failed": 0, "errors": 0},
+            "critical_issues": [],
+            "metrics_stored": 0,
+        }
+
+        test_api.run_quality_checks(check_date=date(2023, 1, 15), symbols=["AAPL", "MSFT"])
+
+        mock_generate.assert_called_once()
+        call_args = mock_generate.call_args
+        assert call_args[1]["symbols"] == ["AAPL", "MSFT"]
+        assert call_args[1]["store_results"] is True
+
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_default_date(self, mock_generate, test_api):
+        """Test that run_quality_checks defaults to current date."""
+        mock_generate.return_value = {
+            "check_date": str(datetime.now().date()),
+            "overall_status": "pass",
+            "checks": {},
+            "summary": {"total_checks": 0, "passed": 0, "warnings": 0, "failed": 0, "errors": 0},
+            "critical_issues": [],
+            "metrics_stored": 0,
+        }
+
+        test_api.run_quality_checks()
+
+        mock_generate.assert_called_once()
+        call_args = mock_generate.call_args
+        assert call_args[1]["check_date"] is None
+
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_with_warnings(self, mock_generate, test_api):
+        """Test quality checks with warning status."""
+        mock_generate.return_value = {
+            "check_date": "2023-01-15",
+            "overall_status": "warning",
+            "checks": {
+                "completeness": {"status": "pass", "details": "OK"},
+                "anomalies": {"status": "warning", "details": "Minor anomalies detected"},
+            },
+            "summary": {
+                "total_checks": 2,
+                "passed": 1,
+                "warnings": 1,
+                "failed": 0,
+                "errors": 0,
+            },
+            "critical_issues": [],
+            "metrics_stored": 2,
+        }
+
+        result = test_api.run_quality_checks(check_date=date(2023, 1, 15))
+
+        assert result["overall_status"] == "warning"
+        assert result["summary"]["warnings"] == 1
+
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_with_failures(self, mock_generate, test_api):
+        """Test quality checks with failed checks."""
+        mock_generate.return_value = {
+            "check_date": "2023-01-15",
+            "overall_status": "fail",
+            "checks": {
+                "completeness": {"status": "fail", "details": "Missing data"},
+            },
+            "summary": {
+                "total_checks": 1,
+                "passed": 0,
+                "warnings": 0,
+                "failed": 1,
+                "errors": 0,
+            },
+            "critical_issues": ["completeness: Missing data"],
+            "metrics_stored": 1,
+        }
+
+        result = test_api.run_quality_checks(check_date=date(2023, 1, 15))
+
+        assert result["overall_status"] == "fail"
+        assert len(result["critical_issues"]) == 1
+        assert "Missing data" in result["critical_issues"][0]
+
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_handles_exception(self, mock_generate, test_api):
+        """Test that exceptions are handled gracefully."""
+        mock_generate.side_effect = Exception("Database error")
+
+        result = test_api.run_quality_checks(check_date=date(2023, 1, 15))
+
+        assert result["overall_status"] == "error"
+        assert result["summary"]["errors"] == 1
+        assert len(result["critical_issues"]) > 0
+        assert "Database error" in result["critical_issues"][0]
+
+    @patch("hrp.notifications.email.send_quality_alert")
+    @patch("hrp.api.platform.generate_quality_report")
+    def test_run_quality_checks_sends_alerts(self, mock_generate, mock_send_alert, test_api):
+        """Test that alerts are sent when requested and issues exist."""
+        mock_generate.return_value = {
+            "check_date": "2023-01-15",
+            "overall_status": "fail",
+            "checks": {"completeness": {"status": "fail", "details": "Critical issue"}},
+            "summary": {"total_checks": 1, "passed": 0, "warnings": 0, "failed": 1, "errors": 0},
+            "critical_issues": ["completeness: Critical issue"],
+            "metrics_stored": 1,
+        }
+
+        test_api.run_quality_checks(check_date=date(2023, 1, 15), send_alerts=True)
+
+        # Verify alert was called
+        mock_send_alert.assert_called_once()
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_metrics_returns_history(self, mock_history, test_api):
+        """Test that get_quality_metrics returns historical data."""
+        mock_history.return_value = {
+            "metrics": [
+                {
+                    "metric_id": 1,
+                    "check_type": "completeness",
+                    "check_date": "2023-01-15",
+                    "status": "pass",
+                },
+                {
+                    "metric_id": 2,
+                    "check_type": "anomalies",
+                    "check_date": "2023-01-15",
+                    "status": "pass",
+                },
+            ],
+            "summary": {
+                "total_records": 2,
+                "date_range": {"start": "2023-01-15", "end": "2023-01-15"},
+                "check_types": ["completeness", "anomalies"],
+            },
+        }
+
+        result = test_api.get_quality_metrics(
+            start_date=date(2023, 1, 15), end_date=date(2023, 1, 15)
+        )
+
+        assert result["summary"]["total_records"] == 2
+        assert len(result["metrics"]) == 2
+        mock_history.assert_called_once()
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_metrics_with_date_range(self, mock_history, test_api):
+        """Test getting metrics with date range filter."""
+        mock_history.return_value = {
+            "metrics": [],
+            "summary": {
+                "total_records": 0,
+                "date_range": {"start": None, "end": None},
+                "check_types": [],
+            },
+        }
+
+        test_api.get_quality_metrics(start_date=date(2023, 1, 1), end_date=date(2023, 1, 31))
+
+        call_args = mock_history.call_args
+        assert call_args[1]["start_date"] == date(2023, 1, 1)
+        assert call_args[1]["end_date"] == date(2023, 1, 31)
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_metrics_with_check_type(self, mock_history, test_api):
+        """Test filtering metrics by check type."""
+        mock_history.return_value = {
+            "metrics": [
+                {
+                    "metric_id": 1,
+                    "check_type": "completeness",
+                    "check_date": "2023-01-15",
+                    "status": "pass",
+                }
+            ],
+            "summary": {
+                "total_records": 1,
+                "date_range": {"start": "2023-01-15", "end": "2023-01-15"},
+                "check_types": ["completeness"],
+            },
+        }
+
+        result = test_api.get_quality_metrics(check_type="completeness")
+
+        assert result["summary"]["check_types"] == ["completeness"]
+        call_args = mock_history.call_args
+        assert call_args[1]["check_type"] == "completeness"
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_metrics_handles_exception(self, mock_history, test_api):
+        """Test that exceptions are handled when retrieving metrics."""
+        mock_history.side_effect = Exception("Query error")
+
+        result = test_api.get_quality_metrics()
+
+        assert result["metrics"] == []
+        assert result["summary"]["total_records"] == 0
+        assert "error" in result["summary"]
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_report_for_specific_date(self, mock_history, test_api):
+        """Test getting quality report for a specific date."""
+        mock_history.return_value = {
+            "metrics": [
+                {
+                    "metric_id": 1,
+                    "check_type": "completeness",
+                    "check_date": "2023-01-15",
+                    "status": "pass",
+                    "details": {"total_symbols": 100},
+                },
+                {
+                    "metric_id": 2,
+                    "check_type": "anomalies",
+                    "check_date": "2023-01-15",
+                    "status": "warning",
+                    "details": {"total_anomalies": 5},
+                },
+            ],
+            "summary": {
+                "total_records": 2,
+                "date_range": {"start": "2023-01-15", "end": "2023-01-15"},
+                "check_types": ["completeness", "anomalies"],
+            },
+        }
+
+        result = test_api.get_quality_report(report_date=date(2023, 1, 15))
+
+        assert result is not None
+        assert result["check_date"] == "2023-01-15"
+        assert result["overall_status"] == "warning"
+        assert result["summary"]["passed"] == 1
+        assert result["summary"]["warnings"] == 1
+        assert result["metrics_count"] == 2
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_report_no_data_returns_none(self, mock_history, test_api):
+        """Test that None is returned when no report exists for date."""
+        mock_history.return_value = {
+            "metrics": [],
+            "summary": {
+                "total_records": 0,
+                "date_range": {"start": None, "end": None},
+                "check_types": [],
+            },
+        }
+
+        result = test_api.get_quality_report(report_date=date(2023, 1, 15))
+
+        assert result is None
+
+    @patch("hrp.api.platform.get_latest_quality_report")
+    def test_get_quality_report_latest(self, mock_latest, test_api):
+        """Test getting latest quality report."""
+        mock_latest.return_value = {
+            "check_date": "2023-01-20",
+            "overall_status": "pass",
+            "checks": {
+                "completeness": {"status": "pass", "details": {}},
+            },
+            "summary": {
+                "total_checks": 1,
+                "passed": 1,
+                "warnings": 0,
+                "failed": 0,
+                "errors": 0,
+            },
+            "metrics_count": 1,
+        }
+
+        result = test_api.get_quality_report()
+
+        assert result is not None
+        assert result["check_date"] == "2023-01-20"
+        assert result["overall_status"] == "pass"
+        mock_latest.assert_called_once()
+
+    @patch("hrp.api.platform.get_latest_quality_report")
+    def test_get_quality_report_latest_none(self, mock_latest, test_api):
+        """Test getting latest report when none exist."""
+        mock_latest.return_value = None
+
+        result = test_api.get_quality_report()
+
+        assert result is None
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_report_handles_exception(self, mock_history, test_api):
+        """Test that exceptions are handled when getting report."""
+        mock_history.side_effect = Exception("Database error")
+
+        result = test_api.get_quality_report(report_date=date(2023, 1, 15))
+
+        assert result is None
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_report_overall_status_fail(self, mock_history, test_api):
+        """Test overall status calculation with failed checks."""
+        mock_history.return_value = {
+            "metrics": [
+                {
+                    "metric_id": 1,
+                    "check_type": "completeness",
+                    "check_date": "2023-01-15",
+                    "status": "fail",
+                    "details": {},
+                }
+            ],
+            "summary": {
+                "total_records": 1,
+                "date_range": {"start": "2023-01-15", "end": "2023-01-15"},
+                "check_types": ["completeness"],
+            },
+        }
+
+        result = test_api.get_quality_report(report_date=date(2023, 1, 15))
+
+        assert result["overall_status"] == "fail"
+        assert result["summary"]["failed"] == 1
+
+    @patch("hrp.api.platform.get_quality_history")
+    def test_get_quality_report_overall_status_error(self, mock_history, test_api):
+        """Test overall status calculation with errors."""
+        mock_history.return_value = {
+            "metrics": [
+                {
+                    "metric_id": 1,
+                    "check_type": "completeness",
+                    "check_date": "2023-01-15",
+                    "status": "error",
+                    "details": {},
+                }
+            ],
+            "summary": {
+                "total_records": 1,
+                "date_range": {"start": "2023-01-15", "end": "2023-01-15"},
+                "check_types": ["completeness"],
+            },
+        }
+
+        result = test_api.get_quality_report(report_date=date(2023, 1, 15))
+
+        assert result["overall_status"] == "error"
+        assert result["summary"]["errors"] == 1
+
+
 class TestPlatformAPIExceptions:
     """Tests for custom exception classes."""
 
