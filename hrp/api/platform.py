@@ -64,6 +64,56 @@ class PlatformAPI:
         logger.debug("PlatformAPI initialized")
 
     # =========================================================================
+    # Validation Helpers
+    # =========================================================================
+
+    def _validate_not_empty(self, value: str, field_name: str) -> None:
+        """Validate that a string is not empty or whitespace-only."""
+        if not value or not value.strip():
+            raise ValueError(f"{field_name} cannot be empty")
+
+    def _validate_positive(self, value: int, field_name: str) -> None:
+        """Validate that an integer is positive."""
+        if value <= 0:
+            raise ValueError(f"{field_name} must be positive")
+
+    def _validate_not_future(self, d: date, field_name: str) -> None:
+        """Validate that a date is not in the future."""
+        if d > date.today():
+            raise ValueError(f"{field_name} cannot be in the future")
+
+    def _validate_date_range(self, start: date, end: date) -> None:
+        """Validate that start date is not after end date."""
+        if start > end:
+            raise ValueError("start date must be <= end date")
+
+    def _validate_symbols_in_universe(self, symbols: List[str], as_of_date: date = None) -> None:
+        """Validate that all symbols are in the universe."""
+        # Get valid symbols from universe
+        if as_of_date:
+            query = """
+                SELECT DISTINCT symbol FROM universe
+                WHERE in_universe = TRUE AND date = ?
+            """
+            result = self._db.fetchall(query, (as_of_date,))
+        else:
+            query = """
+                SELECT DISTINCT symbol FROM universe
+                WHERE in_universe = TRUE
+            """
+            result = self._db.fetchall(query)
+
+        valid_symbols = {row[0] for row in result}
+        invalid = [s for s in symbols if s not in valid_symbols]
+
+        if invalid:
+            invalid_str = ", ".join(sorted(invalid))
+            if as_of_date:
+                raise ValueError(f"Invalid symbols not in universe as of {as_of_date}: {invalid_str}")
+            else:
+                raise ValueError(f"Invalid symbols not found in universe: {invalid_str}")
+
+    # =========================================================================
     # Data Operations
     # =========================================================================
 
@@ -84,8 +134,15 @@ class PlatformAPI:
         Returns:
             DataFrame with columns: symbol, date, open, high, low, close, adj_close, volume
         """
+        # Validate inputs
+        self._validate_not_future(start, "start date")
+        self._validate_not_future(end, "end date")
+        self._validate_date_range(start, end)
+
         if not symbols:
             raise ValueError("symbols list cannot be empty")
+
+        self._validate_symbols_in_universe(symbols)
 
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         query = f"""
@@ -125,10 +182,15 @@ class PlatformAPI:
         Returns:
             DataFrame pivoted with symbols as rows and features as columns
         """
+        # Validate inputs
+        self._validate_not_future(as_of_date, "as_of_date")
+
         if not symbols:
             raise ValueError("symbols list cannot be empty")
         if not features:
             raise ValueError("features list cannot be empty")
+
+        self._validate_symbols_in_universe(symbols, as_of_date)
 
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         features_str = ",".join(f"'{f}'" for f in features)
@@ -165,6 +227,8 @@ class PlatformAPI:
         Returns:
             List of ticker symbols in the universe
         """
+        self._validate_not_future(as_of_date, "as_of_date")
+
         query = """
             SELECT symbol
             FROM universe
@@ -217,6 +281,54 @@ class PlatformAPI:
             logger.debug(f"Retrieved {len(df)} corporate action records for {len(symbols)} symbols")
 
         return df
+
+    def is_trading_day(self, trading_date: date) -> bool:
+        """
+        Check if a date is a valid NYSE trading day.
+
+        Args:
+            trading_date: Date to check
+
+        Returns:
+            True if the date is a weekday and not a NYSE holiday, False otherwise
+
+        Examples:
+            >>> api = PlatformAPI()
+            >>> api.is_trading_day(date(2022, 7, 4))  # Independence Day
+            False
+            >>> api.is_trading_day(date(2022, 7, 5))  # Regular Tuesday
+            True
+        """
+        from hrp.utils.calendar import is_trading_day
+
+        return is_trading_day(trading_date)
+
+    def get_trading_days(self, start: date, end: date) -> pd.DatetimeIndex:
+        """
+        Get all NYSE trading days within a date range (inclusive).
+
+        Excludes weekends and NYSE holidays. Returns empty index if range
+        contains no trading days.
+
+        Args:
+            start: Start date (inclusive)
+            end: End date (inclusive)
+
+        Returns:
+            DatetimeIndex of trading days in chronological order
+
+        Raises:
+            ValueError: If start > end
+
+        Examples:
+            >>> api = PlatformAPI()
+            >>> days = api.get_trading_days(date(2022, 1, 1), date(2022, 1, 31))
+            >>> len(days)  # January 2022 has 20 trading days
+            20
+        """
+        from hrp.utils.calendar import get_trading_days
+
+        return get_trading_days(start, end)
 
     def adjust_prices_for_splits(
         self,
@@ -319,6 +431,13 @@ class PlatformAPI:
         Returns:
             hypothesis_id: Unique identifier for the hypothesis
         """
+        # Validate inputs
+        self._validate_not_empty(title, "title")
+        self._validate_not_empty(thesis, "thesis")
+        self._validate_not_empty(prediction, "prediction")
+        self._validate_not_empty(falsification, "falsification")
+        self._validate_not_empty(actor, "actor")
+
         hypothesis_id = self._generate_hypothesis_id()
 
         query = """
@@ -362,6 +481,11 @@ class PlatformAPI:
         Raises:
             NotFoundError: If hypothesis doesn't exist
         """
+        # Validate inputs
+        self._validate_not_empty(hypothesis_id, "hypothesis_id")
+        self._validate_not_empty(status, "status")
+        self._validate_not_empty(actor, "actor")
+
         existing = self.get_hypothesis(hypothesis_id)
         if not existing:
             raise NotFoundError(f"Hypothesis {hypothesis_id} not found")
@@ -399,6 +523,8 @@ class PlatformAPI:
         Returns:
             List of hypothesis dictionaries
         """
+        self._validate_positive(limit, "limit")
+
         query = """
             SELECT hypothesis_id, title, thesis, testable_prediction,
                    falsification_criteria, status, created_at, created_by,
@@ -443,6 +569,8 @@ class PlatformAPI:
         Returns:
             Hypothesis dictionary or None if not found
         """
+        self._validate_not_empty(hypothesis_id, "hypothesis_id")
+
         query = """
             SELECT hypothesis_id, title, thesis, testable_prediction,
                    falsification_criteria, status, created_at, created_by,

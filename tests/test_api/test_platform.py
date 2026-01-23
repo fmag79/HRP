@@ -77,6 +77,18 @@ def populated_db(test_api):
 
     Returns the API instance for convenience.
     """
+    # Insert symbols first (needed for foreign key constraints)
+    test_api._db.execute(
+        """
+        INSERT INTO symbols (symbol, name, exchange)
+        VALUES
+            ('AAPL', 'Apple Inc.', 'NASDAQ'),
+            ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+            ('GOOGL', 'Alphabet Inc.', 'NASDAQ'),
+            ('JPM', 'JPMorgan Chase & Co.', 'NYSE')
+        """
+    )
+
     # Insert sample universe data
     test_api._db.execute(
         """
@@ -351,32 +363,45 @@ class TestPlatformAPIValidation:
                 actor="user"
             )
 
-    def test_update_hypothesis_with_empty_hypothesis_id(self, hypothesis_api):
+    def test_update_hypothesis_with_empty_hypothesis_id(self, test_api):
         """update_hypothesis should reject empty hypothesis_id."""
-        api, hyp_ids = hypothesis_api
         with pytest.raises(ValueError, match="hypothesis_id cannot be empty"):
-            api.update_hypothesis(
+            test_api.update_hypothesis(
                 hypothesis_id="",
                 status="testing",
                 actor="user"
             )
 
-    def test_update_hypothesis_with_empty_status(self, hypothesis_api):
+    def test_update_hypothesis_with_empty_status(self, test_api):
         """update_hypothesis should reject empty status."""
-        api, hyp_ids = hypothesis_api
+        # Create a hypothesis first
+        hyp_id = test_api.create_hypothesis(
+            title="Test",
+            thesis="Test thesis",
+            prediction="Test prediction",
+            falsification="Test falsification",
+            actor="user",
+        )
         with pytest.raises(ValueError, match="status cannot be empty"):
-            api.update_hypothesis(
-                hypothesis_id=hyp_ids[0],
+            test_api.update_hypothesis(
+                hypothesis_id=hyp_id,
                 status="",
                 actor="user"
             )
 
-    def test_update_hypothesis_with_empty_actor(self, hypothesis_api):
+    def test_update_hypothesis_with_empty_actor(self, test_api):
         """update_hypothesis should reject empty actor."""
-        api, hyp_ids = hypothesis_api
+        # Create a hypothesis first
+        hyp_id = test_api.create_hypothesis(
+            title="Test",
+            thesis="Test thesis",
+            prediction="Test prediction",
+            falsification="Test falsification",
+            actor="user",
+        )
         with pytest.raises(ValueError, match="actor cannot be empty"):
-            api.update_hypothesis(
-                hypothesis_id=hyp_ids[0],
+            test_api.update_hypothesis(
+                hypothesis_id=hyp_id,
                 status="testing",
                 actor=""
             )
@@ -415,6 +440,10 @@ class TestPlatformAPIValidation:
 
     def test_symbol_not_in_universe_at_specific_date(self, populated_db):
         """Symbols not in universe at specific date should be rejected."""
+        # Insert TSLA symbol first (FK requirement)
+        populated_db._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('TSLA', 'Tesla Inc.', 'NASDAQ')"
+        )
         # Insert TSLA only for 2023-06-01
         populated_db._db.execute(
             """
@@ -1345,3 +1374,68 @@ class TestPlatformAPIIntegration:
         assert "agent:backtest" in actors
         assert "agent:analysis" in actors
         assert "user" in actors
+
+
+class TestPlatformAPICalendar:
+    """Tests for NYSE trading calendar methods."""
+
+    def test_is_trading_day_weekday(self, test_api):
+        """Regular weekdays should be trading days."""
+        # Tuesday, March 15, 2022
+        assert test_api.is_trading_day(date(2022, 3, 15)) is True
+
+    def test_is_trading_day_weekend(self, test_api):
+        """Weekends should not be trading days."""
+        # Saturday, July 2, 2022
+        assert test_api.is_trading_day(date(2022, 7, 2)) is False
+        # Sunday, July 3, 2022
+        assert test_api.is_trading_day(date(2022, 7, 3)) is False
+
+    def test_is_trading_day_holiday(self, test_api):
+        """NYSE holidays should not be trading days."""
+        # Independence Day - Monday, July 4, 2022
+        assert test_api.is_trading_day(date(2022, 7, 4)) is False
+        # Christmas observed - Monday, December 26, 2022
+        assert test_api.is_trading_day(date(2022, 12, 26)) is False
+        # Thanksgiving - Thursday, November 24, 2022
+        assert test_api.is_trading_day(date(2022, 11, 24)) is False
+
+    def test_get_trading_days_january_2022(self, test_api):
+        """January 2022 should have 20 trading days."""
+        days = test_api.get_trading_days(date(2022, 1, 1), date(2022, 1, 31))
+        assert len(days) == 20
+        assert isinstance(days, pd.DatetimeIndex)
+
+    def test_get_trading_days_excludes_holidays(self, test_api):
+        """Trading days should exclude holidays."""
+        days = test_api.get_trading_days(date(2022, 7, 1), date(2022, 7, 8))
+        dates = [d.date() for d in days]
+        
+        # Should include: July 1 (Fri), 5-8 (Tue-Fri)
+        assert date(2022, 7, 1) in dates
+        assert date(2022, 7, 5) in dates
+        
+        # Should exclude: July 2-3 (weekend), July 4 (holiday)
+        assert date(2022, 7, 2) not in dates
+        assert date(2022, 7, 3) not in dates
+        assert date(2022, 7, 4) not in dates
+        
+        assert len(days) == 5
+
+    def test_get_trading_days_chronological(self, test_api):
+        """Trading days should be in chronological order."""
+        days = test_api.get_trading_days(date(2022, 1, 1), date(2022, 3, 31))
+        dates = [d.date() for d in days]
+        assert dates == sorted(dates)
+
+    def test_get_trading_days_empty_range(self, test_api):
+        """Range with no trading days should return empty."""
+        # Weekend only
+        days = test_api.get_trading_days(date(2022, 7, 2), date(2022, 7, 3))
+        assert len(days) == 0
+
+    def test_get_trading_days_single_day(self, test_api):
+        """Single trading day range should return one day."""
+        days = test_api.get_trading_days(date(2022, 7, 5), date(2022, 7, 5))
+        assert len(days) == 1
+        assert days[0].date() == date(2022, 7, 5)

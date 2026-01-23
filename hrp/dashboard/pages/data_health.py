@@ -4,13 +4,44 @@ Data Health page for HRP Dashboard.
 Displays data completeness, ingestion status, quality metrics, and per-symbol coverage.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from hrp.data.db import get_db
+from hrp.data.quality.checks import CheckResult, IssueSeverity, QualityIssue
+from hrp.data.quality.report import QualityReport, QualityReportGenerator
+
+
+@st.cache_data(ttl=300)
+def get_quality_report(as_of_date: date) -> QualityReport:
+    """Generate or retrieve cached quality report."""
+    generator = QualityReportGenerator()
+    report = generator.generate_report(as_of_date)
+    # Store report for historical tracking
+    generator.store_report(report)
+    return report
+
+
+@st.cache_data(ttl=600)
+def get_health_trend(days: int = 90) -> pd.DataFrame:
+    """Get historical health scores for trend chart."""
+    generator = QualityReportGenerator()
+    trend_data = generator.get_health_trend(days=days)
+    if not trend_data:
+        return pd.DataFrame(columns=["date", "health_score"])
+    return pd.DataFrame(trend_data)
+
+
+def get_health_color(score: float) -> str:
+    """Get color based on health score."""
+    if score >= 80:
+        return "green"
+    elif score >= 50:
+        return "orange"
+    return "red"
 
 
 @st.cache_data(ttl=300)
@@ -266,10 +297,245 @@ def get_ingestion_summary() -> dict[str, Any]:
     }
 
 
+def render_health_hero(report: QualityReport) -> bool:
+    """
+    Render the health score hero section.
+
+    Returns True if "Run Check Now" was clicked (signals cache should be cleared).
+    """
+    score = report.health_score
+    color = get_health_color(score)
+
+    # Color mapping for Streamlit styling
+    color_hex = {"green": "#28a745", "orange": "#ffc107", "red": "#dc3545"}[color]
+
+    # Center the hero content
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        # Large health score display
+        st.markdown(
+            f"""
+            <div style="text-align: center; padding: 20px;">
+                <h1 style="font-size: 4rem; margin: 0; color: {color_hex};">
+                    {score:.0f}/100
+                </h1>
+                <p style="font-size: 1.2rem; color: #666;">Health Score</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Progress bar
+        st.progress(score / 100)
+
+        # Status summary
+        status_text = "Healthy" if score >= 80 else "Warning" if score >= 50 else "Critical"
+        st.markdown(
+            f"""
+            <div style="text-align: center; margin-top: 10px;">
+                <span style="color: {color_hex}; font-weight: bold;">{status_text}</span>
+                &nbsp;|&nbsp;
+                {report.critical_issues} critical, {report.warning_issues} warnings
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Last checked timestamp
+        time_ago = _format_time_ago(report.generated_at)
+        st.markdown(
+            f'<p style="text-align: center; color: #888; margin-top: 5px;">'
+            f"Last checked: {time_ago}</p>",
+            unsafe_allow_html=True,
+        )
+
+    # Run Check Now button (outside the centered column for full width)
+    run_check = st.button("Run Check Now", use_container_width=True)
+
+    return run_check
+
+
+def _format_time_ago(dt: datetime) -> str:
+    """Format a datetime as a human-readable 'time ago' string."""
+    now = datetime.now()
+    diff = now - dt
+
+    if diff.days > 0:
+        return f"{diff.days}d ago"
+    elif diff.seconds >= 3600:
+        hours = diff.seconds // 3600
+        return f"{hours}h ago"
+    elif diff.seconds >= 60:
+        minutes = diff.seconds // 60
+        return f"{minutes}m ago"
+    else:
+        return "Just now"
+
+
+def render_trend_chart(trend_data: pd.DataFrame) -> None:
+    """Render the 90-day health score trend chart."""
+    st.subheader("Historical Trend (90 days)")
+
+    if trend_data.empty or len(trend_data) == 0:
+        st.info("No historical data available yet. Run quality checks over time to build trend data.")
+        return
+
+    # Ensure date column is properly typed for charting
+    chart_data = trend_data.copy()
+    if "date" in chart_data.columns:
+        chart_data["date"] = pd.to_datetime(chart_data["date"])
+        chart_data = chart_data.set_index("date")
+
+    # Display area chart
+    if "health_score" in chart_data.columns:
+        st.area_chart(chart_data["health_score"], use_container_width=True)
+    else:
+        st.warning("Health score data not available in trend data.")
+
+
+def render_checks_summary(results: list[CheckResult]) -> str | None:
+    """
+    Render the quality checks summary table.
+
+    Returns the selected check filter (or None for 'All').
+    """
+    st.subheader("Quality Checks Summary")
+
+    if not results:
+        st.info("No check results available.")
+        return None
+
+    # Build summary data
+    summary_data = []
+    for result in results:
+        status = "✅ Pass" if result.passed else "❌ Fail"
+        summary_data.append({
+            "Check": result.check_name,
+            "Status": status,
+            "Critical": result.critical_count,
+            "Warnings": result.warning_count,
+        })
+
+    summary_df = pd.DataFrame(summary_data)
+
+    # Display as table
+    st.dataframe(
+        summary_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Check": st.column_config.TextColumn("Check", width="medium"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
+            "Critical": st.column_config.NumberColumn("Critical", width="small"),
+            "Warnings": st.column_config.NumberColumn("Warnings", width="small"),
+        },
+    )
+
+    # Filter dropdown for anomalies section
+    check_names = ["All"] + [r.check_name for r in results]
+    selected_check = st.selectbox(
+        "Filter anomalies by check:",
+        check_names,
+        key="check_filter",
+    )
+
+    return None if selected_check == "All" else selected_check
+
+
+def render_flagged_anomalies(
+    results: list[CheckResult],
+    check_filter: str | None,
+) -> None:
+    """Render the flagged anomalies section with expandable drill-down."""
+    st.subheader("Flagged Anomalies")
+
+    # Collect all issues
+    all_issues: list[QualityIssue] = []
+    for result in results:
+        if check_filter is None or result.check_name == check_filter:
+            all_issues.extend(result.issues)
+
+    if not all_issues:
+        st.success("No anomalies found." if check_filter is None else f"No anomalies for {check_filter}.")
+        return
+
+    # Severity filter
+    severity_options = ["All", "Critical", "Warning", "Info"]
+    selected_severity = st.selectbox(
+        "Filter by severity:",
+        severity_options,
+        key="severity_filter",
+    )
+
+    # Filter by severity
+    if selected_severity != "All":
+        severity_map = {
+            "Critical": IssueSeverity.CRITICAL,
+            "Warning": IssueSeverity.WARNING,
+            "Info": IssueSeverity.INFO,
+        }
+        target_severity = severity_map.get(selected_severity)
+        all_issues = [i for i in all_issues if i.severity == target_severity]
+
+    # Sort: critical first, then by date (recent first)
+    severity_order = {IssueSeverity.CRITICAL: 0, IssueSeverity.WARNING: 1, IssueSeverity.INFO: 2}
+    all_issues.sort(key=lambda x: (severity_order.get(x.severity, 3), x.date or date.min), reverse=True)
+
+    # Limit to 50 for performance
+    display_issues = all_issues[:50]
+    if len(all_issues) > 50:
+        st.warning(f"Showing 50 of {len(all_issues)} issues. Apply filters to narrow results.")
+
+    # Display issues with expanders
+    severity_icons = {
+        IssueSeverity.CRITICAL: "🔴",
+        IssueSeverity.WARNING: "🟡",
+        IssueSeverity.INFO: "🔵",
+    }
+
+    for issue in display_issues:
+        icon = severity_icons.get(issue.severity, "⚪")
+        symbol_str = issue.symbol or "N/A"
+        date_str = str(issue.date) if issue.date else "N/A"
+
+        with st.expander(f"{icon} [{symbol_str}] {date_str} - {issue.description}"):
+            st.markdown(f"**Check:** {issue.check_name}")
+            st.markdown(f"**Severity:** {issue.severity.value}")
+
+            if issue.details:
+                st.markdown("**Details:**")
+                details_dict = dict(issue.details)
+                for key, value in details_dict.items():
+                    st.markdown(f"- {key}: {value}")
+
+
 def render() -> None:
     """Render the Data Health page."""
     st.title("Data Health")
     st.markdown("Monitor data completeness, quality, and ingestion status.")
+
+    # -------------------------------------------------------------------------
+    # Health Score Hero
+    # -------------------------------------------------------------------------
+    try:
+        # Check if "Run Check Now" was clicked (clear cache)
+        if st.session_state.get("run_check_clicked"):
+            st.cache_data.clear()
+            st.session_state["run_check_clicked"] = False
+
+        report = get_quality_report(date.today())
+        run_check = render_health_hero(report)
+
+        if run_check:
+            st.session_state["run_check_clicked"] = True
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"Failed to load quality report: {e}")
+        report = None
+
+    st.divider()
 
     # -------------------------------------------------------------------------
     # Overview Metrics
@@ -316,6 +582,31 @@ def render() -> None:
             st.metric(label="Data Freshness", value="No data")
 
     st.divider()
+
+    # -------------------------------------------------------------------------
+    # Historical Trend Chart
+    # -------------------------------------------------------------------------
+    try:
+        trend_data = get_health_trend(days=90)
+        render_trend_chart(trend_data)
+    except Exception as e:
+        st.warning(f"Could not load trend data: {e}")
+
+    st.divider()
+
+    # -------------------------------------------------------------------------
+    # Quality Checks Summary & Flagged Anomalies
+    # -------------------------------------------------------------------------
+    if report is not None:
+        col_checks, col_anomalies = st.columns(2)
+
+        with col_checks:
+            check_filter = render_checks_summary(report.results)
+
+        with col_anomalies:
+            render_flagged_anomalies(report.results, check_filter)
+
+        st.divider()
 
     # -------------------------------------------------------------------------
     # Ingestion Status
@@ -445,59 +736,6 @@ def render() -> None:
                 "error_message": st.column_config.TextColumn("Error", width="large"),
             }
         )
-
-    st.divider()
-
-    # -------------------------------------------------------------------------
-    # Data Quality Metrics
-    # -------------------------------------------------------------------------
-    st.subheader("Data Quality")
-
-    col_qual1, col_qual2 = st.columns(2)
-
-    with col_qual1:
-        st.markdown("**Price Anomalies**")
-        anomalies = get_price_anomalies()
-
-        if anomalies.empty:
-            st.success("No price anomalies detected.")
-        else:
-            st.warning(f"Found {len(anomalies)} anomalous records")
-            st.dataframe(
-                anomalies,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "symbol": st.column_config.TextColumn("Symbol"),
-                    "date": st.column_config.DateColumn("Date"),
-                    "open": st.column_config.NumberColumn("Open", format="%.2f"),
-                    "high": st.column_config.NumberColumn("High", format="%.2f"),
-                    "low": st.column_config.NumberColumn("Low", format="%.2f"),
-                    "close": st.column_config.NumberColumn("Close", format="%.2f"),
-                    "volume": st.column_config.NumberColumn("Volume"),
-                    "anomaly_type": st.column_config.TextColumn("Anomaly Type"),
-                }
-            )
-
-    with col_qual2:
-        st.markdown("**Date Sequence Gaps**")
-        gaps = get_missing_dates_summary()
-
-        if gaps.empty:
-            st.success("No significant date gaps detected.")
-        else:
-            st.warning(f"{len(gaps)} symbols have date gaps")
-            st.dataframe(
-                gaps,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "symbol": st.column_config.TextColumn("Symbol"),
-                    "gap_count": st.column_config.NumberColumn("Gap Count"),
-                    "total_missing_days": st.column_config.NumberColumn("Total Missing Days"),
-                    "max_gap_days": st.column_config.NumberColumn("Max Gap (Days)"),
-                }
-            )
 
     st.divider()
 
