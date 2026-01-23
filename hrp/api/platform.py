@@ -7,7 +7,7 @@ All consumers (dashboard, MCP, agents) use this API - no direct database access.
 
 import json
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 from loguru import logger
@@ -54,7 +54,7 @@ class PlatformAPI:
         )
     """
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: Optional[str] = None):
         """
         Initialize the Platform API.
 
@@ -70,7 +70,7 @@ class PlatformAPI:
 
     def get_prices(
         self,
-        symbols: list[str],
+        symbols: List[str],
         start: date,
         end: date,
     ) -> pd.DataFrame:
@@ -110,8 +110,8 @@ class PlatformAPI:
 
     def get_features(
         self,
-        symbols: list[str],
-        features: list[str],
+        symbols: List[str],
+        features: List[str],
         as_of_date: date,
         version: str = "v1",
     ) -> pd.DataFrame:
@@ -161,7 +161,7 @@ class PlatformAPI:
         logger.debug(f"Retrieved features for {len(pivoted)} symbols")
         return pivoted
 
-    def get_universe(self, as_of_date: date) -> list[str]:
+    def get_universe(self, as_of_date: date) -> List[str]:
         """
         Get the trading universe as of a specific date.
 
@@ -187,6 +187,121 @@ class PlatformAPI:
 
         logger.debug(f"Universe contains {len(symbols)} symbols as of {as_of_date}")
         return symbols
+
+    def get_corporate_actions(
+        self,
+        symbols: List[str],
+        start: date,
+        end: date,
+    ) -> pd.DataFrame:
+        """
+        Get corporate actions for symbols over a date range.
+
+        Args:
+            symbols: List of ticker symbols
+            start: Start date (inclusive)
+            end: End date (inclusive)
+
+        Returns:
+            DataFrame with columns: symbol, date, action_type, factor, source
+        """
+        if not symbols:
+            raise ValueError("symbols list cannot be empty")
+
+        symbols_str = ",".join(f"'{s}'" for s in symbols)
+        query = f"""
+            SELECT symbol, date, action_type, factor, source
+            FROM corporate_actions
+            WHERE symbol IN ({symbols_str})
+              AND date >= ?
+              AND date <= ?
+            ORDER BY date, symbol, action_type
+        """
+
+        df = self._db.fetchdf(query, (start, end))
+
+        if df.empty:
+            logger.warning(f"No corporate actions found for {symbols} from {start} to {end}")
+        else:
+            logger.debug(f"Retrieved {len(df)} corporate action records for {len(symbols)} symbols")
+
+        return df
+
+    def adjust_prices_for_splits(
+        self,
+        prices: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Adjust prices for stock splits.
+
+        Takes a prices DataFrame and applies split adjustments to create
+        split-adjusted close prices. Splits are applied backward in time
+        (from most recent to oldest).
+
+        Args:
+            prices: DataFrame from get_prices() with columns:
+                    symbol, date, open, high, low, close, adj_close, volume
+
+        Returns:
+            DataFrame with original columns plus 'split_adjusted_close' column
+        """
+        if prices.empty:
+            logger.warning("Empty prices DataFrame provided to adjust_prices_for_splits")
+            return prices.assign(split_adjusted_close=None)
+
+        # Make a copy to avoid modifying the original
+        df = prices.copy()
+
+        # Ensure date column is datetime
+        df["date"] = pd.to_datetime(df["date"])
+
+        # Get unique symbols from prices
+        symbols = df["symbol"].unique().tolist()
+
+        # Get date range from prices
+        start_date = df["date"].min().date()
+        end_date = df["date"].max().date()
+
+        # Get all split actions for these symbols
+        splits = self.get_corporate_actions(symbols, start_date, end_date)
+
+        # Filter to only splits
+        if not splits.empty:
+            splits = splits[splits["action_type"] == "split"].copy()
+            splits["date"] = pd.to_datetime(splits["date"])
+
+        # Initialize split_adjusted_close with close price
+        df["split_adjusted_close"] = df["close"]
+
+        if splits.empty:
+            logger.debug("No splits found, returning prices with unadjusted close")
+            return df
+
+        # Apply splits symbol by symbol
+        for symbol in symbols:
+            symbol_splits = splits[splits["symbol"] == symbol].sort_values("date", ascending=False)
+
+            if symbol_splits.empty:
+                continue
+
+            # Get mask for this symbol's prices
+            symbol_mask = df["symbol"] == symbol
+
+            # Apply each split backward in time
+            for _, split in symbol_splits.iterrows():
+                split_date = split["date"]
+                split_factor = split["factor"]
+
+                # Adjust all prices BEFORE the split date
+                date_mask = df["date"] < split_date
+                mask = symbol_mask & date_mask
+
+                df.loc[mask, "split_adjusted_close"] *= split_factor
+
+            logger.debug(f"Applied {len(symbol_splits)} splits for {symbol}")
+
+        logger.debug(f"Split adjustment complete for {len(symbols)} symbols")
+        return df
 
     # =========================================================================
     # Hypothesis Operations
@@ -248,7 +363,7 @@ class PlatformAPI:
         self,
         hypothesis_id: str,
         status: str,
-        outcome: str | None = None,
+        outcome: Optional[str] = None,
         actor: str = "user",
         force: bool = False,
     ) -> None:
@@ -353,7 +468,7 @@ class PlatformAPI:
 
         logger.info(f"Updated hypothesis {hypothesis_id}: status={status}")
 
-    def list_hypotheses(self, status: str | None = None, limit: int = 100) -> list[dict]:
+    def list_hypotheses(self, status: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """
         List hypotheses, optionally filtered by status.
 
@@ -373,7 +488,7 @@ class PlatformAPI:
                    updated_at, outcome, confidence_score
             FROM hypotheses
         """
-        params: list[Any] = []
+        params: List[Any] = []
 
         if status:
             query += " WHERE status = ?"
@@ -401,7 +516,7 @@ class PlatformAPI:
             for row in result
         ]
 
-    def get_hypothesis(self, hypothesis_id: str) -> dict | None:
+    def get_hypothesis(self, hypothesis_id: str) -> Optional[Dict]:
         """
         Get a single hypothesis by ID.
 
@@ -448,8 +563,8 @@ class PlatformAPI:
     def run_backtest(
         self,
         config: BacktestConfig,
-        signals: pd.DataFrame | None = None,
-        hypothesis_id: str | None = None,
+        signals: Optional[pd.DataFrame] = None,
+        hypothesis_id: Optional[str] = None,
         actor: str = "user",
         experiment_name: str = "backtests",
     ) -> str:
@@ -517,7 +632,7 @@ class PlatformAPI:
         logger.info(f"Backtest complete: {experiment_id} | Sharpe: {result.sharpe:.2f}")
         return experiment_id
 
-    def get_experiment(self, experiment_id: str) -> dict | None:
+    def get_experiment(self, experiment_id: str) -> Optional[Dict]:
         """
         Get experiment details from MLflow.
 
@@ -552,8 +667,8 @@ class PlatformAPI:
 
     def compare_experiments(
         self,
-        experiment_ids: list[str],
-        metrics: list[str] | None = None,
+        experiment_ids: List[str],
+        metrics: Optional[List[str]] = None,
     ) -> pd.DataFrame:
         """
         Compare multiple experiments side by side.
@@ -649,7 +764,7 @@ class PlatformAPI:
         logger.info(f"Deployment approved for hypothesis {hypothesis_id} by {actor}")
         return True
 
-    def get_deployed_strategies(self) -> list[dict]:
+    def get_deployed_strategies(self) -> List[Dict]:
         """
         Get all currently deployed strategies.
 
@@ -664,10 +779,10 @@ class PlatformAPI:
 
     def get_lineage(
         self,
-        hypothesis_id: str | None = None,
-        experiment_id: str | None = None,
+        hypothesis_id: Optional[str] = None,
+        experiment_id: Optional[str] = None,
         limit: int = 100,
-    ) -> list[dict]:
+    ) -> List[Dict]:
         """
         Get lineage/audit trail events.
 
@@ -685,7 +800,7 @@ class PlatformAPI:
             FROM lineage
             WHERE 1=1
         """
-        params: list[Any] = []
+        params: List[Any] = []
 
         if hypothesis_id:
             query += " AND hypothesis_id = ?"
@@ -728,10 +843,10 @@ class PlatformAPI:
         self,
         event_type: str,
         actor: str,
-        details: dict | None = None,
-        hypothesis_id: str | None = None,
-        experiment_id: str | None = None,
-        parent_lineage_id: int | None = None,
+        details: Optional[Dict] = None,
+        hypothesis_id: Optional[str] = None,
+        experiment_id: Optional[str] = None,
+        parent_lineage_id: Optional[int] = None,
     ) -> int:
         """
         Log an event to the lineage table.
@@ -809,7 +924,7 @@ class PlatformAPI:
         self._db.execute(query, (hypothesis_id, experiment_id, relationship))
         logger.debug(f"Linked experiment {experiment_id} to hypothesis {hypothesis_id}")
 
-    def get_experiments_for_hypothesis(self, hypothesis_id: str) -> list[str]:
+    def get_experiments_for_hypothesis(self, hypothesis_id: str) -> List[str]:
         """
         Get all experiment IDs linked to a hypothesis.
 

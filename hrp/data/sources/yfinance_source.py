@@ -152,6 +152,99 @@ class YFinanceSource(DataSourceBase):
             logger.error(f"Error fetching info for {symbol}: {e}")
             return {'symbol': symbol}
 
+    def get_corporate_actions(
+        self,
+        symbol: str,
+        start: date,
+        end: date
+    ) -> pd.DataFrame:
+        """
+        Fetch corporate actions (dividends and splits) for a symbol.
+
+        Args:
+            symbol: Stock ticker (e.g., 'AAPL')
+            start: Start date
+            end: End date (inclusive)
+
+        Returns:
+            DataFrame with columns: symbol, date, action_type, value, source
+            action_type can be 'dividend' or 'split'
+            value is dividend amount or split ratio
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+
+            # Get actions (dividends and splits)
+            actions = ticker.actions
+
+            if actions.empty:
+                logger.debug(f"No corporate actions for {symbol} from {start} to {end}")
+                return pd.DataFrame()
+
+            # Convert start/end to timezone-aware timestamps if actions index is timezone-aware
+            start_ts = pd.Timestamp(start)
+            end_ts = pd.Timestamp(end) + pd.Timedelta(days=1)  # yfinance end date is exclusive
+
+            if actions.index.tz is not None:
+                # Make timestamps timezone-aware to match the actions index
+                start_ts = start_ts.tz_localize(actions.index.tz)
+                end_ts = end_ts.tz_localize(actions.index.tz)
+
+            # Filter by date range
+            actions = actions.loc[start_ts:end_ts]
+
+            if actions.empty:
+                logger.debug(f"No corporate actions for {symbol} in date range {start} to {end}")
+                return pd.DataFrame()
+
+            # Reset index to make Date a column
+            df = actions.reset_index()
+            df = df.rename(columns={'Date': 'date'})
+
+            # Convert date to date type (not datetime)
+            df['date'] = pd.to_datetime(df['date']).dt.date
+
+            # Transform to long format with action_type and value columns
+            result_rows = []
+
+            for _, row in df.iterrows():
+                # Add dividend row if present and non-zero
+                if 'Dividends' in row and row['Dividends'] > 0:
+                    result_rows.append({
+                        'symbol': symbol,
+                        'date': row['date'],
+                        'action_type': 'dividend',
+                        'value': row['Dividends'],
+                        'source': self.source_name,
+                    })
+
+                # Add split row if present and not 1.0 (no split)
+                if 'Stock Splits' in row and row['Stock Splits'] != 0:
+                    result_rows.append({
+                        'symbol': symbol,
+                        'date': row['date'],
+                        'action_type': 'split',
+                        'value': row['Stock Splits'],
+                        'source': self.source_name,
+                    })
+
+            if not result_rows:
+                logger.debug(f"No corporate actions for {symbol} in date range {start} to {end}")
+                return pd.DataFrame()
+
+            result_df = pd.DataFrame(result_rows)
+
+            # Order columns
+            columns = ['symbol', 'date', 'action_type', 'value', 'source']
+            result_df = result_df[columns]
+
+            logger.debug(f"Fetched {len(result_df)} corporate actions for {symbol}")
+            return result_df
+
+        except Exception as e:
+            logger.error(f"Error fetching corporate actions for {symbol}: {e}")
+            raise
+
     def validate_symbol(self, symbol: str) -> bool:
         """
         Check if a symbol is valid and has data.

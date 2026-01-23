@@ -21,9 +21,16 @@ def get_price_data(
     symbols: list[str],
     start: date,
     end: date,
+    adjust_splits: bool = True,
 ) -> pd.DataFrame:
     """
     Load price data from database.
+
+    Args:
+        symbols: List of ticker symbols
+        start: Start date (inclusive)
+        end: End date (inclusive)
+        adjust_splits: If True, apply split adjustments to close prices (default: True)
 
     Returns:
         DataFrame with MultiIndex columns (symbol, field)
@@ -44,6 +51,13 @@ def get_price_data(
 
     if df.empty:
         raise ValueError(f"No price data found for {symbols} from {start} to {end}")
+
+    # Apply split adjustments if requested
+    if adjust_splits:
+        from hrp.api.platform import PlatformAPI
+        api = PlatformAPI()
+        df = api.adjust_prices_for_splits(df)
+        logger.debug(f"Applied split adjustments to price data for {symbols}")
 
     # Pivot to get symbol columns
     df['date'] = pd.to_datetime(df['date'])
