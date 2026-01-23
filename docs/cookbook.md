@@ -1,0 +1,1200 @@
+# HRP Cookbook: A Practical Guide
+
+This cookbook provides hands-on recipes for using the Hedgefund Research Platform. Each recipe includes real, runnable examples.
+
+---
+
+## Table of Contents
+
+1. [Getting Started](#1-getting-started)
+2. [Data Operations](#2-data-operations)
+3. [Hypothesis Management](#3-hypothesis-management)
+4. [Running Backtests](#4-running-backtests)
+5. [ML & Walk-Forward Validation](#5-ml--walk-forward-validation)
+6. [Data Quality Monitoring](#6-data-quality-monitoring)
+7. [Scheduled Jobs & Automation](#7-scheduled-jobs--automation)
+8. [Using the Dashboard](#8-using-the-dashboard)
+9. [Common Workflows](#9-common-workflows)
+10. [Troubleshooting](#10-troubleshooting)
+
+---
+
+## 1. Getting Started
+
+### 1.1 Initial Setup
+
+```bash
+# Activate your virtual environment
+source .venv/bin/activate
+
+# Verify installation
+python -c "from hrp.api.platform import PlatformAPI; print('HRP ready!')"
+```
+
+### 1.2 Your First API Connection
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import date
+
+# Create the API instance (this is your main entry point)
+api = PlatformAPI()
+
+# Check system health
+health = api.health_check()
+print(f"Status: {health['status']}")
+print(f"Database: {health['database']}")
+print(f"Tables: {health['tables']}")
+```
+
+**Expected output:**
+```
+Status: healthy
+Database: connected
+Tables: {'prices': 52340, 'features': 418720, 'hypotheses': 5, ...}
+```
+
+### 1.3 Environment Variables
+
+Create a `.env` file for configuration:
+
+```bash
+# Database location (optional, defaults to ~/hrp-data/hrp.duckdb)
+HRP_DB_PATH=~/hrp-data/hrp.duckdb
+
+# Email notifications (optional)
+RESEND_API_KEY=your_resend_api_key
+NOTIFICATION_EMAIL=your@email.com
+NOTIFICATION_FROM_EMAIL=hrp@yourdomain.com
+```
+
+---
+
+## 2. Data Operations
+
+### 2.1 Get Price Data
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import date
+
+api = PlatformAPI()
+
+# Get prices for specific symbols
+prices = api.get_prices(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date(2023, 1, 1),
+    end=date(2023, 12, 31)
+)
+
+print(prices.head())
+```
+
+**Output:**
+```
+  symbol        date    open    high     low   close  adj_close     volume
+0   AAPL  2023-01-03  130.28  130.90  124.17  125.07     124.42  112117500
+1   AAPL  2023-01-04  126.89  128.66  125.08  126.36     125.70   89113600
+2   AAPL  2023-01-05  127.13  127.77  124.76  125.02     124.37   80962700
+...
+```
+
+### 2.2 Get Feature Data
+
+```python
+# Get pre-computed technical features
+features = api.get_features(
+    symbols=['AAPL', 'MSFT'],
+    features=['momentum_20d', 'volatility_20d', 'rsi_14d'],
+    as_of_date=date(2023, 12, 29)
+)
+
+print(features)
+```
+
+**Output:**
+```
+        momentum_20d  volatility_20d   rsi_14d
+symbol
+AAPL        0.0523         0.1842      58.34
+MSFT        0.0712         0.1654      62.15
+```
+
+### 2.3 Get Universe
+
+```python
+# Get current tradeable universe
+universe = api.get_universe(as_of_date=date.today())
+print(f"Universe size: {len(universe)} symbols")
+print(f"Sample: {universe[:10]}")
+```
+
+**Output:**
+```
+Universe size: 450 symbols
+Sample: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'V', 'UNH', 'JNJ']
+```
+
+### 2.4 Ingest New Price Data
+
+```python
+from hrp.data.ingestion.prices import ingest_prices
+from datetime import date, timedelta
+
+# Ingest last 30 days for specific symbols
+result = ingest_prices(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date.today() - timedelta(days=30),
+    end=date.today(),
+    source='yfinance'  # or 'polygon' if you have API key
+)
+
+print(f"Symbols succeeded: {result['symbols_success']}")
+print(f"Rows inserted: {result['rows_inserted']}")
+```
+
+### 2.5 Compute Features
+
+```python
+from hrp.data.ingestion.features import compute_features
+from datetime import date, timedelta
+
+# Compute features for recent data
+result = compute_features(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date.today() - timedelta(days=60),
+    end=date.today()
+)
+
+print(f"Features computed: {result['features_computed']}")
+print(f"Rows inserted: {result['rows_inserted']}")
+```
+
+### 2.6 Get Point-in-Time Fundamentals
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import date
+
+api = PlatformAPI()
+
+# Get fundamentals as they would have been known on a specific date
+# This prevents look-ahead bias by only returning data where report_date <= as_of_date
+fundamentals = api.get_fundamentals_as_of(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    metrics=['revenue', 'eps', 'book_value'],
+    as_of_date=date(2023, 6, 30)
+)
+
+print(fundamentals)
+```
+
+**Output:**
+```
+  symbol      metric         value  report_date  period_end
+0   AAPL     revenue  3.948000e+11   2023-05-04  2023-03-31
+1   AAPL         eps  1.520000e+00   2023-05-04  2023-03-31
+2   AAPL  book_value  6.240000e+01   2023-05-04  2023-03-31
+3   MSFT     revenue  2.119000e+11   2023-04-25  2023-03-31
+...
+```
+
+**Using Fundamentals in Backtests:**
+
+```python
+from hrp.research.backtest import get_fundamentals_for_backtest
+import pandas as pd
+
+# Get fundamentals for each date in a backtest range
+dates = pd.date_range('2023-01-01', '2023-12-31', freq='M')
+fundamentals = get_fundamentals_for_backtest(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    metrics=['eps', 'book_value'],
+    dates=dates
+)
+
+# Returns DataFrame with MultiIndex (date, symbol) and metrics as columns
+print(fundamentals.head())
+```
+
+**Output:**
+```
+                            eps  book_value
+date       symbol
+2023-01-31 AAPL     1.29        60.10
+           GOOGL    1.06        21.58
+           MSFT     2.32        26.44
+2023-02-28 AAPL     1.29        60.10
+           GOOGL    1.06        21.58
+...
+```
+
+---
+
+## 3. Hypothesis Management
+
+### 3.1 Create a New Hypothesis
+
+```python
+from hrp.api.platform import PlatformAPI
+
+api = PlatformAPI()
+
+# Create a formal research hypothesis
+hypothesis_id = api.create_hypothesis(
+    title="20-day momentum predicts 5-day forward returns",
+    thesis="""
+    Stocks with strong 20-day momentum tend to continue outperforming
+    over the next 5 trading days. This is based on the momentum anomaly
+    documented in academic literature.
+    """,
+    prediction="""
+    A portfolio long top-decile 20-day momentum stocks, rebalanced weekly,
+    will outperform SPY by >2% annually with Sharpe > 0.5.
+    """,
+    falsification="""
+    - Out-of-sample Sharpe ratio < 0.3
+    - p-value for excess returns > 0.10
+    - Performance concentrated in < 2 years
+    """,
+    actor='user'
+)
+
+print(f"Created hypothesis: {hypothesis_id}")
+# Output: Created hypothesis: HYP-2025-001
+```
+
+### 3.2 List Hypotheses
+
+```python
+# List all hypotheses
+all_hypotheses = api.list_hypotheses()
+print(f"Total hypotheses: {len(all_hypotheses)}")
+
+# List by status
+draft_hypotheses = api.list_hypotheses(status='draft')
+validated_hypotheses = api.list_hypotheses(status='validated')
+
+for h in draft_hypotheses[:3]:
+    print(f"- {h['hypothesis_id']}: {h['title']}")
+```
+
+### 3.3 Update Hypothesis Status
+
+```python
+# Move hypothesis to testing (after running initial backtest)
+api.update_hypothesis(
+    hypothesis_id='HYP-2025-001',
+    status='testing',
+    actor='user'
+)
+
+# After validation, mark as validated or rejected
+api.update_hypothesis(
+    hypothesis_id='HYP-2025-001',
+    status='validated',
+    outcome='Passed all validation criteria. Sharpe=0.72, p-value=0.023',
+    actor='user'
+)
+```
+
+### 3.4 View Hypothesis Details
+
+```python
+# Get full hypothesis details
+hypothesis = api.get_hypothesis('HYP-2025-001')
+
+print(f"Title: {hypothesis['title']}")
+print(f"Status: {hypothesis['status']}")
+print(f"Created: {hypothesis['created_at']}")
+print(f"Thesis: {hypothesis['thesis'][:100]}...")
+```
+
+### 3.5 View Audit Trail (Lineage)
+
+```python
+# Get full history of actions for a hypothesis
+lineage = api.get_lineage(hypothesis_id='HYP-2025-001')
+
+for event in lineage:
+    print(f"{event['timestamp']} | {event['event_type']} | {event['actor']}")
+```
+
+**Output:**
+```
+2025-01-15 10:30:00 | hypothesis_created | user
+2025-01-15 11:00:00 | experiment_run | user
+2025-01-15 14:30:00 | status_updated | user
+2025-01-16 09:00:00 | validation_passed | system
+```
+
+---
+
+## 4. Running Backtests
+
+### 4.1 Simple Momentum Backtest
+
+```python
+from hrp.api.platform import PlatformAPI
+from hrp.research.config import BacktestConfig, CostModel
+from datetime import date
+
+api = PlatformAPI()
+
+# Configure the backtest
+config = BacktestConfig(
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'V', 'UNH', 'JNJ'],
+    start_date=date(2020, 1, 1),
+    end_date=date(2023, 12, 31),
+    sizing_method='equal',
+    max_positions=5,
+    max_position_pct=0.20,
+    costs=CostModel(commission_pct=0.001, slippage_pct=0.001),
+    name='momentum_test',
+    description='Testing 20-day momentum on tech stocks'
+)
+
+# Run backtest (uses momentum signals by default)
+experiment_id = api.run_backtest(
+    config=config,
+    hypothesis_id='HYP-2025-001',  # Link to hypothesis
+    actor='user'
+)
+
+print(f"Experiment logged: {experiment_id}")
+```
+
+### 4.2 Backtest with Custom Signals
+
+```python
+import pandas as pd
+import numpy as np
+from hrp.api.platform import PlatformAPI
+from hrp.research.config import BacktestConfig
+from datetime import date
+
+api = PlatformAPI()
+
+# Get price data
+prices = api.get_prices(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date(2020, 1, 1),
+    end=date(2023, 12, 31)
+)
+
+# Pivot to wide format
+close_prices = prices.pivot(index='date', columns='symbol', values='adj_close')
+
+# Create custom signals (example: RSI-based mean reversion)
+def compute_rsi(prices, period=14):
+    delta = prices.diff()
+    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+rsi = close_prices.apply(lambda x: compute_rsi(x, period=14))
+
+# Signal: Buy when RSI < 30 (oversold), sell when RSI > 70
+signals = pd.DataFrame(index=rsi.index, columns=rsi.columns)
+signals[rsi < 30] = 1.0   # Buy signal
+signals[rsi > 70] = -1.0  # Sell signal
+signals = signals.fillna(0)
+
+# Run backtest with custom signals
+config = BacktestConfig(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start_date=date(2020, 1, 1),
+    end_date=date(2023, 12, 31),
+    name='rsi_mean_reversion'
+)
+
+experiment_id = api.run_backtest(
+    config=config,
+    signals=signals,
+    hypothesis_id='HYP-2025-002',
+    actor='user'
+)
+```
+
+### 4.3 View Experiment Results
+
+```python
+# Get experiment details
+experiment = api.get_experiment(experiment_id)
+
+print("=== Backtest Results ===")
+print(f"Status: {experiment['status']}")
+print(f"\nMetrics:")
+for metric, value in experiment['metrics'].items():
+    print(f"  {metric}: {value:.4f}")
+```
+
+**Output:**
+```
+=== Backtest Results ===
+Status: FINISHED
+
+Metrics:
+  sharpe_ratio: 0.7234
+  sortino_ratio: 1.0521
+  total_return: 0.4523
+  cagr: 0.1342
+  max_drawdown: 0.1823
+  volatility: 0.1854
+  calmar_ratio: 0.7361
+  win_rate: 0.5423
+```
+
+### 4.4 Compare Multiple Experiments
+
+```python
+# Compare experiments side-by-side
+comparison = api.compare_experiments(
+    experiment_ids=[experiment_id_1, experiment_id_2, experiment_id_3],
+    metrics=['sharpe_ratio', 'total_return', 'max_drawdown', 'win_rate']
+)
+
+print(comparison)
+```
+
+**Output:**
+```
+                     sharpe_ratio  total_return  max_drawdown  win_rate
+experiment_id
+abc123               0.7234        0.4523        0.1823        0.5423
+def456               0.5123        0.3245        0.2134        0.4823
+ghi789               0.8534        0.5234        0.1523        0.5723
+```
+
+---
+
+## 5. ML & Walk-Forward Validation
+
+### 5.1 Train a Simple ML Model
+
+```python
+from hrp.ml.training import train_model
+from hrp.ml.config import MLConfig
+from datetime import date
+
+# Configure ML training
+config = MLConfig(
+    model_type='ridge',
+    target='returns_20d',
+    features=['momentum_20d', 'momentum_60d', 'volatility_20d', 'rsi_14d'],
+    train_start=date(2015, 1, 1),
+    train_end=date(2020, 12, 31),
+    validation_start=date(2021, 1, 1),
+    validation_end=date(2021, 12, 31),
+    test_start=date(2022, 1, 1),
+    test_end=date(2023, 12, 31),
+    feature_selection=True,
+    max_features=10
+)
+
+# Train the model
+result = train_model(
+    config=config,
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA'],
+    hypothesis_id='HYP-2025-001'
+)
+
+print(f"Train R²: {result['train_metrics']['r2']:.4f}")
+print(f"Val R²: {result['val_metrics']['r2']:.4f}")
+print(f"Test R²: {result['test_metrics']['r2']:.4f}")
+print(f"Test IC: {result['test_metrics']['ic']:.4f}")
+```
+
+### 5.2 Walk-Forward Validation
+
+```python
+from hrp.ml import WalkForwardConfig, walk_forward_validate
+from datetime import date
+
+# Configure walk-forward validation
+config = WalkForwardConfig(
+    model_type='ridge',
+    target='returns_20d',
+    features=['momentum_20d', 'volatility_20d', 'rsi_14d', 'volume_20d'],
+    start_date=date(2015, 1, 1),
+    end_date=date(2023, 12, 31),
+    n_folds=5,
+    window_type='expanding',  # 'expanding' or 'rolling'
+    feature_selection=True,
+    max_features=15
+)
+
+# Run walk-forward validation
+result = walk_forward_validate(
+    config=config,
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'],
+    log_to_mlflow=True
+)
+
+# Check results
+print(f"Stability Score: {result.stability_score:.4f}")  # Lower is better
+print(f"Mean IC: {result.mean_ic:.4f}")
+print(f"Model is stable: {result.is_stable}")  # stability_score <= 1.0
+
+# Per-fold results
+print("\nPer-Fold Results:")
+for fold in result.fold_results:
+    print(f"  Fold {fold.fold_index}: IC={fold.metrics['ic']:.4f}, "
+          f"MSE={fold.metrics['mse']:.6f}, "
+          f"Train: {fold.train_start} to {fold.train_end}")
+```
+
+**Output:**
+```
+Stability Score: 0.4523
+Mean IC: 0.0823
+Model is stable: True
+
+Per-Fold Results:
+  Fold 0: IC=0.0912, MSE=0.000234, Train: 2015-01-01 to 2017-12-31
+  Fold 1: IC=0.0845, MSE=0.000256, Train: 2015-01-01 to 2018-12-31
+  Fold 2: IC=0.0789, MSE=0.000278, Train: 2015-01-01 to 2019-12-31
+  Fold 3: IC=0.0756, MSE=0.000289, Train: 2015-01-01 to 2020-12-31
+  Fold 4: IC=0.0812, MSE=0.000245, Train: 2015-01-01 to 2021-12-31
+```
+
+### 5.3 Generate Trading Signals from ML Predictions
+
+```python
+from hrp.ml.signals import predictions_to_signals
+
+# Assuming you have predictions from your model
+predictions = model.predict(features_df)
+
+# Method 1: Rank-based (go long top 10%)
+signals = predictions_to_signals(
+    predictions=predictions,
+    method='rank',
+    top_pct=0.10
+)
+
+# Method 2: Threshold-based
+signals = predictions_to_signals(
+    predictions=predictions,
+    method='threshold',
+    threshold=0.02  # Buy if predicted return > 2%
+)
+
+# Method 3: Z-score normalized
+signals = predictions_to_signals(
+    predictions=predictions,
+    method='zscore'
+)
+```
+
+### 5.4 Statistical Validation
+
+```python
+from hrp.risk.validation import validate_strategy, significance_test, ValidationCriteria
+import pandas as pd
+
+# Define validation criteria
+criteria = ValidationCriteria(
+    min_sharpe=0.5,
+    min_trades=100,
+    max_drawdown=0.25,
+    min_win_rate=0.40,
+    min_profit_factor=1.2,
+    min_oos_period_days=730  # 2 years
+)
+
+# Get strategy and benchmark returns
+strategy_returns = pd.Series(...)  # Your strategy daily returns
+benchmark_returns = pd.Series(...)  # SPY daily returns
+
+# Run significance test
+sig_result = significance_test(strategy_returns, benchmark_returns, alpha=0.05)
+print(f"Excess Return (annualized): {sig_result['excess_return_annualized']:.2%}")
+print(f"t-statistic: {sig_result['t_statistic']:.3f}")
+print(f"p-value: {sig_result['p_value']:.4f}")
+print(f"Statistically Significant: {sig_result['significant']}")
+
+# Full validation
+validation_result = validate_strategy(
+    returns=strategy_returns,
+    benchmark_returns=benchmark_returns,
+    criteria=criteria,
+    trades_df=trades_df  # DataFrame of trades
+)
+
+print(f"\nValidation Passed: {validation_result.passed}")
+for criterion, passed in validation_result.criteria_results.items():
+    status = "PASS" if passed else "FAIL"
+    print(f"  {criterion}: {status}")
+```
+
+### 5.5 Robustness Testing
+
+```python
+from hrp.risk.robustness import (
+    check_parameter_sensitivity,
+    check_time_stability,
+    check_regime_robustness
+)
+
+# Parameter sensitivity (varies parameters +/- 20%)
+sensitivity_result = check_parameter_sensitivity(
+    experiments=experiment_results,  # Dict of param_set -> metrics
+    baseline_key='default',
+    threshold=0.5  # Max allowed degradation
+)
+print(f"Parameter Sensitivity: {'PASS' if sensitivity_result.passed else 'FAIL'}")
+
+# Time stability (checks across sub-periods)
+time_result = check_time_stability(
+    fold_results=walk_forward_result.fold_results,
+    threshold=0.5
+)
+print(f"Time Stability: {'PASS' if time_result.passed else 'FAIL'}")
+
+# Regime robustness (bull/bear/sideways)
+regime_result = check_regime_robustness(
+    results_by_regime={
+        'bull': bull_market_metrics,
+        'bear': bear_market_metrics,
+        'sideways': sideways_metrics
+    },
+    threshold=0.5
+)
+print(f"Regime Robustness: {'PASS' if regime_result.passed else 'FAIL'}")
+```
+
+---
+
+## 6. Data Quality Monitoring
+
+### 6.1 Run Quality Checks
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import date
+
+api = PlatformAPI()
+
+# Run all quality checks
+result = api.run_quality_checks(
+    as_of_date=date.today(),
+    send_alerts=True  # Send email if issues found
+)
+
+print(f"Health Score: {result['health_score']}/100")
+print(f"Critical Issues: {result['critical_issues']}")
+print(f"Warning Issues: {result['warning_issues']}")
+print(f"Passed: {result['passed']}")
+```
+
+**Output:**
+```
+Health Score: 95/100
+Critical Issues: 0
+Warning Issues: 2
+Passed: True
+```
+
+### 6.2 Check Specific Quality Aspects
+
+```python
+from hrp.data.quality.checks import (
+    PriceAnomalyCheck,
+    CompletenessCheck,
+    GapDetectionCheck,
+    StaleDataCheck,
+    VolumeAnomalyCheck
+)
+from hrp.data.db import DatabaseManager
+from datetime import date
+
+db = DatabaseManager()
+
+# Check for price anomalies (>50% moves)
+price_check = PriceAnomalyCheck(db)
+result = price_check.run(as_of_date=date.today())
+print(f"Price anomalies found: {len(result.issues)}")
+for issue in result.issues[:3]:
+    print(f"  - {issue.symbol}: {issue.message}")
+
+# Check for missing data
+completeness_check = CompletenessCheck(db)
+result = completeness_check.run(as_of_date=date.today())
+print(f"\nMissing data issues: {len(result.issues)}")
+
+# Check for stale data (not updated in 3+ days)
+stale_check = StaleDataCheck(db, max_stale_days=3)
+result = stale_check.run(as_of_date=date.today())
+print(f"\nStale data issues: {len(result.issues)}")
+```
+
+### 6.3 Generate Quality Report
+
+```python
+from hrp.data.quality.report import QualityReport
+from datetime import date
+
+# Generate comprehensive report
+report = QualityReport.generate(as_of_date=date.today())
+
+print(f"Report generated: {report.generated_at}")
+print(f"Health Score: {report.health_score}")
+print(f"Checks Run: {report.checks_run}")
+print(f"Checks Passed: {report.checks_passed}")
+
+print("\nIssues by Severity:")
+print(f"  Critical: {report.critical_issues}")
+print(f"  Warning: {report.warning_issues}")
+print(f"  Info: {report.info_issues}")
+
+# Save report
+report.save()  # Saves to database for historical tracking
+```
+
+---
+
+## 7. Scheduled Jobs & Automation
+
+### 7.1 Run Jobs Manually
+
+```bash
+# Run price ingestion job
+python -m hrp.agents.cli run-now --job prices
+
+# Run feature computation job
+python -m hrp.agents.cli run-now --job features
+
+# Run for specific symbols
+python -m hrp.agents.cli run-now --job prices --symbols AAPL MSFT GOOGL
+```
+
+### 7.2 Set Up Daily Ingestion
+
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+
+# Set up daily jobs (US/Eastern timezone)
+scheduler.setup_daily_ingestion(
+    symbols=None,  # None = all universe symbols
+    price_job_time='18:00',   # 6 PM ET (after market close)
+    feature_job_time='18:10'  # 6:10 PM ET (after prices loaded)
+)
+
+# Start the scheduler
+scheduler.start()
+
+# The scheduler runs in the background
+# To stop it:
+# scheduler.shutdown()
+```
+
+### 7.3 View Job Status
+
+```bash
+# List all scheduled jobs
+python -m hrp.agents.cli list-jobs
+
+# View job execution history
+python -m hrp.agents.cli job-status
+
+# View status for specific job
+python -m hrp.agents.cli job-status --job-id price_ingestion --limit 10
+```
+
+**Output:**
+```
+Scheduled Jobs:
+  price_ingestion: Daily at 18:00 ET (next: 2025-01-23 18:00:00)
+  feature_computation: Daily at 18:10 ET (next: 2025-01-23 18:10:00)
+
+Recent Executions:
+  2025-01-22 18:00:05 | price_ingestion | SUCCESS | 450 symbols, 450 rows
+  2025-01-22 18:10:12 | feature_computation | SUCCESS | 3600 features
+  2025-01-21 18:00:03 | price_ingestion | SUCCESS | 450 symbols, 450 rows
+```
+
+### 7.4 Run Jobs Programmatically
+
+```python
+from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob
+from datetime import date, timedelta
+
+# Run price ingestion
+price_job = PriceIngestionJob(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date.today() - timedelta(days=7),
+    end=date.today()
+)
+result = price_job.run()
+print(f"Status: {result['status']}")
+print(f"Records inserted: {result['records_inserted']}")
+
+# Run feature computation (depends on prices being loaded)
+feature_job = FeatureComputationJob(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date.today() - timedelta(days=30),
+    end=date.today()
+)
+result = feature_job.run()
+print(f"Features computed: {result['features_computed']}")
+```
+
+### 7.5 Clear Job History
+
+```bash
+# Clear all history older than 30 days
+python -m hrp.agents.cli clear-history --before 2025-01-01 --confirm
+
+# Clear history for specific job
+python -m hrp.agents.cli clear-history --job-id price_ingestion --confirm
+
+# Clear only failed jobs
+python -m hrp.agents.cli clear-history --status FAILED --confirm
+```
+
+---
+
+## 8. Using the Dashboard
+
+### 8.1 Start the Dashboard
+
+```bash
+# Start Streamlit dashboard
+streamlit run hrp/dashboard/app.py
+
+# Access at http://localhost:8501
+```
+
+### 8.2 Dashboard Pages
+
+| Page | Purpose | Key Features |
+|------|---------|--------------|
+| **Home** | System overview | Health status, recent activity, quick stats |
+| **Data Health** | Data quality | Quality scores, issue summary, trends |
+| **Ingestion Status** | Job monitoring | Job history, next runs, failure alerts |
+| **Hypotheses** | Research management | Create, view, update hypotheses |
+| **Experiments** | Backtest results | View metrics, compare experiments, MLflow link |
+
+### 8.3 Start MLflow UI
+
+```bash
+# Start MLflow UI for detailed experiment tracking
+mlflow ui --backend-store-uri ~/hrp-data/mlflow/mlflow.db
+
+# Access at http://localhost:5000
+```
+
+---
+
+## 9. Common Workflows
+
+### 9.1 Complete Research Workflow
+
+```python
+from hrp.api.platform import PlatformAPI
+from hrp.research.config import BacktestConfig
+from hrp.ml import WalkForwardConfig, walk_forward_validate
+from hrp.risk.validation import validate_strategy, ValidationCriteria
+from datetime import date
+
+api = PlatformAPI()
+
+# Step 1: Create hypothesis
+hypothesis_id = api.create_hypothesis(
+    title="Momentum + Low Volatility Factor",
+    thesis="Combining momentum with low volatility improves risk-adjusted returns",
+    prediction="Sharpe > 0.8, max drawdown < 20%",
+    falsification="Sharpe < 0.5 or drawdown > 25%",
+    actor='user'
+)
+
+# Step 2: Run initial backtest
+config = BacktestConfig(
+    symbols=api.get_universe(date.today())[:50],  # Top 50 stocks
+    start_date=date(2018, 1, 1),
+    end_date=date(2023, 12, 31),
+    name='momentum_low_vol_v1'
+)
+
+experiment_id = api.run_backtest(config, hypothesis_id=hypothesis_id)
+experiment = api.get_experiment(experiment_id)
+
+# Step 3: Move to testing if initial results promising
+if experiment['metrics']['sharpe_ratio'] > 0.5:
+    api.update_hypothesis(hypothesis_id, status='testing')
+
+    # Step 4: Run walk-forward validation
+    wf_config = WalkForwardConfig(
+        model_type='ridge',
+        target='returns_20d',
+        features=['momentum_20d', 'volatility_20d'],
+        start_date=date(2015, 1, 1),
+        end_date=date(2023, 12, 31),
+        n_folds=5,
+        window_type='expanding'
+    )
+
+    wf_result = walk_forward_validate(wf_config, symbols=config.symbols)
+
+    # Step 5: Statistical validation
+    criteria = ValidationCriteria(min_sharpe=0.5, max_drawdown=0.25)
+    validation = validate_strategy(returns, benchmark_returns, criteria)
+
+    if validation.passed and wf_result.is_stable:
+        api.update_hypothesis(
+            hypothesis_id,
+            status='validated',
+            outcome=f"Passed validation. Stability={wf_result.stability_score:.2f}"
+        )
+        print("Hypothesis VALIDATED!")
+    else:
+        api.update_hypothesis(
+            hypothesis_id,
+            status='rejected',
+            outcome="Failed validation criteria"
+        )
+        print("Hypothesis REJECTED")
+```
+
+### 9.2 Daily Monitoring Workflow
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import date
+
+api = PlatformAPI()
+
+# 1. Check system health
+health = api.health_check()
+if health['status'] != 'healthy':
+    print("WARNING: System health issue!")
+    print(health)
+
+# 2. Run data quality checks
+quality = api.run_quality_checks(as_of_date=date.today())
+print(f"Data Health Score: {quality['health_score']}/100")
+
+if quality['critical_issues'] > 0:
+    print(f"CRITICAL: {quality['critical_issues']} issues found!")
+
+# 3. Check deployed strategies
+deployed = api.get_deployed_strategies()
+print(f"\nDeployed strategies: {len(deployed)}")
+for strategy in deployed:
+    print(f"  - {strategy['hypothesis_id']}: {strategy['title']}")
+
+# 4. Review recent agent activity
+lineage = api.get_lineage(limit=20)
+agent_actions = [e for e in lineage if e['actor'].startswith('agent:')]
+print(f"\nRecent agent actions: {len(agent_actions)}")
+```
+
+### 9.3 Backfill Historical Data
+
+```python
+from hrp.data.ingestion.prices import ingest_prices
+from hrp.data.ingestion.features import compute_features
+from datetime import date
+import time
+
+# Get universe symbols
+api = PlatformAPI()
+symbols = api.get_universe(date.today())
+
+# Backfill in batches to respect rate limits
+batch_size = 10
+for i in range(0, len(symbols), batch_size):
+    batch = symbols[i:i+batch_size]
+    print(f"Processing batch {i//batch_size + 1}: {batch}")
+
+    # Ingest prices
+    result = ingest_prices(
+        symbols=batch,
+        start=date(2015, 1, 1),
+        end=date.today(),
+        source='yfinance'
+    )
+    print(f"  Prices: {result['rows_inserted']} rows")
+
+    # Compute features
+    result = compute_features(
+        symbols=batch,
+        start=date(2015, 1, 1),
+        end=date.today()
+    )
+    print(f"  Features: {result['rows_inserted']} rows")
+
+    # Rate limiting
+    time.sleep(2)
+
+print("Backfill complete!")
+```
+
+---
+
+## 10. Troubleshooting
+
+### 10.1 Common Issues
+
+#### Database Connection Errors
+
+```python
+# Check database path
+import os
+db_path = os.environ.get('HRP_DB_PATH', '~/hrp-data/hrp.duckdb')
+print(f"Database path: {os.path.expanduser(db_path)}")
+
+# Verify database exists
+if os.path.exists(os.path.expanduser(db_path)):
+    print("Database file exists")
+else:
+    print("Database file NOT FOUND - run initial setup")
+```
+
+#### Missing Features
+
+```python
+# Check what features are available
+from hrp.data.db import DatabaseManager
+
+db = DatabaseManager()
+with db.get_connection() as conn:
+    features = conn.execute("""
+        SELECT DISTINCT feature_name
+        FROM features
+        ORDER BY feature_name
+    """).fetchall()
+
+print("Available features:")
+for f in features:
+    print(f"  - {f[0]}")
+```
+
+#### Symbol Not Found
+
+```python
+# Check if symbol exists in universe
+from hrp.data.db import DatabaseManager
+from datetime import date
+
+db = DatabaseManager()
+with db.get_connection() as conn:
+    result = conn.execute("""
+        SELECT symbol, date, in_universe
+        FROM universe
+        WHERE symbol = 'AAPL'
+        ORDER BY date DESC
+        LIMIT 5
+    """).fetchall()
+
+print("Symbol history:")
+for r in result:
+    print(f"  {r[0]} | {r[1]} | in_universe={r[2]}")
+```
+
+### 10.2 Reset Database
+
+```bash
+# WARNING: This deletes all data!
+rm ~/hrp-data/hrp.duckdb
+
+# Recreate schema
+python -c "from hrp.data.schema import create_schema; create_schema()"
+
+# Re-ingest data
+python -m hrp.data.ingestion.prices --symbols AAPL MSFT GOOGL --start 2020-01-01
+```
+
+### 10.3 View Logs
+
+```bash
+# Check ingestion logs
+tail -f ~/hrp-data/logs/ingestion.log
+
+# Check agent logs
+tail -f ~/hrp-data/logs/agents.log
+```
+
+### 10.4 Verify MLflow Setup
+
+```python
+import mlflow
+from hrp.research.mlflow_utils import setup_mlflow
+
+# Setup MLflow
+setup_mlflow()
+
+# List experiments
+experiments = mlflow.search_experiments()
+for exp in experiments:
+    print(f"  {exp.experiment_id}: {exp.name}")
+
+# Count runs
+runs = mlflow.search_runs(experiment_names=['backtests'])
+print(f"\nTotal backtest runs: {len(runs)}")
+```
+
+---
+
+## Quick Reference
+
+### API Methods
+
+| Method | Description |
+|--------|-------------|
+| `api.get_prices(symbols, start, end)` | Get OHLCV price data |
+| `api.get_features(symbols, features, as_of_date)` | Get computed features |
+| `api.get_universe(as_of_date)` | Get tradeable symbol list |
+| `api.create_hypothesis(...)` | Create research hypothesis |
+| `api.update_hypothesis(id, status, ...)` | Update hypothesis status |
+| `api.list_hypotheses(status)` | List hypotheses |
+| `api.run_backtest(config, ...)` | Execute backtest |
+| `api.get_experiment(id)` | Get experiment results |
+| `api.compare_experiments(ids)` | Compare multiple experiments |
+| `api.get_lineage(hypothesis_id)` | Get audit trail |
+| `api.run_quality_checks(date)` | Run data quality checks |
+| `api.health_check()` | System health status |
+| `api.get_fundamentals_as_of(symbols, metrics, as_of_date)` | Get point-in-time fundamentals |
+
+### CLI Commands
+
+```bash
+# Jobs
+python -m hrp.agents.cli run-now --job prices
+python -m hrp.agents.cli run-now --job features
+python -m hrp.agents.cli list-jobs
+python -m hrp.agents.cli job-status
+
+# Services
+streamlit run hrp/dashboard/app.py          # Dashboard (port 8501)
+mlflow ui --backend-store-uri ~/hrp-data/mlflow/mlflow.db  # MLflow (port 5000)
+
+# Testing
+pytest tests/ -v
+pytest tests/test_api/ -v  # Specific module
+```
+
+### File Locations
+
+| Item | Location |
+|------|----------|
+| Database | `~/hrp-data/hrp.duckdb` |
+| MLflow | `~/hrp-data/mlflow/` |
+| Logs | `~/hrp-data/logs/` |
+| Backups | `~/hrp-data/backups/` |
+
+---
+
+## Next Steps
+
+After mastering these recipes, consider:
+
+1. **Explore the Dashboard** - Visual interface for monitoring
+2. **Read the Spec** - `docs/plans/2025-01-19-hrp-spec.md` for architecture details
+3. **Review the Roadmap** - `docs/plans/Roadmap.md` for implementation status
+4. **Run Tests** - `pytest tests/ -v` to understand test coverage
+5. **Check MLflow** - Deep dive into experiment tracking
