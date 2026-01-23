@@ -656,7 +656,7 @@ class PlatformAPI:
 
         # Log to lineage
         self.log_event(
-            event_type="experiment_run",
+            event_type="backtest_run",
             actor=actor,
             details={
                 "experiment_id": experiment_id,

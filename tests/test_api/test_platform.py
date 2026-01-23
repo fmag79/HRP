@@ -567,6 +567,8 @@ class TestPlatformAPIPrices:
 
     def test_get_prices_no_data(self, test_api):
         """Test getting prices when no data exists."""
+        # Add symbol to symbols table first (FK constraint)
+        test_api._db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
         # Add symbol to universe so validation passes
         test_api._db.execute(
             """
@@ -641,6 +643,8 @@ class TestPlatformAPIFeatures:
 
     def test_get_features_no_data(self, test_api):
         """Test getting features when no data exists."""
+        # Add symbol to symbols table first (FK constraint)
+        test_api._db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
         # Add symbol to universe so validation passes
         test_api._db.execute(
             """
@@ -999,7 +1003,7 @@ class TestPlatformAPILineage:
     def test_log_event_returns_id(self, test_api):
         """Test that logging an event returns a lineage ID."""
         lineage_id = test_api.log_event(
-            event_type="test_event", actor="user", details={"test": "data"}
+            event_type="other", actor="user", details={"test": "data"}
         )
         assert lineage_id is not None
         assert isinstance(lineage_id, int)
@@ -1007,14 +1011,14 @@ class TestPlatformAPILineage:
 
     def test_log_event_increments_id(self, test_api):
         """Test that lineage IDs increment."""
-        id1 = test_api.log_event(event_type="event1", actor="user")
-        id2 = test_api.log_event(event_type="event2", actor="user")
+        id1 = test_api.log_event(event_type="other", actor="user")
+        id2 = test_api.log_event(event_type="other", actor="user")
         assert id2 > id1
 
     def test_log_event_with_details(self, test_api):
         """Test logging event with details dictionary."""
         details = {"key1": "value1", "key2": 42, "nested": {"a": 1}}
-        test_api.log_event(event_type="test", actor="user", details=details)
+        test_api.log_event(event_type="other", actor="user", details=details)
 
         lineage = test_api.get_lineage()
         assert len(lineage) == 1
@@ -1030,17 +1034,17 @@ class TestPlatformAPILineage:
             actor="user",
         )
         test_api.log_event(
-            event_type="custom_event", actor="user", hypothesis_id=hyp_id
+            event_type="other", actor="user", hypothesis_id=hyp_id
         )
 
         lineage = test_api.get_lineage(hypothesis_id=hyp_id)
-        custom_events = [e for e in lineage if e["event_type"] == "custom_event"]
-        assert len(custom_events) == 1
+        other_events = [e for e in lineage if e["event_type"] == "other"]
+        assert len(other_events) == 1
 
     def test_log_event_with_experiment_id(self, test_api):
         """Test logging event linked to experiment."""
         test_api.log_event(
-            event_type="experiment_complete",
+            event_type="experiment_completed",
             actor="user",
             experiment_id="exp-123",
         )
@@ -1051,9 +1055,9 @@ class TestPlatformAPILineage:
 
     def test_log_event_with_parent_lineage_id(self, test_api):
         """Test logging event with parent lineage ID."""
-        parent_id = test_api.log_event(event_type="parent", actor="user")
+        parent_id = test_api.log_event(event_type="other", actor="user")
         child_id = test_api.log_event(
-            event_type="child", actor="user", parent_lineage_id=parent_id
+            event_type="other", actor="user", parent_lineage_id=parent_id
         )
 
         lineage = test_api.get_lineage()
@@ -1067,9 +1071,9 @@ class TestPlatformAPILineage:
 
     def test_get_lineage_all(self, test_api):
         """Test getting all lineage events."""
-        test_api.log_event(event_type="event1", actor="user")
-        test_api.log_event(event_type="event2", actor="agent:test")
-        test_api.log_event(event_type="event3", actor="user")
+        test_api.log_event(event_type="other", actor="user")
+        test_api.log_event(event_type="other", actor="agent:test")
+        test_api.log_event(event_type="other", actor="user")
 
         result = test_api.get_lineage()
         assert len(result) == 3
@@ -1084,7 +1088,7 @@ class TestPlatformAPILineage:
             actor="user",
         )
         # Create an unrelated event
-        test_api.log_event(event_type="unrelated", actor="user")
+        test_api.log_event(event_type="other", actor="user")
 
         lineage = test_api.get_lineage(hypothesis_id=hyp_id)
         for event in lineage:
@@ -1093,10 +1097,10 @@ class TestPlatformAPILineage:
     def test_get_lineage_filter_by_experiment(self, test_api):
         """Test filtering lineage by experiment ID."""
         test_api.log_event(
-            event_type="exp_event", actor="user", experiment_id="exp-123"
+            event_type="other", actor="user", experiment_id="exp-123"
         )
         test_api.log_event(
-            event_type="other_event", actor="user", experiment_id="exp-456"
+            event_type="other", actor="user", experiment_id="exp-456"
         )
 
         lineage = test_api.get_lineage(experiment_id="exp-123")
@@ -1106,20 +1110,20 @@ class TestPlatformAPILineage:
     def test_get_lineage_limit(self, test_api):
         """Test lineage limit parameter."""
         for i in range(10):
-            test_api.log_event(event_type=f"event_{i}", actor="user")
+            test_api.log_event(event_type="other", actor="user")
 
         result = test_api.get_lineage(limit=5)
         assert len(result) == 5
 
     def test_get_lineage_ordered_by_timestamp_desc(self, test_api):
         """Test that lineage is ordered by timestamp descending."""
-        test_api.log_event(event_type="first", actor="user")
-        test_api.log_event(event_type="second", actor="user")
-        test_api.log_event(event_type="third", actor="user")
+        test_api.log_event(event_type="other", actor="user")
+        test_api.log_event(event_type="data_ingested", actor="user")
+        test_api.log_event(event_type="feature_computed", actor="user")
 
         result = test_api.get_lineage()
-        assert result[0]["event_type"] == "third"
-        assert result[2]["event_type"] == "first"
+        assert result[0]["event_type"] == "feature_computed"
+        assert result[2]["event_type"] == "other"
 
 
 class TestPlatformAPIExperimentLinking:
@@ -1315,7 +1319,7 @@ class TestPlatformAPIIntegration:
             exp_id = f"exp-{i}"
             test_api._link_experiment_to_hypothesis(hyp_id, exp_id)
             test_api.log_event(
-                event_type="experiment_run",
+                event_type="backtest_run",
                 actor="user",
                 hypothesis_id=hyp_id,
                 experiment_id=exp_id,
@@ -1328,7 +1332,7 @@ class TestPlatformAPIIntegration:
 
         # Verify lineage
         lineage = test_api.get_lineage(hypothesis_id=hyp_id)
-        exp_events = [e for e in lineage if e["event_type"] == "experiment_run"]
+        exp_events = [e for e in lineage if e["event_type"] == "backtest_run"]
         assert len(exp_events) == 3
 
     def test_agent_creates_user_deploys(self, test_api):
