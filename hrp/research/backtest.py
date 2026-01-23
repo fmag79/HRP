@@ -22,6 +22,7 @@ def get_price_data(
     start: date,
     end: date,
     adjust_splits: bool = True,
+    adjust_dividends: bool = False,
 ) -> pd.DataFrame:
     """
     Load price data from database.
@@ -33,6 +34,7 @@ def get_price_data(
         start: Start date (inclusive)
         end: End date (inclusive)
         adjust_splits: If True, apply split adjustments to close prices (default: True)
+        adjust_dividends: If True, apply dividend adjustments for total return (default: False)
 
     Returns:
         DataFrame with MultiIndex columns (symbol, field)
@@ -76,6 +78,13 @@ def get_price_data(
         api = PlatformAPI()
         df = api.adjust_prices_for_splits(df)
         logger.debug(f"Applied split adjustments to price data for {symbols}")
+
+    # Apply dividend adjustments if requested
+    if adjust_dividends:
+        from hrp.api.platform import PlatformAPI
+        api = PlatformAPI()
+        df = api.adjust_prices_for_dividends(df, reinvest=True)
+        logger.debug(f"Applied dividend adjustments to price data for {symbols}")
 
     # Pivot to get symbol columns
     df['date'] = pd.to_datetime(df['date'])

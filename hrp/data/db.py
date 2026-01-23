@@ -348,7 +348,18 @@ class DatabaseManager:
         )
 
     def _get_db_path(self) -> Path:
-        """Get database path from environment or default."""
+        """Get database path from environment or default.
+
+        Checks for HRP_DB_PATH first (full path to database file),
+        then HRP_DATA_DIR (directory containing hrp.duckdb),
+        then falls back to default ~/hrp-data/hrp.duckdb.
+        """
+        # First check for explicit database path (used in tests)
+        db_path = os.getenv("HRP_DB_PATH")
+        if db_path:
+            return Path(db_path).expanduser()
+
+        # Then check for data directory
         data_dir = os.getenv("HRP_DATA_DIR", str(DEFAULT_DATA_DIR))
         return Path(data_dir).expanduser() / "hrp.duckdb"
 

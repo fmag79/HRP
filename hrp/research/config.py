@@ -50,6 +50,9 @@ class BacktestConfig:
     name: str = ""
     description: str = ""
 
+    # Return type
+    total_return: bool = False  # If True, include dividend reinvestment
+
     def __post_init__(self):
         if self.costs is None:
             self.costs = CostModel()

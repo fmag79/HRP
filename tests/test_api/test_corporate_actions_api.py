@@ -520,3 +520,447 @@ class TestCorporateActionsIntegration:
         assert adjusted.iloc[0]["split_adjusted_close"] == pytest.approx(400.0)  # 200 * 2
         assert adjusted.iloc[1]["split_adjusted_close"] == pytest.approx(100.0)  # on split date
         assert adjusted.iloc[2]["split_adjusted_close"] == pytest.approx(101.0)  # after split
+
+
+class TestAdjustPricesForDividends:
+    """Tests for adjust_prices_for_dividends() method (total return calculation)."""
+
+    def test_adjust_prices_empty_dataframe(self, test_api):
+        """Test adjusting empty DataFrame returns empty DataFrame with new column."""
+        empty_df = pd.DataFrame()
+        result = test_api.adjust_prices_for_dividends(empty_df)
+        assert result.empty
+        # Should have dividend_adjusted_close column even if empty
+        assert "dividend_adjusted_close" in result.columns
+
+    def test_adjust_prices_no_dividends(self, test_api):
+        """Test adjusting prices when no dividends exist returns unchanged prices."""
+        prices = pd.DataFrame({
+            "symbol": ["AAPL", "AAPL"],
+            "date": [date(2023, 1, 1), date(2023, 1, 2)],
+            "open": [100.0, 101.0],
+            "high": [102.0, 103.0],
+            "low": [99.0, 100.0],
+            "close": [101.0, 102.0],
+            "adj_close": [101.0, 102.0],
+            "volume": [1000000, 1000000],
+        })
+
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        assert "dividend_adjusted_close" in result.columns
+        # Without dividends, dividend_adjusted_close should equal close
+        assert all(result["dividend_adjusted_close"] == result["close"])
+
+    def test_single_dividend_adjusts_prior_prices(self, test_api):
+        """Test that a single dividend adjusts all prices before ex-date."""
+        # Insert symbol and universe first (FK constraints)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices: $100 every day
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-28', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-29', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000)
+            """
+        )
+
+        # Insert dividend of $1.00 on 2023-08-28 (ex-dividend date)
+        # Factor for dividend is the dividend amount
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES ('AAPL', '2023-08-28', 'dividend', 1.0, 'test')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 8, 25), date(2023, 8, 29))
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        # Dividend adjustment factor: 1 - (1.0 / 100.0) = 0.99
+        # Prices BEFORE ex-date should be multiplied by 0.99
+        row_before = result[result["date"] == pd.Timestamp("2023-08-25")]
+        assert len(row_before) == 1
+        assert row_before.iloc[0]["dividend_adjusted_close"] == pytest.approx(99.0, rel=0.01)
+
+        # Prices ON or AFTER ex-date should be unchanged
+        row_on = result[result["date"] == pd.Timestamp("2023-08-28")]
+        assert row_on.iloc[0]["dividend_adjusted_close"] == pytest.approx(100.0)
+
+        row_after = result[result["date"] == pd.Timestamp("2023-08-29")]
+        assert row_after.iloc[0]["dividend_adjusted_close"] == pytest.approx(100.0)
+
+    def test_multiple_dividends_compound(self, test_api):
+        """Test that multiple dividends compound correctly."""
+        # Insert symbol and universe first (FK constraints)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-01-01', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices: $100 every day
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-01-01', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-03-15', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-06-15', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-09-15', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000)
+            """
+        )
+
+        # Insert two dividends of $1.00 each
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES
+                ('AAPL', '2023-03-15', 'dividend', 1.0, 'test'),
+                ('AAPL', '2023-06-15', 'dividend', 1.0, 'test')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 1, 1), date(2023, 9, 15))
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        # First dividend factor: 1 - (1.0 / 100.0) = 0.99
+        # Second dividend factor: 1 - (1.0 / 100.0) = 0.99
+        # Prices before first dividend should have both factors: 0.99 * 0.99 = 0.9801
+        row_before_both = result[result["date"] == pd.Timestamp("2023-01-01")]
+        assert row_before_both.iloc[0]["dividend_adjusted_close"] == pytest.approx(98.01, rel=0.01)
+
+        # Prices between dividends should have only second factor: 0.99
+        row_between = result[result["date"] == pd.Timestamp("2023-03-15")]
+        assert row_between.iloc[0]["dividend_adjusted_close"] == pytest.approx(99.0, rel=0.01)
+
+        # Prices after both dividends should be unchanged
+        row_after = result[result["date"] == pd.Timestamp("2023-09-15")]
+        assert row_after.iloc[0]["dividend_adjusted_close"] == pytest.approx(100.0)
+
+    def test_preserves_all_original_columns(self, test_api):
+        """Test that original columns are preserved after adjustment."""
+        # Insert symbol and universe first (FK constraints)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert test data
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 101.0, 101.0, 1000000)
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 8, 25), date(2023, 8, 25))
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        # All original columns should still be present
+        expected_columns = ["symbol", "date", "open", "high", "low", "close", "adj_close", "volume"]
+        for col in expected_columns:
+            assert col in result.columns
+
+        # Plus the new column
+        assert "dividend_adjusted_close" in result.columns
+
+    def test_multiple_symbols_different_dividends(self, test_api):
+        """Test adjusting prices for multiple symbols with different dividends."""
+        # Insert symbols and universe first (FK constraints)
+        test_api._db.execute(
+            """
+            INSERT INTO symbols (symbol, name, exchange)
+            VALUES
+                ('AAPL', 'Apple Inc.', 'NASDAQ'),
+                ('MSFT', 'Microsoft Corporation', 'NASDAQ')
+            """
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES
+                ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000),
+                ('MSFT', '2023-08-25', TRUE, 'Technology', 2400000000000)
+            """
+        )
+        # Insert prices for AAPL and MSFT
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-29', 100.0, 102.0, 99.0, 100.0, 100.0, 2000000),
+                ('MSFT', '2023-08-25', 200.0, 202.0, 199.0, 200.0, 200.0, 500000),
+                ('MSFT', '2023-08-29', 200.0, 202.0, 199.0, 200.0, 200.0, 1000000)
+            """
+        )
+
+        # Insert dividend for AAPL only ($1.00 on 2023-08-28)
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES ('AAPL', '2023-08-28', 'dividend', 1.0, 'test')
+            """
+        )
+
+        # Get prices
+        prices = test_api.get_prices(["AAPL", "MSFT"], date(2023, 8, 25), date(2023, 8, 29))
+
+        # Apply dividend adjustments
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        # AAPL should be adjusted, MSFT should not
+        aapl_before = result[(result["symbol"] == "AAPL") & (result["date"] == pd.Timestamp("2023-08-25"))]
+        assert aapl_before.iloc[0]["dividend_adjusted_close"] == pytest.approx(99.0, rel=0.01)  # 100 * 0.99
+
+        aapl_after = result[(result["symbol"] == "AAPL") & (result["date"] == pd.Timestamp("2023-08-29"))]
+        assert aapl_after.iloc[0]["dividend_adjusted_close"] == pytest.approx(100.0)  # unchanged
+
+        msft_before = result[(result["symbol"] == "MSFT") & (result["date"] == pd.Timestamp("2023-08-25"))]
+        assert msft_before.iloc[0]["dividend_adjusted_close"] == pytest.approx(200.0)  # unchanged
+
+        msft_after = result[(result["symbol"] == "MSFT") & (result["date"] == pd.Timestamp("2023-08-29"))]
+        assert msft_after.iloc[0]["dividend_adjusted_close"] == pytest.approx(200.0)  # unchanged
+
+    def test_only_affects_dividends_not_splits(self, test_api):
+        """Test that split actions don't affect dividend adjustment."""
+        # Insert symbol and universe first (FK constraints)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-29', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000)
+            """
+        )
+
+        # Insert split (should not affect dividend adjustment)
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES ('AAPL', '2023-08-28', 'split', 2.0, 'test')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 8, 25), date(2023, 8, 29))
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        # Prices should be unchanged (split doesn't affect dividend adjustment)
+        assert all(result["dividend_adjusted_close"] == result["close"])
+
+    def test_reinvest_true_adjusts_prices(self, test_api):
+        """Test that reinvest=True (default) adjusts historical prices."""
+        # Insert symbol and universe first (FK constraints)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-29', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000)
+            """
+        )
+
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES ('AAPL', '2023-08-28', 'dividend', 1.0, 'test')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 8, 25), date(2023, 8, 29))
+        result = test_api.adjust_prices_for_dividends(prices, reinvest=True)
+
+        # With reinvest=True, prior prices should be adjusted
+        row_before = result[result["date"] == pd.Timestamp("2023-08-25")]
+        assert row_before.iloc[0]["dividend_adjusted_close"] < row_before.iloc[0]["close"]
+
+    def test_reinvest_false_returns_unchanged(self, test_api):
+        """Test that reinvest=False returns prices unchanged (price-return only)."""
+        # Insert symbol and universe first (FK constraints)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-29', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000)
+            """
+        )
+
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES ('AAPL', '2023-08-28', 'dividend', 1.0, 'test')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 8, 25), date(2023, 8, 29))
+        result = test_api.adjust_prices_for_dividends(prices, reinvest=False)
+
+        # With reinvest=False, prices should be unchanged
+        assert all(result["dividend_adjusted_close"] == result["close"])
+
+    def test_handles_date_conversion(self, test_api):
+        """Test that date handling works correctly with various formats."""
+        # Create prices with date as string
+        prices = pd.DataFrame({
+            "symbol": ["AAPL"],
+            "date": ["2023-08-25"],
+            "open": [100.0],
+            "high": [102.0],
+            "low": [99.0],
+            "close": [100.0],
+            "adj_close": [100.0],
+            "volume": [1000000],
+        })
+
+        # This should not raise an error
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        assert "dividend_adjusted_close" in result.columns
+        assert len(result) == 1
+
+
+class TestDividendAdjustmentIntegration:
+    """Integration tests for dividend adjustment with other functionality."""
+
+    def test_combined_split_and_dividend_adjustment(self, test_api):
+        """Test applying both split and dividend adjustments."""
+        # Insert symbol and universe first (FK constraint)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-08-25', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-08-28', 400.0, 410.0, 395.0, 400.0, 400.0, 4000000),
+                ('AAPL', '2023-08-29', 400.0, 410.0, 395.0, 400.0, 400.0, 3500000)
+            """
+        )
+
+        # Insert split (4:1) and dividend ($1.00)
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES
+                ('AAPL', '2023-08-28', 'split', 4.0, 'yfinance'),
+                ('AAPL', '2023-08-29', 'dividend', 1.0, 'yfinance')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 8, 25), date(2023, 8, 29))
+
+        # Apply split adjustment first
+        split_adjusted = test_api.adjust_prices_for_splits(prices)
+
+        # Then apply dividend adjustment
+        fully_adjusted = test_api.adjust_prices_for_dividends(split_adjusted)
+
+        # Verify both adjustments were applied
+        assert "split_adjusted_close" in fully_adjusted.columns
+        assert "dividend_adjusted_close" in fully_adjusted.columns
+
+    def test_dividend_adjustment_total_return_calculation(self, test_api):
+        """Test that dividend adjustment gives correct total return."""
+        # Insert symbol and universe first (FK constraint)
+        test_api._db.execute(
+            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
+        )
+        test_api._db.execute(
+            """
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES ('AAPL', '2023-01-01', TRUE, 'Technology', 2500000000000)
+            """
+        )
+        # Insert prices: grows from 100 to 110 (10% price return)
+        test_api._db.execute(
+            """
+            INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+            VALUES
+                ('AAPL', '2023-01-01', 100.0, 102.0, 99.0, 100.0, 100.0, 1000000),
+                ('AAPL', '2023-06-15', 105.0, 107.0, 104.0, 105.0, 105.0, 1000000),
+                ('AAPL', '2023-12-31', 110.0, 112.0, 109.0, 110.0, 110.0, 1000000)
+            """
+        )
+
+        # Insert dividend: $2.00 (2% dividend yield at time of payment)
+        test_api._db.execute(
+            """
+            INSERT INTO corporate_actions (symbol, date, action_type, factor, source)
+            VALUES ('AAPL', '2023-06-15', 'dividend', 2.0, 'test')
+            """
+        )
+
+        prices = test_api.get_prices(["AAPL"], date(2023, 1, 1), date(2023, 12, 31))
+        result = test_api.adjust_prices_for_dividends(prices)
+
+        # Price-only return: (110 - 100) / 100 = 10%
+        price_return = (110 - 100) / 100
+        assert price_return == pytest.approx(0.10)
+
+        # Total return should be higher due to dividend reinvestment
+        first_price = result.iloc[0]["dividend_adjusted_close"]
+        last_price = result.iloc[-1]["dividend_adjusted_close"]
+        total_return = (last_price - first_price) / first_price
+
+        # Total return > price return because dividends add value
+        # Adjustment factor: 1 - (2/105) ≈ 0.981
+        # First price adjusted: 100 * 0.981 ≈ 98.1
+        # Total return: (110 - 98.1) / 98.1 ≈ 12.1%
+        assert total_return > price_return, "Total return should exceed price return"
