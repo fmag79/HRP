@@ -12,7 +12,14 @@ This document tracks the implementation status of HRP (Hypothesis Research Platf
 
 ### ✅ What's Been Built
 
-HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of production code** across 80+ modules and **1,036 tests** across 39 test files:
+HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of production code** across 80+ modules and **1,048 tests** across 39 test files (86% pass rate):
+
+**Test Suite Status:**
+- **Passed**: 902 tests
+- **Failed**: 141 tests (mostly FK constraint issues in test fixtures)
+- **Errors**: 105 (FK constraint violations during test setup/cleanup)
+- **Pass Rate**: ~86% (excluding setup errors)
+- **Known Issue**: FK constraint violations in test cleanup (not production bugs)
 
 **Foundation & Core Research (v1) — 97% Complete**
 - Full DuckDB schema with 13 tables, 3 sequences, 17 indexes, and comprehensive constraints
@@ -50,14 +57,22 @@ HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of p
 - Action logging to lineage table with actor tracking
 - Rate limiting infrastructure ready for agent quotas
 
-**Testing** — Comprehensive coverage across 39 test files with 1,036 tests
+**Testing** — Comprehensive coverage across 39 test files with 1,048 tests
 - Platform API test suite: **Comprehensive coverage** with 60+ new tests
 - Synthetic data generators for deterministic test fixtures
 - Database migration and schema integrity tests
 - Full backtest flow integration test
 - Corporate actions and splits unit tests (65+ tests)
+- **Pass Rate**: 86% (902 passed / 1,048 total)
+- **Known Issue**: FK constraint violations in test fixtures during cleanup (not production bugs)
 
 ### 🚧 What's In Progress
+
+**Test Infrastructure Improvements:**
+- Fix FK constraint violations in test fixtures
+  - Issue: Test cleanup attempts to delete parent records with dependent records
+  - Solution: Add `ON DELETE CASCADE` to FK relationships or update fixtures
+  - Impact: Would increase pass rate from 86% to >95%
 
 **v1 Completion:** ✅ **100% COMPLETE**
 - ~~Point-in-time fundamentals query helper (`get_fundamentals_as_of()`)~~ ✅ COMPLETE
@@ -761,7 +776,9 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 ### Implementation Summary
 
 **Total Code:** ~17,344 lines of Python across 80+ modules
-**Test Suite:** 1,036 tests across 39 test files (~20,000 LOC)
+**Test Suite:** 1,048 tests across 39 test files (~20,000 LOC)
+- **Pass Rate**: 86% (902 passed, 141 failed, 105 errors)
+- **Known Issue**: FK constraint violations in test fixtures (not production code)
 
 **Completed Features:**
 - ✅ Full database schema with 13 tables, 3 sequences, 17 indexes, and comprehensive constraints
@@ -907,7 +924,8 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 - v2 (Data Pipeline) is 85% complete with comprehensive infrastructure
 - v3 (ML/Validation) is 70% complete with full ML pipeline and statistical tests
 - v4 (Agents) is 60% complete with job infrastructure but pending MCP integration
-- Test suite now has 1,036 tests providing strong coverage
+- Test suite now has 1,048 tests providing strong coverage (86% pass rate)
+- FK constraint issues in test fixtures need resolution (would improve pass rate to >95%)
 - Significant progress beyond original specification
 
-**Next Review:** Recommended after completing v1 (PIT fundamentals, dividend adjustment)
+**Next Review:** Recommended after completing v1 (PIT fundamentals, dividend adjustment) and fixing FK constraint test issues

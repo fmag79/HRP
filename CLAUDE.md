@@ -52,7 +52,8 @@ experiment_id = api.run_backtest(config, hypothesis_id='HYP-2025-001')
 
 ### Create a hypothesis
 ```python
-api.create_hypothesis(
+# Note: hypothesis module uses function-based API (not class-based)
+hypothesis_id = api.create_hypothesis(
     title="Momentum predicts returns",
     thesis="Stocks with high 12-month returns continue outperforming",
     prediction="Top decile momentum > SPY by 3% annually",
@@ -138,6 +139,8 @@ for fold in result.fold_results:
 
 ```bash
 pytest tests/ -v
+# Pass rate: ~86% (902 passed, 141 failed, 105 errors)
+# Known issue: FK constraint violations in test fixtures during cleanup
 ```
 
 ## Services
@@ -185,3 +188,15 @@ hrp/
 Currently implementing Phase 0: Foundation
 - See `docs/plans/2025-01-19-hrp-spec.md` for full specification
 - See `docs/plans/Roadmap.md` for implementation roadmap
+
+# Project Instructions
+
+## Always run tests after edits
+after making any code changes, run 'npm test'
+
+## Things to Remember
+Before writing any code:
+1. state how you will verify this change works (test, bash command, browser check, etc.)
+2. Write the test or verification step first
+3. Then implement the code
+4. Run verification and iterate until it passes
