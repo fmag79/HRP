@@ -343,14 +343,14 @@ class QualityReportGenerator:
         # Ensure table exists before querying
         self._ensure_quality_tables()
 
-        query = """
+        query = f"""
             SELECT report_date, health_score, critical_issues
             FROM quality_reports
-            WHERE report_date >= CURRENT_DATE - INTERVAL ? DAY
+            WHERE report_date >= CURRENT_DATE - INTERVAL {days} DAY
             ORDER BY report_date
         """
 
-        results = self._db.fetchall(query, (days,))
+        results = self._db.fetchall(query)
 
         return [
             {
