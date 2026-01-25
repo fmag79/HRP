@@ -1,3 +1,27 @@
+## [1.2.0] - 2026-01-24
+
+### Added
+- **Extended Overfitting Guards**: Comprehensive overfitting prevention system in `hrp/risk/overfitting.py`:
+  - **SharpeDecayMonitor**: Detects train/test performance gaps (already in 1.1.2)
+  - **FeatureCountValidator**: Limits feature count (warn >30, fail >50) with samples-per-feature ratio check
+  - **HyperparameterTrialCounter**: Tracks HP search trials in database with configurable limit (default 50)
+  - **TargetLeakageValidator**: Detects high correlations (>0.95) and suspicious feature names (future, next, etc.)
+- **Training Pipeline Integration**: Automatic validation hooks in `train_model()`:
+  - FeatureCountValidator check before training
+  - TargetLeakageValidator check before training
+  - Raises `OverfittingError` on violations
+- **New Tests**: 19 additional tests (16 validator tests, 3 integration tests)
+- **Database Schema**: `hyperparameter_trials` table for HP search tracking (added in 1.1.2)
+
+### Changed
+- Updated CLAUDE.md with usage examples for all new overfitting validators
+- Updated cookbook with extended overfitting guards recipes
+- Updated Project-Status.md with complete overfitting guard feature list
+
+### Testing
+- **1,259 tests passing** (100% pass rate)
+- No regressions introduced
+
 ## [1.1.2] - 2026-01-24
 
 ### Added

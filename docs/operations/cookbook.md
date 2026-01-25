@@ -902,6 +902,45 @@ with guard.evaluate(metadata={"experiment": "final_validation"}):
 with guard.evaluate(override=True, reason="Final model validation after peer review"):
     final_metrics = model.evaluate(test_data)
 
+# Sharpe Decay Monitor - detect train/test overfitting
+from hrp.risk.overfitting import SharpeDecayMonitor
+
+monitor = SharpeDecayMonitor(max_decay_ratio=0.5)
+result = monitor.check(train_sharpe=1.5, test_sharpe=1.0)
+if not result.passed:
+    print(f"⚠️ Sharpe decay warning: {result.message}")
+
+# Feature Count Validator - prevent too many features
+from hrp.risk.overfitting import FeatureCountValidator
+
+validator = FeatureCountValidator(warn_threshold=30, max_threshold=50)
+result = validator.check(feature_count=25, sample_count=1000)
+if not result.passed:
+    raise OverfittingError(result.message)
+if result.warning:
+    print(f"⚠️ Feature count warning: {result.message}")
+
+# Hyperparameter Trial Counter - limit HP search
+from hrp.risk.overfitting import HyperparameterTrialCounter
+
+counter = HyperparameterTrialCounter(hypothesis_id='HYP-2025-001', max_trials=50)
+counter.log_trial(
+    model_type='ridge',
+    hyperparameters={'alpha': 1.0},
+    metric_name='val_r2',
+    metric_value=0.85,
+)
+print(f"HP trials remaining: {counter.remaining_trials}")
+best = counter.get_best_trial()
+
+# Target Leakage Validator - detect data leakage
+from hrp.risk.overfitting import TargetLeakageValidator
+
+leakage_validator = TargetLeakageValidator(correlation_threshold=0.95)
+result = leakage_validator.check(features_df, target_series)
+if not result.passed:
+    raise OverfittingError(f"Leakage detected: {result.suspicious_features}")
+
 # Strategy validation gates
 metrics = {
     "sharpe": 0.80,

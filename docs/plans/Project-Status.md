@@ -9,8 +9,8 @@
 | **Production** | Security + Ops | 0% | ⏳ Planned |
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
-**Codebase:** ~17,500 lines of production code across 80+ modules
-**Test Suite:** 1,233 tests (100% pass rate)
+**Codebase:** ~18,000 lines of production code across 80+ modules
+**Test Suite:** 1,259 tests (100% pass rate)
 
 ## Current Progress
 
@@ -127,6 +127,11 @@ ML capabilities, statistical rigor, and agent integration.
 | Feature | Status | Implementation |
 |---------|--------|----------------|
 | Test set guard | ✅ | 3-evaluation limit per hypothesis (`hrp/risk/overfitting.py`) |
+| Sharpe decay monitor | ✅ | Detects train/test performance gap |
+| Feature count validator | ✅ | Limits features (warn >30, fail >50) with samples-per-feature ratio |
+| HP trial counter | ✅ | Tracks hyperparameter trials in database (default 50 max) |
+| Target leakage validator | ✅ | Detects high correlations and suspicious feature names |
+| Training integration | ✅ | FeatureCountValidator + TargetLeakageValidator in `train_model()` |
 | Validation gates | ✅ | Integrated into Platform API |
 
 ### Trading Strategies ✅
