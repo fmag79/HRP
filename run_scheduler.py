@@ -4,12 +4,13 @@ Run the HRP data ingestion scheduler.
 
 This script starts the background scheduler that runs:
 - Daily price ingestion at 6:00 PM ET
+- Daily universe update at 6:05 PM ET
 - Daily feature computation at 6:10 PM ET
 - Daily backup at 2:00 AM ET
 
 Usage:
     python run_scheduler.py
-    python run_scheduler.py --price-time 18:00 --feature-time 18:10 --backup-time 02:00
+    python run_scheduler.py --price-time 18:00 --universe-time 18:05 --feature-time 18:10
 """
 
 import argparse
@@ -31,6 +32,12 @@ def main():
         type=str,
         default="18:00",
         help="Time to run price ingestion (HH:MM format, default: 18:00 = 6 PM ET)",
+    )
+    parser.add_argument(
+        "--universe-time",
+        type=str,
+        default="18:05",
+        help="Time to run universe update (HH:MM format, default: 18:05)",
     )
     parser.add_argument(
         "--feature-time",
@@ -72,6 +79,7 @@ def main():
     scheduler.setup_daily_ingestion(
         symbols=args.symbols,
         price_job_time=args.price_time,
+        universe_job_time=args.universe_time,
         feature_job_time=args.feature_time,
     )
     

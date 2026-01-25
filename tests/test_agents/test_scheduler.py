@@ -207,15 +207,20 @@ class TestSetupDailyIngestion:
     """Tests for daily ingestion pipeline setup."""
 
     @patch("hrp.agents.jobs.PriceIngestionJob")
+    @patch("hrp.agents.jobs.UniverseUpdateJob")
     @patch("hrp.agents.jobs.FeatureComputationJob")
-    def test_setup_daily_ingestion_creates_jobs(self, mock_feature_job, mock_price_job):
-        """setup_daily_ingestion should create price and feature jobs."""
+    def test_setup_daily_ingestion_creates_jobs(
+        self, mock_feature_job, mock_universe_job, mock_price_job
+    ):
+        """setup_daily_ingestion should create price, universe, and feature jobs."""
         scheduler = IngestionScheduler()
 
         # Mock job instances
         mock_price_instance = MagicMock()
+        mock_universe_instance = MagicMock()
         mock_feature_instance = MagicMock()
         mock_price_job.return_value = mock_price_instance
+        mock_universe_job.return_value = mock_universe_instance
         mock_feature_job.return_value = mock_feature_instance
 
         scheduler.setup_daily_ingestion()
@@ -224,24 +229,44 @@ class TestSetupDailyIngestion:
         job_ids = [j["id"] for j in jobs]
 
         assert "price_ingestion" in job_ids
+        assert "universe_update" in job_ids
         assert "feature_computation" in job_ids
-        assert len(jobs) == 2
+        assert len(jobs) == 3
 
     @patch("hrp.agents.jobs.PriceIngestionJob")
+    @patch("hrp.agents.jobs.UniverseUpdateJob")
     @patch("hrp.agents.jobs.FeatureComputationJob")
-    def test_setup_daily_ingestion_with_custom_times(self, mock_feature_job, mock_price_job):
+    def test_setup_daily_ingestion_with_custom_times(
+        self, mock_feature_job, mock_universe_job, mock_price_job
+    ):
         """setup_daily_ingestion should respect custom job times."""
         scheduler = IngestionScheduler()
 
         mock_price_instance = MagicMock()
+        mock_universe_instance = MagicMock()
         mock_feature_instance = MagicMock()
         mock_price_job.return_value = mock_price_instance
+        mock_universe_job.return_value = mock_universe_instance
         mock_feature_job.return_value = mock_feature_instance
 
-        scheduler.setup_daily_ingestion(price_job_time="19:00", feature_job_time="19:30")
+        scheduler.setup_daily_ingestion(
+            price_job_time="19:00",
+            universe_job_time="19:05",
+            feature_job_time="19:30",
+        )
 
         jobs = scheduler.list_jobs()
-        assert len(jobs) == 2
+        assert len(jobs) == 3
+
+        # Verify custom times are used
+        price_job = [j for j in jobs if j["id"] == "price_ingestion"][0]
+        assert "19" in price_job["trigger"] and "0" in price_job["trigger"]
+
+        universe_job = [j for j in jobs if j["id"] == "universe_update"][0]
+        assert "19" in universe_job["trigger"] and "5" in universe_job["trigger"]
+
+        feature_job = [j for j in jobs if j["id"] == "feature_computation"][0]
+        assert "19" in feature_job["trigger"] and "30" in feature_job["trigger"]
 
     @patch("hrp.agents.jobs.PriceIngestionJob")
     @patch("hrp.agents.jobs.FeatureComputationJob")

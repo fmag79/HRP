@@ -1,6 +1,51 @@
+## [1.1.1] - 2026-01-24
+
+### Added
+- **Automatic Universe Scheduling Implementation**: Complete implementation of `UniverseUpdateJob` class in `hrp/agents/jobs.py` with:
+  - Daily S&P 500 constituent updates at 6:05 PM ET
+  - Automatic exclusion rule application (financials, REITs, penny stocks)
+  - Full retry logic with exponential backoff for transient failures
+  - Comprehensive logging to `ingestion_log` table
+  - Email notifications on failures
+  - CLI support: `python -m hrp.agents.cli run-now --job universe`
+  - 6 new comprehensive tests with 100% pass rate
+- **Three-Stage Ingestion Pipeline**: Enhanced daily schedule with universe updates between price ingestion and feature computation (18:00 ET → 18:05 ET → 18:10 ET)
+- **Universe Management Documentation**: New section 2.4 in cookbook with complete universe management recipes (point-in-time queries, sector breakdown, historical tracking)
+- **Scheduler Runner Script**: Updated `run_scheduler.py` with `--universe-time` flag for configurable universe job timing
+- **Implementation Report**: Created `UNIVERSE_SCHEDULING_IMPLEMENTATION.md` documenting full implementation details and test results
+- **Documentation Update Report**: Created `docs/reports/2026-01-24-universe-scheduling-documentation-update.md` tracking all documentation changes
+
+### Changed
+- **Scheduler Integration**: Updated `setup_daily_ingestion()` in `hrp/agents/scheduler.py` to include `universe_job_time` parameter
+- **Documentation Comprehensive Update**: 
+  - `docs/plans/Project-Status.md`: Enhanced Version 2 section with universe scheduling details (~158 lines changed)
+  - `docs/plans/2025-01-19-hrp-spec.md`: Updated daily schedule and implementation status (~67 lines changed)
+  - `docs/operations/cookbook.md`: Added universe recipes and updated all job examples (~247 lines changed)
+  - `CLAUDE.md`: Updated common tasks with universe scheduling examples
+- **Test Suite Updates**: Updated all agent and smoke tests to expect 3 scheduled jobs instead of 2
+- **Cookbook Reorganization**: Renumbered sections 2.4-2.7 to accommodate new universe management section
+
+### Fixed
+- **Test Compatibility**: Fixed 2 failing scheduler tests that expected 2 jobs (now correctly expect 3)
+- **Smoke Test Integration**: Updated smoke test to include UniverseUpdateJob in mocked scheduler setup
+
+### Testing
+- **74/74 agent tests passing** (100% pass rate)
+- **5/5 smoke tests passing** (100% pass rate)
+- **No regressions introduced** - all existing functionality preserved
+- **6 new UniverseUpdateJob tests**: Initialization, execution, success/failure logging, integration with ingestion_log
+
+### Documentation
+- Added **Universe Scheduling Implementation** report (`UNIVERSE_SCHEDULING_IMPLEMENTATION.md`) with full technical details
+- Added **Universe Scheduling Documentation Update** report (`docs/reports/2026-01-24-universe-scheduling-documentation-update.md`)
+- Updated **Project Status** with universe scheduling as 100% complete
+- Updated **Specification** with corrected daily schedule (6:05 PM ET for universe updates)
+- Updated **Cookbook** with comprehensive universe management recipes and examples
+
 ## [1.1.0] - 2026-01-24
 
 ### Added
+- **Automatic Universe Scheduling (Phase 4 Enhancement)**: UniverseUpdateJob now runs daily at 6:05 PM ET, automatically fetching S&P 500 constituent changes from Wikipedia, applying exclusion rules, and tracking all changes in lineage. Full integration with scheduled ingestion pipeline (Prices → Universe → Features).
 - **MCP Server for Claude Integration (Phase 6)**: Full Model Context Protocol server (`hrp/mcp/research_server.py`) with 22 tools covering hypothesis management, data access, backtesting, ML training, quality checks, and lineage tracking
 - **Historical Data Backfill Automation**: Complete backfill system (`hrp/data/backfill.py`) with progress tracking, rate limiting, validation, and resume capability for large-scale historical data ingestion
 - **Automated Backup/Restore System**: Production-ready backup utilities (`hrp/data/backup.py`) with verification, rotation, scheduled execution, and disaster recovery support

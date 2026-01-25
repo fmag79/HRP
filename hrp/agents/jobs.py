@@ -16,6 +16,7 @@ from loguru import logger
 from hrp.data.db import get_db
 from hrp.data.ingestion.features import compute_features
 from hrp.data.ingestion.prices import TEST_SYMBOLS, ingest_prices
+from hrp.data.universe import UniverseManager
 from hrp.notifications.email import EmailNotifier
 
 
@@ -531,4 +532,64 @@ class FeatureComputationJob(IngestionJob):
             "symbols_success": result["symbols_success"],
             "symbols_failed": result["symbols_failed"],
             "failed_symbols": result.get("failed_symbols", []),
+        }
+
+
+class UniverseUpdateJob(IngestionJob):
+    """
+    Scheduled job for S&P 500 universe updates.
+
+    Fetches current S&P 500 constituents from Wikipedia, applies exclusion
+    rules, and updates the universe table with membership changes.
+    """
+
+    def __init__(
+        self,
+        as_of_date: date | None = None,
+        actor: str = "system:scheduled_universe_update",
+        job_id: str = "universe_update",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        dependencies: list[str] | None = None,
+    ):
+        """
+        Initialize universe update job.
+
+        Args:
+            as_of_date: Date to record for this universe snapshot (default: today)
+            actor: Actor to record in lineage (default: 'system:scheduled_universe_update')
+            job_id: Unique identifier for this job
+            max_retries: Maximum number of retry attempts
+            retry_backoff: Exponential backoff multiplier (seconds)
+            dependencies: List of job IDs that must complete before this job runs
+        """
+        super().__init__(job_id, max_retries, retry_backoff, dependencies)
+        self.as_of_date = as_of_date or date.today()
+        self.actor = actor
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute universe update.
+
+        Returns:
+            Dictionary with job execution stats
+        """
+        logger.info(f"Updating S&P 500 universe as of {self.as_of_date}")
+
+        # Create universe manager and run update
+        manager = UniverseManager()
+        result = manager.update_universe(
+            as_of_date=self.as_of_date,
+            actor=self.actor,
+        )
+
+        # Convert to standardized format expected by base class logging
+        # For universe updates, "fetched" = total constituents, "inserted" = included symbols
+        return {
+            "records_fetched": result["total_constituents"],
+            "records_inserted": result["included"],
+            "symbols_added": result["added"],
+            "symbols_removed": result["removed"],
+            "symbols_excluded": result["excluded"],
+            "exclusion_breakdown": result["exclusion_reasons"],
         }

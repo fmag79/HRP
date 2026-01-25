@@ -82,17 +82,22 @@ scheduler = IngestionScheduler()
 scheduler.setup_daily_ingestion(
     symbols=['AAPL', 'MSFT'],  # None for all universe symbols
     price_job_time='18:00',    # 6 PM ET (after market close)
-    feature_job_time='18:10',  # 6:10 PM ET (after prices loaded)
+    universe_job_time='18:05', # 6:05 PM ET (after prices loaded)
+    feature_job_time='18:10',  # 6:10 PM ET (after universe updated)
 )
 scheduler.start()
 ```
 
 ### Run a job manually
 ```python
-from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob
+from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob, UniverseUpdateJob
 
 job = PriceIngestionJob(symbols=['AAPL'], start=date.today() - timedelta(days=7))
 result = job.run()  # Returns status, records_fetched, records_inserted
+
+# Or update the universe
+universe_job = UniverseUpdateJob()
+result = universe_job.run()  # Fetches S&P 500 from Wikipedia, applies exclusions
 ```
 
 ### Run a multi-factor strategy backtest

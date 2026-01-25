@@ -325,18 +325,21 @@ class TestSmoke:
 
         # Setup daily ingestion (mocked jobs)
         with patch("hrp.agents.jobs.PriceIngestionJob") as mock_price_job:
-            with patch("hrp.agents.jobs.FeatureComputationJob") as mock_feature_job:
-                mock_price_job.return_value = MagicMock()
-                mock_feature_job.return_value = MagicMock()
+            with patch("hrp.agents.jobs.UniverseUpdateJob") as mock_universe_job:
+                with patch("hrp.agents.jobs.FeatureComputationJob") as mock_feature_job:
+                    mock_price_job.return_value = MagicMock()
+                    mock_universe_job.return_value = MagicMock()
+                    mock_feature_job.return_value = MagicMock()
 
-                scheduler.setup_daily_ingestion()
+                    scheduler.setup_daily_ingestion()
 
-                jobs = scheduler.list_jobs()
-                assert len(jobs) == 2
+                    jobs = scheduler.list_jobs()
+                    assert len(jobs) == 3
 
-                job_ids = [j["id"] for j in jobs]
-                assert "price_ingestion" in job_ids
-                assert "feature_computation" in job_ids
+                    job_ids = [j["id"] for j in jobs]
+                    assert "price_ingestion" in job_ids
+                    assert "universe_update" in job_ids
+                    assert "feature_computation" in job_ids
 
         # Test CLI list_scheduled_jobs
         with patch("hrp.agents.cli.IngestionScheduler") as mock_sched_class:

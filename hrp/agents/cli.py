@@ -11,7 +11,7 @@ from typing import Any
 
 from loguru import logger
 
-from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob
+from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob, UniverseUpdateJob
 from hrp.agents.scheduler import IngestionScheduler
 from hrp.data.db import get_db
 from hrp.data.ingestion.prices import TEST_SYMBOLS
@@ -22,7 +22,7 @@ def run_job_now(job_name: str, symbols: list[str] | None = None) -> dict[str, An
     Manually trigger a job to run immediately.
 
     Args:
-        job_name: Name of the job to run ('prices' or 'features')
+        job_name: Name of the job to run ('prices', 'features', or 'universe')
         symbols: Optional list of symbols to process
 
     Returns:
@@ -52,8 +52,20 @@ def run_job_now(job_name: str, symbols: list[str] | None = None) -> dict[str, An
         logger.info(f"Feature computation result: {result}")
         return result
 
+    elif job_name == "universe":
+        # Run universe update job
+        job = UniverseUpdateJob(
+            as_of_date=date.today(),
+            actor="user:manual_cli",
+        )
+        result = job.run()
+        logger.info(f"Universe update result: {result}")
+        return result
+
     else:
-        raise ValueError(f"Unknown job: {job_name}. Must be 'prices' or 'features'")
+        raise ValueError(
+            f"Unknown job: {job_name}. Must be 'prices', 'features', or 'universe'"
+        )
 
 
 def list_scheduled_jobs() -> list[dict[str, Any]]:
@@ -213,6 +225,9 @@ Examples:
   # Run feature computation now
   python -m hrp.agents.cli run-now --job features
 
+  # Run universe update now
+  python -m hrp.agents.cli run-now --job universe
+
   # Run with specific symbols
   python -m hrp.agents.cli run-now --job prices --symbols AAPL MSFT GOOGL
 
@@ -241,7 +256,7 @@ Examples:
         "--job",
         type=str,
         required=True,
-        choices=["prices", "features"],
+        choices=["prices", "features", "universe"],
         help="Job to run",
     )
     run_parser.add_argument(

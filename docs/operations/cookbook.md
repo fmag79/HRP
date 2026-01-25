@@ -141,7 +141,59 @@ Universe size: 450 symbols
 Sample: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'V', 'UNH', 'JNJ']
 ```
 
-### 2.4 Ingest New Price Data
+### 2.4 Update Universe Membership
+
+```python
+from hrp.data.universe import UniverseManager
+from datetime import date
+
+manager = UniverseManager()
+
+# Update universe with current S&P 500 constituents
+stats = manager.update_universe(as_of_date=date.today())
+
+print(f"Total constituents: {stats['total_constituents']}")
+print(f"Included in universe: {stats['included']}")
+print(f"Excluded: {stats['excluded']}")
+print(f"Added: {stats['added']}")
+print(f"Removed: {stats['removed']}")
+print(f"Exclusion reasons: {stats['exclusion_reasons']}")
+```
+
+**Output:**
+```
+Total constituents: 503
+Included in universe: 380
+Excluded: 123
+Added: 2
+Removed: 1
+Exclusion reasons: {'excluded_sector': 80, 'penny_stock': 43}
+```
+
+**Get Historical Universe:**
+
+```python
+# Get universe as of a specific date (for backtest accuracy)
+universe_2023 = manager.get_universe_at_date(date(2023, 1, 1))
+print(f"Universe on 2023-01-01: {len(universe_2023)} symbols")
+
+# Track universe changes over time
+changes = manager.get_universe_changes(
+    start_date=date(2023, 1, 1),
+    end_date=date(2023, 12, 31)
+)
+print(changes)
+```
+
+**Sector Breakdown:**
+
+```python
+sectors = manager.get_sector_breakdown(date.today())
+for sector, count in sectors.items():
+    print(f"{sector}: {count} symbols")
+```
+
+### 2.5 Ingest New Price Data
 
 ```python
 from hrp.data.ingestion.prices import ingest_prices
@@ -159,7 +211,7 @@ print(f"Symbols succeeded: {result['symbols_success']}")
 print(f"Rows inserted: {result['rows_inserted']}")
 ```
 
-### 2.5 Compute Features
+### 2.6 Compute Features
 
 ```python
 from hrp.data.ingestion.features import compute_features
@@ -176,7 +228,7 @@ print(f"Features computed: {result['features_computed']}")
 print(f"Rows inserted: {result['rows_inserted']}")
 ```
 
-### 2.6 Get Point-in-Time Fundamentals
+### 2.7 Get Point-in-Time Fundamentals
 
 ```python
 from hrp.api.platform import PlatformAPI
@@ -910,6 +962,13 @@ Warning Issues: 2
 Passed: True
 ```
 
+**Available Checks:**
+- **Price Anomaly Check**: Detects >50% price moves without corporate actions
+- **Completeness Check**: Identifies missing prices for active symbols
+- **Gap Detection Check**: Finds missing trading days in price history
+- **Stale Data Check**: Flags symbols not updated in 3+ days
+- **Volume Anomaly Check**: Detects zero volume or 10x+ average volume
+
 ### 6.2 Check Specific Quality Aspects
 
 ```python
@@ -946,11 +1005,12 @@ print(f"\nStale data issues: {len(result.issues)}")
 ### 6.3 Generate Quality Report
 
 ```python
-from hrp.data.quality.report import QualityReport
+from hrp.data.quality.report import QualityReportGenerator
 from datetime import date
 
 # Generate comprehensive report
-report = QualityReport.generate(as_of_date=date.today())
+generator = QualityReportGenerator()
+report = generator.generate_report(as_of_date=date.today())
 
 print(f"Report generated: {report.generated_at}")
 print(f"Health Score: {report.health_score}")
@@ -962,8 +1022,133 @@ print(f"  Critical: {report.critical_issues}")
 print(f"  Warning: {report.warning_issues}")
 print(f"  Info: {report.info_issues}")
 
-# Save report
-report.save()  # Saves to database for historical tracking
+# Store report in database for historical tracking
+report_id = generator.store_report(report)
+print(f"\nStored as report_id: {report_id}")
+
+# View health trend over time
+trend = generator.get_health_trend(days=90)
+print(f"\n90-day health trend: {len(trend)} reports")
+```
+
+### 6.4 Backup & Restore Operations
+
+```bash
+# Create a backup (database + MLflow)
+python -m hrp.data.backup --backup
+
+# Verify backup integrity
+python -m hrp.data.backup --verify ~/hrp-data/backups/backup_20260124_120000
+
+# List all backups
+python -m hrp.data.backup --list
+
+# Restore from backup
+python -m hrp.data.backup --restore ~/hrp-data/backups/backup_20260124_120000 \
+    --target-dir ~/hrp-data-restored
+
+# Rotate old backups (keep 30 days)
+python -m hrp.data.backup --rotate --keep-days 30
+```
+
+**Programmatic Backup:**
+
+```python
+from hrp.data.backup import create_backup, verify_backup, restore_backup
+
+# Create backup
+result = create_backup(include_mlflow=True)
+print(f"Backup created: {result['path']}")
+print(f"Size: {result['size_mb']} MB")
+print(f"Files: {len(result['files'])}")
+
+# Verify it
+if verify_backup(result['path']):
+    print("Backup verified successfully")
+    
+# Restore if needed
+restore_backup(backup_path=result['path'], target_dir="~/hrp-data-restored")
+```
+
+**Automated Backups:**
+
+Backups are automatically scheduled when using the scheduler:
+
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+
+# Setup daily backup at 2 AM, keep 30 days
+scheduler.setup_daily_backup(
+    backup_time='02:00',
+    keep_days=30,
+    include_mlflow=True
+)
+
+scheduler.start()
+```
+
+### 6.5 Historical Data Backfill
+
+```bash
+# Backfill prices for specific symbols
+python -m hrp.data.backfill --symbols AAPL MSFT GOOGL \
+    --start 2020-01-01 --end 2023-12-31 --prices
+
+# Backfill entire S&P 500 universe
+python -m hrp.data.backfill --universe \
+    --start 2015-01-01 --all
+
+# Resume from previous progress
+python -m hrp.data.backfill --resume backfill_progress_20260124.json \
+    --prices --features
+
+# Validate backfill completeness
+python -m hrp.data.backfill --symbols AAPL MSFT \
+    --start 2020-01-01 --end 2023-12-31 --validate
+```
+
+**Programmatic Backfill:**
+
+```python
+from hrp.data.backfill import backfill_prices, backfill_features, validate_backfill
+from datetime import date
+from pathlib import Path
+
+# Backfill prices with progress tracking
+result = backfill_prices(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date(2020, 1, 1),
+    end=date(2023, 12, 31),
+    source='yfinance',
+    batch_size=10,
+    progress_file=Path('backfill_progress.json')
+)
+
+print(f"Success: {result['symbols_success']}/{result['symbols_requested']}")
+print(f"Rows inserted: {result['rows_inserted']}")
+
+# Backfill features
+result = backfill_features(
+    symbols=['AAPL', 'MSFT', 'GOOGL'],
+    start=date(2020, 1, 1),
+    end=date(2023, 12, 31),
+    batch_size=10
+)
+
+# Validate completeness
+validation = validate_backfill(
+    symbols=['AAPL', 'MSFT'],
+    start=date(2020, 1, 1),
+    end=date(2023, 12, 31),
+    check_features=True
+)
+
+print(f"Valid: {validation['is_valid']}")
+print(f"Complete symbols: {validation['symbols_complete']}")
+if validation['gaps']:
+    print(f"Symbols with gaps: {list(validation['gaps'].keys())}")
 ```
 
 ---
@@ -976,12 +1161,20 @@ report.save()  # Saves to database for historical tracking
 # Run price ingestion job
 python -m hrp.agents.cli run-now --job prices
 
+# Run universe update job
+python -m hrp.agents.cli run-now --job universe
+
 # Run feature computation job
 python -m hrp.agents.cli run-now --job features
 
-# Run for specific symbols
+# Run for specific symbols (prices only)
 python -m hrp.agents.cli run-now --job prices --symbols AAPL MSFT GOOGL
 ```
+
+**What each job does:**
+- **prices**: Fetches daily OHLCV data from Yahoo Finance or Polygon.io
+- **universe**: Updates S&P 500 constituents from Wikipedia, applies exclusion rules
+- **features**: Computes technical indicators from price data
 
 ### 7.2 Set Up Daily Ingestion
 
@@ -1068,15 +1261,41 @@ python -m hrp.agents.cli job-status
 #### Option B: Foreground (Testing/Development)
 
 ```bash
-# Run with default settings (prices @ 6PM, features @ 6:10PM, backup @ 2AM)
+# Run with default settings
+# - Prices: 6:00 PM ET
+# - Universe: 6:05 PM ET
+# - Features: 6:10 PM ET
+# - Backup: 2:00 AM ET
 python run_scheduler.py
 
-# Customize times
-python run_scheduler.py --price-time 18:00 --feature-time 18:10 --backup-time 02:00
+# Custom times
+python run_scheduler.py \
+    --price-time 18:00 \
+    --universe-time 18:05 \
+    --feature-time 18:10 \
+    --backup-time 02:00
 
-# Run without backup
+# Disable backup
 python run_scheduler.py --no-backup
 
+# Custom symbols (prices only, universe/features use all DB symbols)
+python run_scheduler.py --symbols AAPL MSFT GOOGL
+```
+
+**Daily Pipeline Flow:**
+```
+18:00 ET → Price Ingestion
+             ↓
+18:05 ET → Universe Update (S&P 500 changes)
+             ↓
+18:10 ET → Feature Computation
+             ↓
+02:00 ET → Backup (next day)
+```
+
+**Advanced Options:**
+
+```bash
 # Keep 60 days of backups
 python run_scheduler.py --backup-keep-days 60
 ```
@@ -1146,8 +1365,9 @@ scheduler = IngestionScheduler()
 # Set up daily jobs (US/Eastern timezone)
 scheduler.setup_daily_ingestion(
     symbols=None,  # None = all universe symbols
-    price_job_time='18:00',   # 6 PM ET (after market close)
-    feature_job_time='18:10'  # 6:10 PM ET (after prices loaded)
+    price_job_time='18:00',      # 6:00 PM ET (after market close)
+    universe_job_time='18:05',   # 6:05 PM ET (after prices loaded)
+    feature_job_time='18:10'     # 6:10 PM ET (after universe updated)
 )
 
 # Set up daily backup
@@ -1182,10 +1402,12 @@ python -m hrp.agents.cli job-status --job-id price_ingestion --limit 10
 ```
 Scheduled Jobs:
   price_ingestion: Daily at 18:00 ET (next: 2025-01-23 18:00:00)
+  universe_update: Daily at 18:05 ET (next: 2025-01-23 18:05:00)
   feature_computation: Daily at 18:10 ET (next: 2025-01-23 18:10:00)
 
 Recent Executions:
   2025-01-22 18:00:05 | price_ingestion | SUCCESS | 450 symbols, 450 rows
+  2025-01-22 18:05:08 | universe_update | SUCCESS | 503 constituents, 380 included
   2025-01-22 18:10:12 | feature_computation | SUCCESS | 3600 features
   2025-01-21 18:00:03 | price_ingestion | SUCCESS | 450 symbols, 450 rows
 ```
@@ -1193,7 +1415,7 @@ Recent Executions:
 ### 7.4 Run Jobs Programmatically
 
 ```python
-from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob
+from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob, UniverseUpdateJob
 from datetime import date, timedelta
 
 # Run price ingestion
@@ -1205,6 +1427,16 @@ price_job = PriceIngestionJob(
 result = price_job.run()
 print(f"Status: {result['status']}")
 print(f"Records inserted: {result['records_inserted']}")
+
+# Run universe update
+universe_job = UniverseUpdateJob(
+    as_of_date=date.today(),
+    actor="user:manual"
+)
+result = universe_job.run()
+print(f"Total constituents: {result['records_fetched']}")
+print(f"Included in universe: {result['records_inserted']}")
+print(f"Added: {result['symbols_added']}, Removed: {result['symbols_removed']}")
 
 # Run feature computation (depends on prices being loaded)
 feature_job = FeatureComputationJob(

@@ -211,30 +211,35 @@ class IngestionScheduler:
         self,
         symbols: list[str] | None = None,
         price_job_time: str = "18:00",
+        universe_job_time: str = "18:05",
         feature_job_time: str = "18:10",
     ) -> None:
         """
         Configure daily data ingestion pipeline with dependency chain.
 
-        Sets up two scheduled jobs:
+        Sets up three scheduled jobs:
         1. Price ingestion at 6:00 PM ET (configurable)
-        2. Feature computation at 6:10 PM ET (configurable)
+        2. Universe update at 6:05 PM ET (configurable)
+        3. Feature computation at 6:10 PM ET (configurable)
 
-        The feature job has a dependency on price ingestion completing successfully.
+        The universe and feature jobs have dependencies on price ingestion completing successfully.
 
         Args:
             symbols: List of stock tickers to ingest (None = TEST_SYMBOLS for prices, all DB symbols for features)
             price_job_time: Time to run price ingestion (HH:MM format, default: 18:00)
+            universe_job_time: Time to run universe update (HH:MM format, default: 18:05)
             feature_job_time: Time to run feature computation (HH:MM format, default: 18:10)
         """
-        from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob
+        from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob, UniverseUpdateJob
 
         # Parse and validate time strings
         price_hour, price_minute = _parse_time(price_job_time, "price_job_time")
+        universe_hour, universe_minute = _parse_time(universe_job_time, "universe_job_time")
         feature_hour, feature_minute = _parse_time(feature_job_time, "feature_job_time")
 
         # Create job instances
         price_job = PriceIngestionJob(symbols=symbols)
+        universe_job = UniverseUpdateJob()
         feature_job = FeatureComputationJob(symbols=None)  # None = all symbols in DB
 
         # Schedule price ingestion job
@@ -245,6 +250,17 @@ class IngestionScheduler:
             name="Daily Price Ingestion",
         )
         logger.info(f"Scheduled price ingestion at {price_job_time} ET")
+
+        # Schedule universe update job (depends on prices for price-based exclusions)
+        self.add_job(
+            func=universe_job.run,
+            job_id="universe_update",
+            trigger=CronTrigger(
+                hour=universe_hour, minute=universe_minute, timezone=ET_TIMEZONE
+            ),
+            name="Daily Universe Update",
+        )
+        logger.info(f"Scheduled universe update at {universe_job_time} ET")
 
         # Schedule feature computation job (depends on prices)
         self.add_job(
@@ -258,7 +274,7 @@ class IngestionScheduler:
         logger.info(f"Scheduled feature computation at {feature_job_time} ET")
 
         logger.info(
-            "Daily ingestion pipeline configured: prices → features (dependency enforced)"
+            "Daily ingestion pipeline configured: prices → universe → features (dependency enforced)"
         )
 
     def setup_daily_backup(

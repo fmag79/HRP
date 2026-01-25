@@ -22,6 +22,7 @@ from hrp.agents.jobs import (
     IngestionJob,
     JobStatus,
     PriceIngestionJob,
+    UniverseUpdateJob,
 )
 from hrp.data.db import DatabaseManager
 from hrp.data.schema import create_tables
@@ -54,6 +55,7 @@ def job_test_db():
             VALUES
                 ('price_ingestion', 'scheduled_job', 'active'),
                 ('feature_computation', 'scheduled_job', 'active'),
+                ('universe_update', 'scheduled_job', 'active'),
                 ('test_job', 'scheduled_job', 'active'),
                 ('dep_job', 'scheduled_job', 'active')
             """
@@ -506,3 +508,142 @@ class TestJobLogging:
         job = PriceIngestionJob()
         last_run = job.get_last_successful_run()
         assert last_run is None
+
+
+class TestUniverseUpdateJob:
+    """Tests for UniverseUpdateJob."""
+
+    def test_init_defaults(self):
+        """UniverseUpdateJob should initialize with defaults."""
+        job = UniverseUpdateJob()
+        assert job.job_id == "universe_update"
+        assert job.max_retries == 3
+        assert job.status == JobStatus.PENDING
+        assert job.dependencies == []
+        assert job.as_of_date == date.today()
+        assert job.actor == "system:scheduled_universe_update"
+
+    def test_init_with_custom_date(self):
+        """UniverseUpdateJob should accept custom date."""
+        test_date = date(2024, 1, 15)
+        job = UniverseUpdateJob(as_of_date=test_date)
+        assert job.as_of_date == test_date
+
+    def test_init_with_custom_actor(self):
+        """UniverseUpdateJob should accept custom actor."""
+        job = UniverseUpdateJob(actor="user:manual_test")
+        assert job.actor == "user:manual_test"
+
+    @patch("hrp.agents.jobs.UniverseManager")
+    def test_execute_calls_universe_manager(self, mock_manager_class, job_test_db):
+        """execute() should call UniverseManager.update_universe."""
+        mock_manager = MagicMock()
+        mock_manager.update_universe.return_value = {
+            "date": date.today(),
+            "total_constituents": 503,
+            "included": 380,
+            "excluded": 123,
+            "added": 5,
+            "removed": 2,
+            "exclusion_reasons": {
+                "excluded_sector": 80,
+                "penny_stock": 43,
+            },
+        }
+        mock_manager_class.return_value = mock_manager
+
+        test_date = date(2024, 1, 15)
+        job = UniverseUpdateJob(as_of_date=test_date, actor="test_actor")
+        result = job.execute()
+
+        # Verify UniverseManager was called correctly
+        mock_manager.update_universe.assert_called_once_with(
+            as_of_date=test_date,
+            actor="test_actor",
+        )
+
+        # Verify result format
+        assert result["records_fetched"] == 503  # total_constituents
+        assert result["records_inserted"] == 380  # included
+        assert result["symbols_added"] == 5
+        assert result["symbols_removed"] == 2
+        assert result["symbols_excluded"] == 123
+
+    @patch("hrp.agents.jobs.UniverseManager")
+    @patch("hrp.agents.jobs.EmailNotifier")
+    def test_run_logs_success(self, mock_notifier, mock_manager_class, job_test_db):
+        """run() should log success to ingestion_log."""
+        mock_manager = MagicMock()
+        mock_manager.update_universe.return_value = {
+            "date": date.today(),
+            "total_constituents": 503,
+            "included": 380,
+            "excluded": 123,
+            "added": 0,
+            "removed": 0,
+            "exclusion_reasons": {},
+        }
+        mock_manager_class.return_value = mock_manager
+
+        job = UniverseUpdateJob()
+        result = job.run()
+
+        assert result["records_inserted"] == 380
+        assert job.status == JobStatus.SUCCESS
+
+        # Verify logged to ingestion_log
+        from hrp.data.db import get_db
+
+        db = get_db(job_test_db)
+        with db.connection() as conn:
+            log_row = conn.execute(
+                """
+                SELECT status, records_fetched, records_inserted
+                FROM ingestion_log
+                WHERE source_id = 'universe_update'
+                ORDER BY started_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+        assert log_row is not None
+        assert log_row[0] == "completed"
+        assert log_row[1] == 503  # total_constituents
+        assert log_row[2] == 380  # included
+
+    @patch("hrp.agents.jobs.UniverseManager")
+    @patch("hrp.agents.jobs.EmailNotifier")
+    def test_run_logs_failure(self, mock_notifier, mock_manager_class, job_test_db):
+        """run() should log failure to ingestion_log."""
+        mock_manager = MagicMock()
+        mock_manager.update_universe.side_effect = Exception("Wikipedia fetch error")
+        mock_manager_class.return_value = mock_manager
+
+        mock_notifier_instance = MagicMock()
+        mock_notifier.return_value = mock_notifier_instance
+
+        job = UniverseUpdateJob(max_retries=0)
+        result = job.run()
+
+        assert result["status"] == "failed"
+        assert "Wikipedia fetch error" in result["error"]
+        assert job.status == JobStatus.FAILED
+
+        # Verify logged to ingestion_log
+        from hrp.data.db import get_db
+
+        db = get_db(job_test_db)
+        with db.connection() as conn:
+            log_row = conn.execute(
+                """
+                SELECT status, error_message
+                FROM ingestion_log
+                WHERE source_id = 'universe_update'
+                ORDER BY started_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+        assert log_row is not None
+        assert log_row[0] == "failed"
+        assert "Wikipedia fetch error" in log_row[1]
