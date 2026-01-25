@@ -59,6 +59,16 @@ mlflow ui --backend-store-uri sqlite:///$HOME/hrp-data/mlflow/mlflow.db
 # Open http://localhost:5000
 ```
 
+### Running the Scheduler
+
+```bash
+# Run automated daily ingestion (prices, features, backups)
+python run_scheduler.py
+
+# Customize schedule times
+python run_scheduler.py --price-time 18:00 --feature-time 18:10 --backup-time 02:00
+```
+
 ## Architecture
 
 ```

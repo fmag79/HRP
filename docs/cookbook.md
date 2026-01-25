@@ -507,6 +507,107 @@ def456               0.5123        0.3245        0.2134        0.4823
 ghi789               0.8534        0.5234        0.1523        0.5723
 ```
 
+### 4.7 Multi-Factor Strategy Backtest
+
+```python
+from hrp.research.strategies import generate_multifactor_signals
+from hrp.research.backtest import get_price_data, run_backtest
+from hrp.research.config import BacktestConfig
+from datetime import date
+
+# Load prices
+prices = get_price_data(
+    ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'],
+    start=date(2020, 1, 1),
+    end=date(2023, 12, 31)
+)
+
+# Generate multi-factor signals
+# Positive weights favor higher values, negative favor lower
+signals = generate_multifactor_signals(
+    prices,
+    feature_weights={
+        "momentum_20d": 1.0,     # Favor high momentum stocks
+        "volatility_60d": -0.5,  # Penalize high volatility
+    },
+    top_n=10,  # Hold top 10 stocks by composite score
+)
+
+# Run backtest
+config = BacktestConfig(
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'],
+    start_date=date(2020, 1, 1),
+    end_date=date(2023, 12, 31),
+    name='multifactor_momentum_lowvol'
+)
+
+result = run_backtest(signals, config, prices)
+print(f"Sharpe: {result.sharpe:.2f}")
+print(f"Total Return: {result.total_return:.1%}")
+```
+
+**How Multi-Factor Works:**
+1. Fetches feature values for all symbols on each date
+2. Z-score normalizes each factor cross-sectionally (mean=0, std=1)
+3. Computes weighted composite: `sum(weight * normalized_factor)`
+4. Ranks stocks by composite score, selects top N
+
+### 4.8 ML-Predicted Strategy Backtest
+
+```python
+from hrp.research.strategies import generate_ml_predicted_signals
+from hrp.research.backtest import get_price_data, run_backtest
+from hrp.research.config import BacktestConfig
+from datetime import date
+
+# Load prices
+prices = get_price_data(
+    ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'],
+    start=date(2020, 1, 1),
+    end=date(2023, 12, 31)
+)
+
+# Generate ML-predicted signals
+signals = generate_ml_predicted_signals(
+    prices,
+    model_type="ridge",  # Options: ridge, lasso, random_forest, lightgbm, xgboost
+    features=["momentum_20d", "volatility_60d"],
+    signal_method="rank",      # Options: rank, threshold, zscore
+    top_pct=0.1,               # For rank: select top 10%
+    train_lookback=252,        # 1 year training window
+    retrain_frequency=21,      # Monthly retraining
+)
+
+# Run backtest
+config = BacktestConfig(
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'],
+    start_date=date(2020, 1, 1),
+    end_date=date(2023, 12, 31),
+    name='ml_predicted_ridge'
+)
+
+result = run_backtest(signals, config, prices)
+print(f"Sharpe: {result.sharpe:.2f}")
+print(f"Total Return: {result.total_return:.1%}")
+```
+
+**How ML-Predicted Works:**
+1. For each rebalance date (every `retrain_frequency` days):
+   - Train model on past `train_lookback` days of feature data
+   - Generate predictions for forward returns on all symbols
+2. Convert predictions to signals using `signal_method`:
+   - `rank`: Select top X% by predicted return
+   - `threshold`: Select if prediction >= threshold value
+   - `zscore`: Continuous signals (z-score normalized)
+3. Hold positions until next rebalance
+
+**Available Models:**
+- `ridge`: Ridge regression (L2 regularization) - fast, stable
+- `lasso`: Lasso regression (L1 regularization) - feature selection
+- `random_forest`: Random Forest regressor - captures non-linear patterns
+- `lightgbm`: LightGBM (requires lightgbm package)
+- `xgboost`: XGBoost (requires xgboost package)
+
 ---
 
 ## 5. ML & Walk-Forward Validation
@@ -812,8 +913,27 @@ python -m hrp.agents.cli run-now --job prices --symbols AAPL MSFT GOOGL
 
 ### 7.2 Set Up Daily Ingestion
 
+**Using the scheduler runner (recommended):**
+
+```bash
+# Run with default settings (prices @ 6PM, features @ 6:10PM, backup @ 2AM)
+python run_scheduler.py
+
+# Customize times
+python run_scheduler.py --price-time 18:00 --feature-time 18:10 --backup-time 02:00
+
+# Run without backup
+python run_scheduler.py --no-backup
+
+# Keep 60 days of backups
+python run_scheduler.py --backup-keep-days 60
+```
+
+**Programmatically:**
+
 ```python
 from hrp.agents.scheduler import IngestionScheduler
+import signal
 
 scheduler = IngestionScheduler()
 
@@ -824,12 +944,19 @@ scheduler.setup_daily_ingestion(
     feature_job_time='18:10'  # 6:10 PM ET (after prices loaded)
 )
 
+# Set up daily backup
+scheduler.setup_daily_backup(
+    backup_time='02:00',  # 2 AM ET
+    keep_days=30,
+    include_mlflow=True,
+)
+
 # Start the scheduler
 scheduler.start()
 
 # The scheduler runs in the background
-# To stop it:
-# scheduler.shutdown()
+# Keep running until Ctrl+C
+signal.pause()
 ```
 
 ### 7.3 View Job Status
@@ -1222,6 +1349,15 @@ is still referenced by a foreign key
 | `api.health_check()` | System health status |
 | `api.get_fundamentals_as_of(symbols, metrics, as_of_date)` | Get point-in-time fundamentals |
 | `api.adjust_prices_for_dividends(prices, reinvest)` | Adjust prices for dividend reinvestment |
+
+### Strategy Signal Generators
+
+| Function | Description |
+|----------|-------------|
+| `generate_momentum_signals(prices, lookback, top_n)` | Simple momentum strategy |
+| `generate_multifactor_signals(prices, feature_weights, top_n)` | Multi-factor with configurable weights |
+| `generate_ml_predicted_signals(prices, model_type, features, ...)` | ML model predictions as signals |
+| `predictions_to_signals(predictions, method, ...)` | Convert predictions to trading signals |
 
 ### CLI Commands
 

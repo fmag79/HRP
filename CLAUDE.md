@@ -95,6 +95,48 @@ job = PriceIngestionJob(symbols=['AAPL'], start=date.today() - timedelta(days=7)
 result = job.run()  # Returns status, records_fetched, records_inserted
 ```
 
+### Run a multi-factor strategy backtest
+```python
+from hrp.research.strategies import generate_multifactor_signals
+from hrp.research.backtest import get_price_data, run_backtest
+from hrp.research.config import BacktestConfig
+
+# Load prices
+prices = get_price_data(['AAPL', 'MSFT', 'GOOGL'], start_date, end_date)
+
+# Generate signals: combine momentum (positive) and volatility (negative)
+signals = generate_multifactor_signals(
+    prices,
+    feature_weights={
+        "momentum_20d": 1.0,    # Favor high momentum
+        "volatility_60d": -0.5,  # Penalize high volatility
+    },
+    top_n=10,
+)
+
+# Run backtest
+config = BacktestConfig(symbols=['AAPL', 'MSFT', 'GOOGL'], start_date=start_date, end_date=end_date)
+result = run_backtest(signals, config, prices)
+```
+
+### Run an ML-predicted strategy backtest
+```python
+from hrp.research.strategies import generate_ml_predicted_signals
+
+# Generate signals using ML model predictions
+signals = generate_ml_predicted_signals(
+    prices,
+    model_type="ridge",  # ridge, lasso, random_forest, lightgbm, xgboost
+    features=["momentum_20d", "volatility_60d"],
+    signal_method="rank",  # rank, threshold, zscore
+    top_pct=0.1,           # Top 10% for rank method
+    train_lookback=252,    # 1 year training window
+    retrain_frequency=21,  # Monthly retraining
+)
+
+result = run_backtest(signals, config, prices)
+```
+
 ### Run walk-forward validation
 ```python
 from hrp.ml import WalkForwardConfig, walk_forward_validate
@@ -149,7 +191,7 @@ pytest tests/ -v
 |---------|---------|------|
 | Dashboard | `streamlit run hrp/dashboard/app.py` | 8501 |
 | MLflow UI | `mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db` | 5000 |
-| Scheduler | `python -m hrp.agents.cli start` | - |
+| Scheduler | `python run_scheduler.py` | - |
 
 ## Environment Variables
 
@@ -173,10 +215,11 @@ pytest tests/ -v
 hrp/
 ├── api/            # Platform API (single entry point)
 ├── data/           # Data layer (DuckDB, ingestion, features)
-├── research/       # Research engine (backtest, hypothesis, lineage)
-├── ml/             # ML framework (training, validation)
+├── research/       # Research engine (backtest, hypothesis, lineage, strategies)
+├── ml/             # ML framework (training, validation, signals)
 ├── risk/           # Risk management (limits, validation)
 ├── dashboard/      # Streamlit dashboard
+│   └── components/ # Reusable UI components (strategy config)
 ├── mcp/            # Claude MCP servers
 ├── agents/         # Scheduled agents
 ├── notifications/  # Email alerts

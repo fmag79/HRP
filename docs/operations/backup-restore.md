@@ -57,8 +57,21 @@ Daily backups run automatically at **2:00 AM** local time (configurable).
 
 ### Enable Automated Backups
 
+**Using the scheduler runner (recommended):**
+
+```bash
+# Run scheduler with backup enabled (default)
+python run_scheduler.py
+
+# Customize backup time and retention
+python run_scheduler.py --backup-time 02:00 --backup-keep-days 30
+```
+
+**Programmatically:**
+
 ```python
 from hrp.agents.scheduler import IngestionScheduler
+import signal
 
 scheduler = IngestionScheduler()
 scheduler.setup_daily_backup(
@@ -66,6 +79,9 @@ scheduler.setup_daily_backup(
     keep_days=30          # Keep 30 days of backups
 )
 scheduler.start()
+
+# Keep running
+signal.pause()
 ```
 
 ### Verify Backup Schedule

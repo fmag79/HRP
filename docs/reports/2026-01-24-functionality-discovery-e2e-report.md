@@ -299,4 +299,4 @@ hrp/
 |---------|---------|------|--------|
 | Dashboard | `streamlit run hrp/dashboard/app.py` | 8501 | ✅ Running |
 | MLflow UI | `mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db` | 5000 | Available |
-| Scheduler | `python -m hrp.agents.cli start` | - | Available |
+| Scheduler | `python run_scheduler.py` | - | Available |
