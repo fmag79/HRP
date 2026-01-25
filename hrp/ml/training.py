@@ -150,9 +150,6 @@ def load_training_data(
             - X_val, y_val: Validation features and target
             - X_test, y_test: Test features and target
     """
-    # Fetch all data at once (from earliest train to latest test date)
-    all_features_with_target = list(set(config.features + [config.target]))
-
     logger.info(
         f"Loading training data for {len(symbols)} symbols, "
         f"{len(config.features)} features, target={config.target}"

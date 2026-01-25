@@ -4,7 +4,17 @@ Risk management and validation framework.
 Provides overfitting guards, statistical validation, and robustness checks.
 """
 
-from hrp.risk.overfitting import TestSetGuard, OverfittingError
+from hrp.risk.overfitting import (
+    TestSetGuard,
+    OverfittingError,
+    SharpeDecayMonitor,
+    DecayCheckResult,
+    FeatureCountValidator,
+    FeatureCountResult,
+    HyperparameterTrialCounter,
+    TargetLeakageValidator,
+    LeakageCheckResult,
+)
 from hrp.risk.validation import (
     ValidationCriteria,
     ValidationResult,
@@ -26,6 +36,13 @@ __all__ = [
     # Overfitting prevention
     "TestSetGuard",
     "OverfittingError",
+    "SharpeDecayMonitor",
+    "DecayCheckResult",
+    "FeatureCountValidator",
+    "FeatureCountResult",
+    "HyperparameterTrialCounter",
+    "TargetLeakageValidator",
+    "LeakageCheckResult",
     # Statistical validation
     "ValidationCriteria",
     "ValidationResult",

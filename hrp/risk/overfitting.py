@@ -240,7 +240,6 @@ def _log_evaluation(
     db = get_db()
 
     # Convert metadata dict to JSON string if present
-    import json
     metadata_json = json.dumps(metadata) if metadata else None
 
     with db.connection() as conn:
@@ -594,9 +593,10 @@ class TargetLeakageValidator:
         for col in features.columns:
             try:
                 corr = features[col].corr(target)
-                correlations[col] = abs(corr) if pd.notna(corr) else 0.0
+                abs_corr = abs(corr) if pd.notna(corr) else 0.0
+                correlations[col] = abs_corr
 
-                if abs(corr) >= self.correlation_threshold:
+                if abs_corr >= self.correlation_threshold:
                     suspicious_features.append(col)
                     logger.warning(
                         f"High correlation detected: {col} has {corr:.3f} correlation with target"
