@@ -579,16 +579,16 @@ class TestAdjustPricesForDividends:
 
     def test_single_dividend_adjusts_prior_prices(self, test_api):
         """Test that a single dividend adjusts all prices before ex-date."""
-        # Insert symbol and universe first (FK constraints)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Insert universe entry for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert prices: $100 every day
         test_api._db.execute(
             """
@@ -627,16 +627,7 @@ class TestAdjustPricesForDividends:
 
     def test_multiple_dividends_compound(self, test_api):
         """Test that multiple dividends compound correctly."""
-        # Insert symbol and universe first (FK constraints)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-01-01', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Universe entry for 2023-01-01 already exists in fixture
         # Insert prices: $100 every day
         test_api._db.execute(
             """
@@ -678,16 +669,16 @@ class TestAdjustPricesForDividends:
 
     def test_preserves_all_original_columns(self, test_api):
         """Test that original columns are preserved after adjustment."""
-        # Insert symbol and universe first (FK constraints)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Insert universe entry for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert test data
         test_api._db.execute(
             """
@@ -709,23 +700,18 @@ class TestAdjustPricesForDividends:
 
     def test_multiple_symbols_different_dividends(self, test_api):
         """Test adjusting prices for multiple symbols with different dividends."""
-        # Insert symbols and universe first (FK constraints)
-        test_api._db.execute(
-            """
-            INSERT INTO symbols (symbol, name, exchange)
-            VALUES
-                ('AAPL', 'Apple Inc.', 'NASDAQ'),
-                ('MSFT', 'Microsoft Corporation', 'NASDAQ')
-            """
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES
-                ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000),
-                ('MSFT', '2023-08-25', TRUE, 'Technology', 2400000000000)
-            """
-        )
+        # Insert universe entries for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES
+                    ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000),
+                    ('MSFT', '2023-08-25', TRUE, 'Technology', 2400000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert prices for AAPL and MSFT
         test_api._db.execute(
             """
@@ -767,16 +753,16 @@ class TestAdjustPricesForDividends:
 
     def test_only_affects_dividends_not_splits(self, test_api):
         """Test that split actions don't affect dividend adjustment."""
-        # Insert symbol and universe first (FK constraints)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Insert universe entry for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert prices
         test_api._db.execute(
             """
@@ -803,16 +789,16 @@ class TestAdjustPricesForDividends:
 
     def test_reinvest_true_adjusts_prices(self, test_api):
         """Test that reinvest=True (default) adjusts historical prices."""
-        # Insert symbol and universe first (FK constraints)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Insert universe entry for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert prices
         test_api._db.execute(
             """
@@ -839,16 +825,16 @@ class TestAdjustPricesForDividends:
 
     def test_reinvest_false_returns_unchanged(self, test_api):
         """Test that reinvest=False returns prices unchanged (price-return only)."""
-        # Insert symbol and universe first (FK constraints)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Insert universe entry for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert prices
         test_api._db.execute(
             """
@@ -898,16 +884,16 @@ class TestDividendAdjustmentIntegration:
 
     def test_combined_split_and_dividend_adjustment(self, test_api):
         """Test applying both split and dividend adjustments."""
-        # Insert symbol and universe first (FK constraint)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Insert universe entry for this date (symbols already in fixture)
+        try:
+            test_api._db.execute(
+                """
+                INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+                VALUES ('AAPL', '2023-08-25', TRUE, 'Technology', 2500000000000)
+                """
+            )
+        except Exception:
+            pass  # Already exists
         # Insert prices
         test_api._db.execute(
             """
@@ -943,16 +929,7 @@ class TestDividendAdjustmentIntegration:
 
     def test_dividend_adjustment_total_return_calculation(self, test_api):
         """Test that dividend adjustment gives correct total return."""
-        # Insert symbol and universe first (FK constraint)
-        test_api._db.execute(
-            "INSERT INTO symbols (symbol, name, exchange) VALUES ('AAPL', 'Apple Inc.', 'NASDAQ')"
-        )
-        test_api._db.execute(
-            """
-            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
-            VALUES ('AAPL', '2023-01-01', TRUE, 'Technology', 2500000000000)
-            """
-        )
+        # Universe entry for 2023-01-01 already exists in fixture
         # Insert prices: grows from 100 to 110 (10% price return)
         test_api._db.execute(
             """

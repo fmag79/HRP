@@ -128,8 +128,13 @@ class TestDatabaseManagerSingleton:
 
         DatabaseManager.reset()
 
-    def test_singleton_ignores_subsequent_paths(self, temp_db):
-        """Test that singleton ignores paths after first initialization."""
+    def test_singleton_per_path(self, temp_db):
+        """Test that singleton creates separate instances per path.
+
+        DatabaseManager uses a per-path singleton pattern - each unique db_path
+        gets its own singleton instance, allowing multiple databases to be
+        managed simultaneously while still reusing connections efficiently.
+        """
         from hrp.data.db import DatabaseManager
 
         DatabaseManager.reset()
@@ -141,9 +146,14 @@ class TestDatabaseManagerSingleton:
             dm1 = DatabaseManager(temp_db)
             dm2 = DatabaseManager(other_path)
 
-            # Both should point to original path
-            assert dm1.db_path == dm2.db_path
+            # Each path gets its own singleton instance
+            assert dm1.db_path != dm2.db_path
             assert str(dm1.db_path) == temp_db
+            assert str(dm2.db_path) == other_path
+
+            # But same path returns same instance
+            dm3 = DatabaseManager(temp_db)
+            assert dm1 is dm3
         finally:
             DatabaseManager.reset()
             if os.path.exists(other_path):
@@ -737,14 +747,15 @@ class TestGetDB:
         DatabaseManager.reset()
 
     def test_get_db_singleton(self, temp_db):
-        """Test that get_db returns the same singleton instance."""
+        """Test that get_db returns the same singleton instance for same path."""
         from hrp.data.db import DatabaseManager, get_db
 
         DatabaseManager.reset()
 
         db1 = get_db(temp_db)
-        db2 = get_db()
+        db2 = get_db(temp_db)
 
+        # Same path returns same instance
         assert db1 is db2
 
         DatabaseManager.reset()

@@ -169,7 +169,7 @@ class TestNotNullConstraints:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type)
-            VALUES (1, 'test_event')
+            VALUES (1, 'other')
         """
         )
 
@@ -824,7 +824,7 @@ class TestValidDataInsertion:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, hypothesis_id, experiment_id, actor)
-            VALUES (1, 'experiment_created', 'HYP-001', 'EXP-2020-001', 'user')
+            VALUES (1, 'experiment_started', 'HYP-001', 'EXP-2020-001', 'user')
         """
         )
 
@@ -847,7 +847,7 @@ class TestValidDataInsertion:
 
         lineages = db.fetchall("SELECT event_type, parent_lineage_id FROM lineage ORDER BY lineage_id")
         assert len(lineages) == 2
-        assert lineages[0][0] == "experiment_created"
+        assert lineages[0][0] == "experiment_started"
         assert lineages[0][1] is None
         assert lineages[1][0] == "experiment_completed"
         assert lineages[1][1] == 1
@@ -986,12 +986,11 @@ class TestIndexExistence:
 
         index_names = {row[0] for row in result}
 
-        # Lineage should have indexes on hypothesis_id, timestamp, experiment_id, and event_type
+        # Lineage should have indexes on hypothesis_id, timestamp, and composite timestamp+hypothesis
         expected_lineage_indexes = {
             "idx_lineage_hypothesis",
             "idx_lineage_timestamp",
-            "idx_lineage_experiment",
-            "idx_lineage_event_type",
+            "idx_lineage_timestamp_hypothesis",
         }
 
         missing = expected_lineage_indexes - index_names
