@@ -235,7 +235,7 @@ def _log_evaluation(
     override: bool,
     override_reason: str | None,
     metadata: dict[str, Any] | None,
-):
+) -> None:
     """Log test set evaluation to database."""
     db = get_db()
 
