@@ -307,7 +307,7 @@ if not result.passed:
 
 ```bash
 pytest tests/ -v
-# Pass rate: 100% (1,456 passed, 1 skipped)
+# Pass rate: 100% (1,478 passed, 1 skipped)
 ```
 
 ## Services

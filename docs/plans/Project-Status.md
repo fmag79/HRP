@@ -10,7 +10,7 @@
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
 **Codebase:** ~18,000 lines of production code across 80+ modules
-**Test Suite:** 1,456 tests (100% pass rate)
+**Test Suite:** 1,478 tests (100% pass rate)
 
 ## Current Progress
 
@@ -346,6 +346,11 @@ Complete feature tracking with spec links.
 ## Document History
 
 **Last Updated:** January 25, 2026
+
+**Changes (January 25, 2026 - Fundamentals Job Bugfix):**
+- Fixed `FundamentalsIngestionJob` and `SnapshotFundamentalsJob` calling non-existent `get_current_members()` method
+- Now uses `get_universe_at_date(date.today())` for universe symbol retrieval
+- Updated corresponding test mocks
 
 **Changes (January 25, 2026 - Weekly Fundamentals Ingestion):**
 - Added weekly fundamentals ingestion (Saturday 10 AM ET)

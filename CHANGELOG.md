@@ -1,3 +1,9 @@
+## [1.4.1] - 2026-01-25
+
+### Fixed
+- **FundamentalsIngestionJob**: Fixed `AttributeError` when running with `symbols=None` - was calling non-existent `get_current_members()` method on `UniverseManager`, now correctly uses `get_universe_at_date(date.today())`
+- **SnapshotFundamentalsJob**: Same fix applied
+
 ## [1.4.0] - 2026-01-25
 
 ### Added
