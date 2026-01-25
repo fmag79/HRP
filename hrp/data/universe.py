@@ -102,7 +102,13 @@ class UniverseManager:
 
         try:
             # Wikipedia table has constituents in the first table
-            tables = pd.read_html(url)
+            # Use User-Agent header to avoid 403 Forbidden errors
+            import urllib.request
+            req = urllib.request.Request(url)
+            req.add_header('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+            with urllib.request.urlopen(req) as response:
+                html = response.read()
+            tables = pd.read_html(html)
             df = tables[0]
 
             constituents = []
