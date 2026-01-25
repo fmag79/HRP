@@ -211,7 +211,7 @@ class TestPriceIngestionJob:
         assert log_row[0] == "failed"
         assert "API error" in log_row[1]
 
-    def test_get_status(self):
+    def test_get_status(self, job_test_db):
         """get_status() should return job status dict."""
         job = PriceIngestionJob()
         status = job.get_status()

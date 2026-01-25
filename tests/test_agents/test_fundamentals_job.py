@@ -300,7 +300,7 @@ class TestFundamentalsIngestionJobNotification:
 class TestFundamentalsIngestionJobHelpers:
     """Tests for helper methods."""
 
-    def test_get_status(self):
+    def test_get_status(self, fundamentals_job_test_db):
         """get_status() should return job status dict."""
         from hrp.agents.jobs import FundamentalsIngestionJob
 
