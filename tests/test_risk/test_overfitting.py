@@ -109,3 +109,57 @@ class TestTestSetGuard:
             pass
         
         assert guard.remaining_evaluations == 2
+
+
+class TestSharpeDecayMonitor:
+    """Tests for Sharpe ratio decay detection."""
+
+    def test_no_decay_passes(self):
+        """Test that similar train/test Sharpe passes."""
+        from hrp.risk.overfitting import SharpeDecayMonitor
+
+        monitor = SharpeDecayMonitor(max_decay_ratio=0.5)
+        result = monitor.check(train_sharpe=1.2, test_sharpe=1.0)
+
+        assert result.passed is True
+        assert result.decay_ratio < 0.5
+
+    def test_significant_decay_fails(self):
+        """Test that large decay is flagged."""
+        from hrp.risk.overfitting import SharpeDecayMonitor
+
+        monitor = SharpeDecayMonitor(max_decay_ratio=0.5)
+        result = monitor.check(train_sharpe=2.0, test_sharpe=0.5)
+
+        assert result.passed is False
+        assert result.decay_ratio == 0.75  # (2.0 - 0.5) / 2.0
+
+    def test_negative_test_sharpe_fails(self):
+        """Test that negative test Sharpe always fails."""
+        from hrp.risk.overfitting import SharpeDecayMonitor
+
+        monitor = SharpeDecayMonitor(max_decay_ratio=0.5)
+        result = monitor.check(train_sharpe=1.5, test_sharpe=-0.2)
+
+        assert result.passed is False
+        assert "negative" in result.message.lower()
+
+    def test_zero_train_sharpe_handled(self):
+        """Test edge case of zero train Sharpe."""
+        from hrp.risk.overfitting import SharpeDecayMonitor
+
+        monitor = SharpeDecayMonitor(max_decay_ratio=0.5)
+        result = monitor.check(train_sharpe=0.0, test_sharpe=0.1)
+
+        # Can't compute decay ratio with zero train, should pass if test >= 0
+        assert result.passed is True
+
+    def test_custom_threshold(self):
+        """Test custom decay threshold."""
+        from hrp.risk.overfitting import SharpeDecayMonitor
+
+        monitor = SharpeDecayMonitor(max_decay_ratio=0.3)
+        result = monitor.check(train_sharpe=1.0, test_sharpe=0.6)
+
+        # 40% decay exceeds 30% threshold
+        assert result.passed is False

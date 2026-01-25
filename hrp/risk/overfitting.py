@@ -5,12 +5,102 @@ Implements test set discipline and overfitting detection.
 """
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from loguru import logger
 
 from hrp.data.db import get_db
+
+
+@dataclass
+class DecayCheckResult:
+    """Result of a Sharpe decay check."""
+    passed: bool
+    decay_ratio: float
+    train_sharpe: float
+    test_sharpe: float
+    message: str
+
+
+class SharpeDecayMonitor:
+    """
+    Monitor for train/test Sharpe ratio decay.
+
+    Detects overfitting by comparing in-sample vs out-of-sample Sharpe ratios.
+    A large decay indicates the strategy may be overfit to training data.
+
+    Usage:
+        monitor = SharpeDecayMonitor(max_decay_ratio=0.5)
+        result = monitor.check(train_sharpe=1.5, test_sharpe=1.0)
+        if not result.passed:
+            print(f"Warning: {result.message}")
+    """
+
+    def __init__(self, max_decay_ratio: float = 0.5):
+        """
+        Initialize Sharpe decay monitor.
+
+        Args:
+            max_decay_ratio: Maximum allowed decay ratio (0.5 = 50% decay allowed)
+        """
+        if not 0 < max_decay_ratio < 1:
+            raise ValueError("max_decay_ratio must be between 0 and 1")
+        self.max_decay_ratio = max_decay_ratio
+
+    def check(self, train_sharpe: float, test_sharpe: float) -> DecayCheckResult:
+        """
+        Check Sharpe decay between train and test.
+
+        Args:
+            train_sharpe: In-sample Sharpe ratio
+            test_sharpe: Out-of-sample Sharpe ratio
+
+        Returns:
+            DecayCheckResult with pass/fail status and details
+        """
+        # Handle negative test Sharpe
+        if test_sharpe < 0:
+            return DecayCheckResult(
+                passed=False,
+                decay_ratio=1.0,
+                train_sharpe=train_sharpe,
+                test_sharpe=test_sharpe,
+                message=f"Negative test Sharpe ({test_sharpe:.2f}) indicates severe overfitting",
+            )
+
+        # Handle zero or negative train Sharpe
+        if train_sharpe <= 0:
+            return DecayCheckResult(
+                passed=True,
+                decay_ratio=0.0,
+                train_sharpe=train_sharpe,
+                test_sharpe=test_sharpe,
+                message="Train Sharpe <= 0, decay ratio not applicable",
+            )
+
+        # Calculate decay ratio
+        decay_ratio = (train_sharpe - test_sharpe) / train_sharpe
+        decay_ratio = max(0, decay_ratio)  # Can't have negative decay
+
+        passed = decay_ratio <= self.max_decay_ratio
+
+        if passed:
+            message = f"Sharpe decay {decay_ratio:.1%} within threshold ({self.max_decay_ratio:.1%})"
+        else:
+            message = (
+                f"Sharpe decay {decay_ratio:.1%} exceeds threshold ({self.max_decay_ratio:.1%}). "
+                f"Train: {train_sharpe:.2f}, Test: {test_sharpe:.2f}"
+            )
+
+        return DecayCheckResult(
+            passed=passed,
+            decay_ratio=decay_ratio,
+            train_sharpe=train_sharpe,
+            test_sharpe=test_sharpe,
+            message=message,
+        )
 
 
 class OverfittingError(Exception):
