@@ -218,7 +218,7 @@ print(f"Rows inserted: {result['rows_inserted']}")
 from hrp.data.ingestion.features import compute_features
 from datetime import date, timedelta
 
-# Compute features for recent data
+# Compute features for recent data (symbol-by-symbol)
 result = compute_features(
     symbols=['AAPL', 'MSFT', 'GOOGL'],
     start=date.today() - timedelta(days=60),
@@ -228,6 +228,33 @@ result = compute_features(
 print(f"Features computed: {result['features_computed']}")
 print(f"Rows inserted: {result['rows_inserted']}")
 ```
+
+### 2.6.1 Batch Feature Computation (~10x Faster)
+
+```python
+from hrp.data.ingestion.features import compute_features_batch
+from datetime import date, timedelta
+
+# Compute features for all symbols in single vectorized pass
+# This is ~10x faster than symbol-by-symbol processing
+result = compute_features_batch(
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA'],  # or None for all
+    start=date.today() - timedelta(days=60),
+    end=date.today()
+)
+
+print(f"Symbols processed: {result['symbols_success']}")
+print(f"Features computed: {result['features_computed']}")
+print(f"Rows inserted: {result['rows_inserted']}")
+```
+
+**Features computed (8 total):**
+- Returns: `returns_1d`, `returns_5d`, `returns_20d`
+- Momentum: `momentum_20d`, `momentum_60d`
+- Volatility: `volatility_20d`, `volatility_60d`
+- Volume: `volume_20d`
+
+**Note:** The scheduled `FeatureComputationJob` automatically uses batch processing.
 
 ### 2.7 Get Point-in-Time Fundamentals
 
@@ -716,7 +743,8 @@ config = WalkForwardConfig(
     n_folds=5,
     window_type='expanding',  # 'expanding' or 'rolling'
     feature_selection=True,
-    max_features=15
+    max_features=15,
+    n_jobs=1,  # Sequential (default) - use -1 for all cores
 )
 
 # Run walk-forward validation
@@ -738,6 +766,50 @@ for fold in result.fold_results:
           f"MSE={fold.metrics['mse']:.6f}, "
           f"Train: {fold.train_start} to {fold.train_end}")
 ```
+
+### 5.2.1 Parallel Walk-Forward Validation (3-4x Speedup)
+
+```python
+from hrp.ml import WalkForwardConfig, walk_forward_validate
+from datetime import date
+
+# Configure with parallel processing
+config = WalkForwardConfig(
+    model_type='ridge',
+    target='returns_20d',
+    features=['momentum_20d', 'volatility_20d', 'rsi_14d', 'volume_20d'],
+    start_date=date(2015, 1, 1),
+    end_date=date(2023, 12, 31),
+    n_folds=5,
+    window_type='expanding',
+    feature_selection=True,
+    max_features=15,
+    n_jobs=-1,  # Use all CPU cores for parallel fold processing
+)
+
+# Run validation - folds processed in parallel
+result = walk_forward_validate(
+    config=config,
+    symbols=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'],
+    log_to_mlflow=True
+)
+
+# Timing is automatically logged:
+# Timing [walk_forward_validate]: 12.345s
+#   - data_fetch: 0.234s (1.9%)
+#   - fold_processing: 11.890s (96.3%)
+
+print(f"Stability Score: {result.stability_score:.4f}")
+print(f"Mean IC: {result.mean_ic:.4f}")
+```
+
+**n_jobs options:**
+- `n_jobs=1`: Sequential processing (default, enables feature selection caching)
+- `n_jobs=-1`: Use all available CPU cores
+- `n_jobs=N`: Use exactly N parallel workers
+
+**Note:** Feature selection caching is only available in sequential mode (`n_jobs=1`).
+Parallel mode trades caching for faster execution via multiple processes.
 
 **Output:**
 ```

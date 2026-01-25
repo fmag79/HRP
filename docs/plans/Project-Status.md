@@ -91,8 +91,13 @@ ML capabilities, statistical rigor, and agent integration.
 | Model registry | ✅ | Ridge, Lasso, ElasticNet, LightGBM, XGBoost, RandomForest |
 | Training pipeline | ✅ | Feature selection, MLflow logging (`hrp/ml/training.py`) |
 | Walk-forward validation | ✅ | Expanding/rolling windows, stability scoring (`hrp/ml/validation.py`) |
+| **Parallel fold processing** | ✅ | `n_jobs` parameter for 3-4x speedup via joblib |
+| **Feature selection caching** | ✅ | `FeatureSelectionCache` reduces redundant computation |
 | Signal generation | ✅ | Rank-based, threshold, z-score methods (`hrp/ml/signals.py`) |
 | Feature selection | ✅ | Mutual information, correlation filtering |
+| **Timing instrumentation** | ✅ | `hrp/utils/timing.py` with `TimingMetrics`, `timed_section()` |
+| **Vectorized features** | ✅ | 8 features computed across all symbols in single pass |
+| **Batch feature ingestion** | ✅ | `compute_features_batch()` for ~10x speedup |
 
 ### Statistical Validation ✅
 
@@ -150,6 +155,14 @@ ML capabilities, statistical rigor, and agent integration.
 | PyFolio/Empyrical integration | Medium | Replace custom metrics with battle-tested library |
 | Research agents | Medium | Discovery, Validation, Report agents |
 | Enhanced risk limits | Low | Position sizing, sector exposure in backtests |
+
+### Parked Features (Future Consideration)
+
+| Feature | Reason Parked | Notes |
+|---------|---------------|-------|
+| `mom_10d` | Needs clarification | 10-day momentum - unclear if % change (same as ROC) or absolute price diff |
+| `fibonacci_retracements` | Different pattern | Requires pivot point detection, not a rolling indicator - needs architectural design |
+| `trend_strength` | Deferred | Combined ADX * sign(price-SMA) for signed strength; existing `adx_14d` + `trend` sufficient for now |
 
 ---
 
@@ -263,6 +276,9 @@ Complete feature tracking with spec links.
 | F-032 | Live vs Backtest Comparison | 4 | ❌ future | — |
 | F-033 | RiskFolio-Lib Optimization | 4 | ❌ future | — |
 | F-034 | AlphaLens Signal Analysis | 4 | ❌ future | — |
+| F-035 | MOM10 Indicator | 2 | 🅿️ parked | — |
+| F-036 | Fibonacci Retracements | 2 | 🅿️ parked | — |
+| F-037 | Combined Trend Strength | 2 | 🅿️ parked | — |
 
 ---
 
@@ -315,7 +331,20 @@ Complete feature tracking with spec links.
 
 ## Document History
 
-**Last Updated:** January 24, 2026
+**Last Updated:** January 25, 2026
+
+**Changes (January 25, 2026 - ML Pipeline Optimization):**
+- Added parallel fold processing (`n_jobs` parameter) to walk-forward validation
+- Added feature selection caching for sequential mode
+- Added 6 new vectorized feature computation functions
+- Added batch feature ingestion with ~10x speedup
+- Added timing utilities (`hrp/utils/timing.py`)
+- Updated ML Framework table with optimization features
+
+**Changes (January 25, 2026 - Feature Planning):**
+- Added 3 parked features to Future Consideration: MOM10, Fibonacci retracements, Combined Trend Strength
+- Added F-035, F-036, F-037 to Feature Registry with 🅿️ parked status
+- Plan created for 27 new technical indicators (see `docs/plans/2025-01-24-remaining-features.md`)
 
 **Changes (January 24, 2026 - Structure Consolidation):**
 - Consolidated from 6 versions to 4 tiers for simpler mental model

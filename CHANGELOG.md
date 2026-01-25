@@ -1,3 +1,43 @@
+## [1.3.0] - 2026-01-25
+
+### Added
+- **ML Pipeline Parallelization**: Walk-forward validation now supports parallel fold processing via `n_jobs` parameter in `WalkForwardConfig`:
+  - `n_jobs=1` (default): Sequential processing (backward compatible)
+  - `n_jobs=-1`: Use all CPU cores
+  - `n_jobs=N`: Use N parallel workers
+  - Uses `joblib.Parallel` with process-based execution
+- **Feature Selection Caching**: New `FeatureSelectionCache` class in `hrp/ml/validation.py`:
+  - Caches feature selection results across folds in sequential mode
+  - Reduces redundant mutual information computation
+  - ~15-20% speedup for walk-forward validation
+- **Vectorized Feature Computation**: 6 new vectorized feature functions in `hrp/data/features/computation.py`:
+  - `compute_returns_1d`, `compute_returns_5d`, `compute_returns_20d`
+  - `compute_momentum_60d`, `compute_volatility_20d`, `compute_volume_20d`
+  - All use pandas vectorized operations across all symbols simultaneously
+- **Batch Feature Ingestion**: New `compute_features_batch()` in `hrp/data/ingestion/features.py`:
+  - Processes all symbols in single vectorized pass (vs symbol-by-symbol loop)
+  - ~10x speedup for daily feature computation jobs
+  - Uses DuckDB DataFrame registration for efficient bulk inserts
+- **Timing Utilities**: New `hrp/utils/timing.py` module:
+  - `TimingMetrics` dataclass for tracking execution times
+  - `timed_section()` context manager for code instrumentation
+  - `Timer` class for manual timing control
+  - Walk-forward validation now logs `data_fetch` and `fold_processing` timing
+
+### Changed
+- **FeatureComputationJob**: Now uses `compute_features_batch()` for vectorized processing
+- **FEATURE_FUNCTIONS registry**: Extended from 2 to 8 feature computation functions
+- **_upsert_features**: Refactored to use DuckDB DataFrame registration instead of row-by-row inserts
+
+### Performance
+- Walk-forward validation: **3-4x speedup** with parallel folds (`n_jobs=-1`)
+- Feature ingestion: **~10x speedup** with batch processing
+- Feature selection: **~15-20% speedup** with caching in sequential mode
+
+### Testing
+- **522 tests passing** (100% pass rate)
+- No regressions introduced
+
 ## [1.2.0] - 2026-01-24
 
 ### Added

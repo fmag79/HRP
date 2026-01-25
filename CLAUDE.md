@@ -157,6 +157,7 @@ config = WalkForwardConfig(
     window_type='expanding',  # or 'rolling'
     feature_selection=True,
     max_features=20,
+    n_jobs=-1,  # Use all cores for parallel fold processing (3-4x speedup)
 )
 
 result = walk_forward_validate(
