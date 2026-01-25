@@ -16,6 +16,7 @@ This cookbook provides hands-on recipes for using the Hedgefund Research Platfor
 8. [Using the Dashboard](#8-using-the-dashboard)
 9. [Common Workflows](#9-common-workflows)
 10. [Troubleshooting](#10-troubleshooting)
+11. [Claude Integration (MCP Server)](#11-claude-integration-mcp-server)
 
 ---
 
@@ -1764,6 +1765,81 @@ is still referenced by a foreign key
 - Option 2: Update test fixtures to delete dependent records before parents
 
 **Impact:** Production code is unaffected. All core functionality is operational.
+
+---
+
+## 11. Claude Integration (MCP Server)
+
+HRP includes an MCP (Model Context Protocol) server that enables Claude to interact with the platform programmatically.
+
+### 11.1 Configure Claude Desktop
+
+Add to `~/.claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "hrp-research": {
+      "command": "python",
+      "args": ["-m", "hrp.mcp"],
+      "env": {
+        "HRP_DB_PATH": "/Users/your-username/hrp-data/hrp.duckdb"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop after adding this configuration.
+
+### 11.2 Available MCP Tools (22 total)
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Hypothesis** | `list_hypotheses`, `get_hypothesis`, `create_hypothesis`, `update_hypothesis`, `get_experiments_for_hypothesis` | Manage research hypotheses |
+| **Data Access** | `get_universe`, `get_features`, `get_prices`, `get_available_features`, `is_trading_day` | Access market data |
+| **Backtesting** | `run_backtest`, `get_experiment`, `compare_experiments`, `analyze_results` | Run and analyze backtests |
+| **ML Training** | `run_walk_forward_validation`, `get_supported_models`, `train_ml_model` | Train ML models |
+| **Quality** | `run_quality_checks`, `get_health_status`, `get_data_coverage` | Monitor data quality |
+| **Lineage** | `get_lineage`, `get_deployed_strategies` | Audit trail and deployments |
+
+### 11.3 Example Claude Interactions
+
+**List hypotheses:**
+> "Show me all hypotheses in testing status"
+
+Claude will call `list_hypotheses(status='testing')` and format the results.
+
+**Create a hypothesis:**
+> "Create a hypothesis testing whether RSI < 30 predicts positive 5-day returns"
+
+Claude will call `create_hypothesis()` with appropriate parameters.
+
+**Run a backtest:**
+> "Run a backtest for AAPL, MSFT, GOOGL from 2020 to 2023 linked to hypothesis HYP-2026-001"
+
+Claude will call `run_backtest()` and return the results.
+
+**Analyze results:**
+> "Analyze the results of experiment abc123"
+
+Claude will call `analyze_results()` and provide a human-readable interpretation.
+
+### 11.4 Security Model
+
+- **All MCP calls are logged** with actor `agent:claude-interactive`
+- **Agents cannot deploy strategies** — `approve_deployment` is not exposed
+- **Full audit trail** in the lineage table
+
+### 11.5 Start MCP Server Manually (for testing)
+
+```bash
+# Start the server (connects via stdio)
+python -m hrp.mcp
+
+# Or import and run programmatically
+python -c "from hrp.mcp import mcp; mcp.run()"
+```
 
 ---
 

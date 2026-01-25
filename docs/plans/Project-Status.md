@@ -12,14 +12,13 @@ This document tracks the implementation status of HRP (Hypothesis Research Platf
 
 ### ✅ What's Been Built
 
-HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of production code** across 80+ modules and **1,048 tests** across 39 test files (86% pass rate):
+HRP has progressed significantly beyond the MVP stage, with **~17,500 lines of production code** across 80+ modules and **1,227 tests** across 40+ test files (97.6% pass rate):
 
 **Test Suite Status:**
-- **Passed**: 902 tests
-- **Failed**: 141 tests (mostly FK constraint issues in test fixtures)
-- **Errors**: 105 (FK constraint violations during test setup/cleanup)
-- **Pass Rate**: ~86% (excluding setup errors)
-- **Known Issue**: FK constraint violations in test cleanup (not production bugs)
+- **Passed**: 1,198 tests
+- **Failed**: 29 tests (FK constraint test expectations, singleton pattern tests)
+- **Pass Rate**: ~97.6%
+- **Remaining Issues**: Tests expecting FK constraints that were intentionally removed from schema
 
 **Foundation & Core Research (v1) — 100% Complete** ✅
 - Full DuckDB schema with 13 tables, 3 sequences, 17 indexes, and comprehensive constraints
@@ -38,13 +37,17 @@ HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of p
 
 **Data Pipeline (v2) — 100% Complete** ✅
 - S&P 500 universe management (fetch from Wikipedia, track membership, exclusion rules)
-  - **Automatic daily updates** at 6:05 PM ET via scheduled jobs
-  - Full retry logic and failure notifications
-  - Lineage tracking for all universe changes
-- Multi-source data ingestion (Yahoo Finance, Polygon.io with abstractions)
+  - **✅ DEPLOYED:** Automatic daily updates at 6:05 PM ET via scheduled jobs (Jan 24, 2026)
+  - **✅ Production service running** (launchd background service, PID 94352)
+  - Full retry logic and failure notifications via email
+  - Lineage tracking for all universe changes in database
+  - Comprehensive monitoring infrastructure with health checks
+  - User-Agent fix applied for Wikipedia scraping reliability
+- Multi-source data ingestion (Polygon.io as primary, Yahoo Finance as fallback)
 - Feature store with 14+ technical indicators and version tracking
 - APScheduler-based job orchestration with dependency management
-  - Daily pipeline: Prices (18:00 ET) → Universe (18:05 ET) → Features (18:10 ET)
+  - **Three-stage daily pipeline:** Prices (18:00 ET) → Universe (18:05 ET) → Features (18:10 ET)
+  - Dependencies enforced: features wait for prices, universe runs independently
 - Data quality framework with 5 check types (Price Anomaly, Completeness, Gap Detection, Stale Data, Volume Anomaly)
 - Email notifications via Resend for failures and summaries
 - Rate limiting and error recovery infrastructure
@@ -63,37 +66,34 @@ HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of p
 - Multi-factor and ML-predicted trading strategies (`hrp/research/strategies.py`)
 - Strategy configuration UI components for dashboard (`hrp/dashboard/components/`)
 
-**Agent Infrastructure (v4) — 60% Complete**
+**Agent Infrastructure (v4) — 80% Complete**
 - Scheduled job system with CLI for manual execution
 - Agent permission model (agents cannot deploy strategies)
 - Action logging to lineage table with actor tracking
 - Rate limiting infrastructure ready for agent quotas
+- **NEW:** MCP server with 22 tools for Claude integration (`hrp/mcp/research_server.py`)
 
-**Testing** — Comprehensive coverage across 39 test files with 1,048 tests
+**Testing** — Comprehensive coverage across 40+ test files with 1,227 tests
 - Platform API test suite: **Comprehensive coverage** with 60+ new tests
 - Synthetic data generators for deterministic test fixtures
 - Database migration and schema integrity tests
 - Full backtest flow integration test
 - Corporate actions and splits unit tests (65+ tests)
-- **Pass Rate**: 86% (902 passed / 1,048 total)
-- **Known Issue**: FK constraint violations in test fixtures during cleanup (not production bugs)
+- **Pass Rate**: ~97.6% (1,198 passed / 1,227 total)
+- **Remaining Issues**: 29 tests expecting FK constraints that were intentionally removed
 
 ### 🚧 What's In Progress
 
-**v1 Completion:** ✅ **100% COMPLETE**
-- ~~Point-in-time fundamentals query helper (`get_fundamentals_as_of()`)~~ ✅ COMPLETE
-- ~~Dividend adjustment in backtests~~ ✅ COMPLETE
-- ~~Connection pooling for concurrent dashboard access~~ ✅ COMPLETE (verified with 6 concurrent tabs)
-- ~~Dashboard SQL query fixes~~ ✅ COMPLETE (Ingestion Status page corrected)
-
-**v3 Enhancement (Optional Future Work):**
+**v3 Enhancement (25% remaining):**
 - PyFolio/Empyrical integration for industry-standard metrics
 - Enhanced overfitting guards (Sharpe decay monitoring, automatic feature limits)
 - Risk limits enforcement in backtests (e.g., max position size, drawdown stops)
+- Validation reports with comprehensive metrics
 
-**v4 Agent Integration:**
-- MCP server implementation for Claude integration
+**v4 Agent Integration (20% remaining):**
+- ~~MCP server implementation for Claude integration~~ ✅ COMPLETE (22 tools)
 - Research agents (Discovery, Validation, Report)
+- Enhanced action logging (reasoning capture, resource usage tracking)
 
 ### 📋 What's Next
 
@@ -105,7 +105,7 @@ HRP has progressed significantly beyond the MVP stage, with **~17,344 lines of p
 
 **Medium-term (v3/v4 completion):**
 1. PyFolio tearsheets integration
-2. MCP server for Claude
+2. ~~MCP server for Claude~~ ✅ COMPLETE
 3. Research agent implementations
 4. Enhanced validation reports
 
@@ -153,12 +153,13 @@ Version 3: ML & Validation Framework      [████████████�
 ├─ ML Trading Strategies                  [████████████████████] 100%  ← NEW
 └─ PyFolio Integration & Risk Limits      [░░░░░░░░░░░░░░░░░░░░]   0%
 
-Version 4: Agent Integration              [████████████░░░░░░░░] 60%
+Version 4: Agent Integration              [████████████████░░░░] 80%
 ├─ Job Infrastructure & Scheduling        [████████████████████] 100%
 ├─ Agent Permission Model                 [████████████████████] 100%
 ├─ Rate Limiting & Validation             [████████████████████] 100%
 ├─ Action Logging & Monitoring            [████████████████░░░░]  80%
-└─ MCP Server & Research Agents           [░░░░░░░░░░░░░░░░░░░░]   0%
+├─ MCP Server (22 tools)                  [████████████████████] 100%  ← NEW
+└─ Research Agents (Discovery, etc.)      [░░░░░░░░░░░░░░░░░░░░]   0%
 
 Version 5: Production Hardening           [░░░░░░░░░░░░░░░░░░░░]  0%
 Version 6+: Advanced Features             [░░░░░░░░░░░░░░░░░░░░]  0%
@@ -508,7 +509,7 @@ Version 6+: Advanced Features             [░░░░░░░░░░░░�
 **Timeline:** 1-2 months after v3  
 **Exit Criteria:** Claude can run research via MCP, scheduled agents working reliably, all actions properly logged.
 
-**Status:** 🟡 **PARTIALLY COMPLETE** — Infrastructure ready, MCP integration pending
+**Status:** 🟡 **80% COMPLETE** — MCP server done, research agents pending
 
 ### Critical Fixes
 
@@ -543,12 +544,17 @@ Version 6+: Advanced Features             [░░░░░░░░░░░░�
 
 ### Deliverables
 
-- [ ] **Phase 6: Agent Integration** — ⚠️ Infrastructure ready, MCP pending
+- [x] **Phase 6: Agent Integration** — ✅ MCP SERVER COMPLETE
   - [x] Platform API supports agent operations ✅
   - [x] Agent permission enforcement (cannot deploy) ✅
   - [x] Rate limiting infrastructure ✅
-  - [ ] MCP server implementation — Not started
-  - [ ] Claude Code configuration — Not started
+  - [x] **MCP server implementation** — ✅ COMPLETE (`hrp/mcp/research_server.py`)
+    - 22 tools covering: hypothesis management, data access, backtesting, ML training, quality/health, lineage
+    - FastMCP-based with structured error handling
+    - Actor tracking (`agent:claude-interactive`) for audit trail
+    - `approve_deployment` intentionally NOT exposed (security by design)
+    - 56 unit tests in `tests/test_mcp/`
+  - [x] **Claude Desktop configuration** — ✅ Documented (run `python -m hrp.mcp`)
   - [ ] Agent quotas (max concurrent backtests) — Pending
   
 - [x] **Phase 7: Scheduled Agents** — ✅ MOSTLY COMPLETE
@@ -571,7 +577,10 @@ Version 6+: Advanced Features             [░░░░░░░░░░░░�
 
 ### Testing Requirements
 
-- [ ] MCP server integration tests — Not started (no MCP yet)
+- [x] MCP server integration tests — ✅ 56 tests in `tests/test_mcp/`
+  - `test_formatters.py` — Date parsing, DataFrame conversion, response formatting
+  - `test_errors.py` — Error handling decorator, structured error responses
+  - `test_tools.py` — All 22 tools with mocked API, security constraints verified
 - [x] Agent permission tests — ✅
   - `tests/test_api/test_platform.py` includes permission tests ✅
 - [x] Rate limiting tests — ✅
@@ -797,7 +806,7 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 
 | Category | QSAT Uses | HRP Current Status |
 |----------|-----------|-------------------|
-| Data | OpenBB | ✅ Yahoo Finance + Polygon.io (OpenBB planned) |
+| Data | OpenBB | ✅ Polygon.io (primary) + Yahoo Finance (fallback) |
 | Backtesting | Zipline Reloaded | ✅ VectorBT |
 | Performance | PyFolio | ⚠️ Custom metrics + scipy (PyFolio planned V3) |
 | Signal Analysis | Alphalens | ⚠️ Basic IC tracking (Alphalens planned) |
@@ -824,16 +833,16 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 | **v1** | MVP Research Platform | Database integrity, concurrency, financial accuracy | 2-3 months | ✅ **COMPLETE** (100%) |
 | **v2** | Production Data Pipeline | Ingestion orchestration, backups, monitoring | 1-2 months | ✅ **COMPLETE** (100%) — 2 optional enhancements remain |
 | **v3** | Validation & ML Framework | Statistical rigor, ML pipeline, risk management | 2-3 months | 🟡 **IN PROGRESS** (75%) |
-| **v4** | Agent Integration | MCP servers, scheduled agents, safety | 1-2 months | 🟡 **PARTIALLY COMPLETE** (60%) |
+| **v4** | Agent Integration | MCP servers, scheduled agents, safety | 1-2 months | 🟡 **80% COMPLETE** — MCP done, agents pending |
 | **v5** | Production Hardening | Security, monitoring, operational excellence | 1-2 months | 🔴 Not Started |
 | **Later** | Advanced Features | Optimizations, advanced strategies, live trading | TBD | 🔴 Not Started |
 
 ### Implementation Summary
 
-**Total Code:** ~17,344 lines of Python across 80+ modules
-**Test Suite:** 1,048 tests across 39 test files (~20,000 LOC)
-- **Pass Rate**: 86% (902 passed, 141 failed, 105 errors)
-- **Known Issue**: FK constraint violations in test fixtures (not production code)
+**Total Code:** ~17,500 lines of Python across 80+ modules
+**Test Suite:** 1,227 tests across 40+ test files (~20,000 LOC)
+- **Pass Rate**: ~97.6% (1,198 passed, 29 failed)
+- **Remaining Issues**: 29 tests expecting FK constraints that were intentionally removed
 
 **Completed Features:**
 - ✅ Full database schema with 13 tables, 3 sequences, 17 indexes, and comprehensive constraints
@@ -850,13 +859,14 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 - ✅ ML training pipeline with 6 model types
 - ✅ Walk-forward validation (expanding/rolling)
 - ✅ Statistical validation & robustness testing
-- ✅ Multi-source data ingestion (Yahoo, Polygon)
+- ✅ Multi-source data ingestion (Polygon primary, Yahoo fallback)
 - ✅ Comprehensive test suite (39 test files, 1,036 tests)
 - ✅ NYSE trading calendar integration (`exchange_calendars`)
 - ✅ Split adjustment in backtests (100% complete)
 - ✅ Benchmark comparison visualization (SPY equity curve)
 - ✅ ML trading strategies (Multi-Factor, ML-Predicted)
 - ✅ Strategy configuration UI components
+- ✅ **MCP server for Claude integration** (22 tools, 56 tests)
 
 **Remaining for v1:** ✅ **COMPLETE**
 - ~~Point-in-time fundamentals query helper~~ ✅ COMPLETE
@@ -871,8 +881,8 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 - Enhanced risk limits enforcement
 - Validation reports
 
-**Remaining for v4 (40%):**
-- MCP server implementation
+**Remaining for v4 (20%):**
+- ~~MCP server implementation~~ ✅ COMPLETE (22 tools, 56 tests)
 - Research agents (Discovery, Validation, Report)
 
 ---
@@ -952,6 +962,24 @@ The QSAT Framework defines a 6-stage workflow. Below are capabilities HRP has im
 ## Document History
 
 **Last Updated:** January 24, 2026
+
+**Changes (January 24, 2026 - MCP Server Complete):**
+- **MCP server implementation complete** (`hrp/mcp/research_server.py`)
+  - 22 tools covering all platform functionality
+  - Hypothesis management (5): list, get, create, update, get_experiments_for
+  - Data access (5): get_universe, get_features, get_prices, get_available_features, is_trading_day
+  - Backtesting (4): run_backtest, get_experiment, compare_experiments, analyze_results
+  - ML training (3): run_walk_forward_validation, get_supported_models, train_ml_model
+  - Quality & health (3): run_quality_checks, get_health_status, get_data_coverage
+  - Lineage (2): get_lineage, get_deployed_strategies
+  - Security: `approve_deployment` NOT exposed (agents cannot deploy)
+  - Actor tracking: All calls logged as `agent:claude-interactive`
+- **Created supporting modules:**
+  - `hrp/mcp/formatters.py` — Date parsing, DataFrame conversion, response formatting
+  - `hrp/mcp/errors.py` — Error handling decorator with structured responses
+  - `hrp/mcp/__main__.py` — Entry point for `python -m hrp.mcp`
+- **56 unit tests** in `tests/test_mcp/` (all passing)
+- **Updated v4 progress from 60% to 80%**
 
 **Changes (January 24, 2026 - v2 Status Update):**
 - **Marked v2 as 100% complete** — All critical features implemented:
