@@ -79,7 +79,7 @@ TABLES = {
         CREATE TABLE IF NOT EXISTS universe (
             symbol VARCHAR NOT NULL,
             date DATE NOT NULL,
-            in_universe BOOLEAN DEFAULT TRUE,
+            in_universe BOOLEAN NOT NULL DEFAULT TRUE,
             exclusion_reason VARCHAR,
             sector VARCHAR,
             market_cap DECIMAL(18,2),
@@ -199,7 +199,7 @@ TABLES = {
                    'backtest_run', 'validation_passed', 'validation_failed',
                    'deployment_requested', 'deployment_approved', 'deployment_rejected',
                    'data_ingested', 'data_ingestion', 'feature_computed',
-                   'agent_run_complete', 'system_error', 'other'))
+                   'universe_update', 'agent_run_complete', 'system_error', 'other'))
         )
     """,
 }
@@ -234,13 +234,18 @@ def create_tables(db_path: Union[str, None] = None) -> None:
 
 
 def drop_all_tables(db_path: Union[str, None] = None) -> None:
-    """Drop all tables (use with caution!)."""
+    """Drop all tables (use with caution!).
+
+    Tables are dropped in reverse order to respect FK dependencies.
+    """
     db = get_db(db_path)
 
+    # Drop in reverse order due to FK constraints
+    table_names = list(TABLES.keys())
     with db.connection() as conn:
-        for table_name in TABLES.keys():
+        for table_name in reversed(table_names):
             logger.warning(f"Dropping table: {table_name}")
-            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+            conn.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
 
     logger.warning("All tables dropped")
 

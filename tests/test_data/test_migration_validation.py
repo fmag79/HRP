@@ -154,7 +154,7 @@ class TestHypothesisDataCompatibility:
         """Test that sample hypothesis status is valid."""
         db = get_db(test_db)
 
-        valid_statuses = ["draft", "active", "validated", "falsified", "archived"]
+        valid_statuses = ["draft", "testing", "validated", "rejected", "deployed", "deleted"]
         assert (
             sample_hypothesis["status"] in valid_statuses
         ), f"Invalid status: {sample_hypothesis['status']}"
@@ -187,7 +187,7 @@ class TestForeignKeyWorkflows:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, hypothesis_id, experiment_id)
-            VALUES (1, 'experiment_created', 'HYP-WORKFLOW-001', 'EXP-WORKFLOW-001')
+            VALUES (1, 'experiment_started', 'HYP-WORKFLOW-001', 'EXP-WORKFLOW-001')
         """
         )
 
@@ -205,7 +205,7 @@ class TestForeignKeyWorkflows:
         assert result is not None
         assert result[0] == "Test Workflow"
         assert result[1] == "EXP-WORKFLOW-001"
-        assert result[2] == "experiment_created"
+        assert result[2] == "experiment_started"
 
     def test_data_source_ingestion_fundamentals_workflow(self, test_db):
         """Test complete workflow: data_source -> ingestion_log -> fundamentals."""
@@ -260,7 +260,7 @@ class TestForeignKeyWorkflows:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, actor)
-            VALUES (1, 'parent_event', 'user')
+            VALUES (1, 'hypothesis_created', 'user')
         """
         )
 
@@ -268,7 +268,7 @@ class TestForeignKeyWorkflows:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, actor, parent_lineage_id)
-            VALUES (2, 'child_event', 'system', 1)
+            VALUES (2, 'experiment_started', 'system', 1)
         """
         )
 
@@ -276,7 +276,7 @@ class TestForeignKeyWorkflows:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, actor, parent_lineage_id)
-            VALUES (3, 'grandchild_event', 'system', 2)
+            VALUES (3, 'experiment_completed', 'system', 2)
         """
         )
 
@@ -292,9 +292,9 @@ class TestForeignKeyWorkflows:
         )
 
         assert len(result) > 0
-        assert result[0][0] == "parent_event"
-        assert result[0][1] == "child_event"
-        assert result[0][2] == "grandchild_event"
+        assert result[0][0] == "hypothesis_created"
+        assert result[0][1] == "experiment_started"
+        assert result[0][2] == "experiment_completed"
 
 
 class TestNoFalsePositives:
@@ -303,6 +303,21 @@ class TestNoFalsePositives:
     def test_valid_edge_case_prices(self, test_db):
         """Test that edge case but valid prices are accepted."""
         db = get_db(test_db)
+
+        # Insert symbols first for FK constraint (ignore duplicates)
+        for symbol, name in [
+            ('PENNY', 'Penny Stock'),
+            ('EXPENSIVE', 'Expensive Stock'),
+            ('ILLIQUID', 'Illiquid Stock'),
+            ('FLAT', 'Flat Stock'),
+        ]:
+            try:
+                db.execute(
+                    "INSERT INTO symbols (symbol, name) VALUES (?, ?)",
+                    (symbol, name),
+                )
+            except Exception:
+                pass  # Symbol already exists
 
         # Very small close price (penny stock)
         db.execute(
@@ -377,6 +392,19 @@ class TestNoFalsePositives:
         """Test that NULL values are accepted for optional fields."""
         db = get_db(test_db)
 
+        # Insert symbols first for FK constraint (ignore duplicates)
+        for symbol, name in [
+            ('PARTIAL', 'Partial Data Stock'),
+            ('UNKNOWN', 'Unknown Stock'),
+        ]:
+            try:
+                db.execute(
+                    "INSERT INTO symbols (symbol, name) VALUES (?, ?)",
+                    (symbol, name),
+                )
+            except Exception:
+                pass  # Symbol already exists
+
         # Prices with NULL optional fields
         db.execute(
             """
@@ -423,6 +451,19 @@ class TestRealisticDataScenarios:
     def test_real_world_price_data_patterns(self, test_db):
         """Test realistic price data patterns."""
         db = get_db(test_db)
+
+        # Insert symbols first for FK constraint (ignore duplicates)
+        for symbol, name in [
+            ('SPLIT', 'Split Stock'),
+            ('GAPUP', 'Gap Up Stock'),
+        ]:
+            try:
+                db.execute(
+                    "INSERT INTO symbols (symbol, name) VALUES (?, ?)",
+                    (symbol, name),
+                )
+            except Exception:
+                pass  # Symbol already exists
 
         # Stock split scenario (high volume, price change)
         db.execute(

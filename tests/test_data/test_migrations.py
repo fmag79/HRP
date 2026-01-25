@@ -70,19 +70,30 @@ class TestDatabaseMigrations:
 
         assert verify_schema(fresh_db) is False
 
-    def test_foreign_key_hypothesis_experiments(self, fresh_db):
-        """FK constraint enforced on hypothesis_experiments."""
+    def test_hypothesis_experiments_no_fk_constraint(self, fresh_db):
+        """hypothesis_experiments FK constraint intentionally removed (DuckDB 1.4.3 limitation).
+
+        FK constraints on tables that reference hypotheses were removed because DuckDB 1.4.3
+        prevents UPDATE on parent tables when FK constraints exist. Referential integrity
+        is validated via SQL JOIN checks in migrate_constraints.py instead.
+        """
         create_tables(fresh_db)
         db = get_db(fresh_db)
 
-        # Try to insert experiment link without hypothesis - should fail
-        with pytest.raises(Exception):
-            db.execute(
-                """
-                INSERT INTO hypothesis_experiments (hypothesis_id, experiment_id)
-                VALUES ('HYP-FAKE-001', 'exp-123')
-                """
-            )
+        # Can insert experiment link without hypothesis (FK not enforced)
+        db.execute(
+            """
+            INSERT INTO hypothesis_experiments (hypothesis_id, experiment_id)
+            VALUES ('HYP-FAKE-001', 'exp-123')
+            """
+        )
+
+        # Verify insert succeeded
+        result = db.fetchone(
+            "SELECT hypothesis_id FROM hypothesis_experiments WHERE hypothesis_id = 'HYP-FAKE-001'"
+        )
+        assert result is not None
+        assert result[0] == 'HYP-FAKE-001'
 
     def test_unique_constraint_hypothesis_id(self, fresh_db):
         """Unique constraint on hypothesis_id is enforced."""

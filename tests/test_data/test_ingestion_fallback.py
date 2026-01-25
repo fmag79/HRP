@@ -33,15 +33,15 @@ class TestPriceIngestionFallback:
         """Test that Polygon initialization failure falls back to YFinance."""
         # Mock PolygonSource to raise ValueError on initialization
         with patch("hrp.data.ingestion.prices.PolygonSource") as mock_polygon, \
-             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Polygon initialization fails
             mock_polygon.side_effect = ValueError("POLYGON_API_KEY not found")
 
             # YFinance succeeds
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_pg_instance.get_daily_bars.return_value = pd.DataFrame({
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yf_instance.get_daily_bars.return_value = pd.DataFrame({
                 "symbol": ["AAPL"],
                 "date": [date(2024, 1, 1)],
                 "open": [100.0],
@@ -52,7 +52,7 @@ class TestPriceIngestionFallback:
                 "volume": [1000000],
                 "source": ["yfinance"],
             })
-            mock_polygon.return_value = mock_pg_instance
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion
             stats = ingest_prices(
@@ -69,12 +69,12 @@ class TestPriceIngestionFallback:
             assert stats["fallback_used"] == 0  # Fallback was at initialization level
 
             # Verify YFinance was used
-            mock_pg_instance.get_daily_bars.assert_called_once()
+            mock_yf_instance.get_daily_bars.assert_called_once()
 
     def test_per_symbol_polygon_failure_falls_back_to_yfinance(self, test_db):
         """Test that per-symbol Polygon failure falls back to YFinance."""
         with patch("hrp.data.ingestion.prices.PolygonSource") as mock_polygon, \
-             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Setup Polygon instance that fails for specific symbol
             mock_pg_instance = Mock()
@@ -83,9 +83,9 @@ class TestPriceIngestionFallback:
             mock_polygon.return_value = mock_pg_instance
 
             # Setup YFinance instance that succeeds
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_pg_instance.get_daily_bars.return_value = pd.DataFrame({
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yf_instance.get_daily_bars.return_value = pd.DataFrame({
                 "symbol": ["AAPL"],
                 "date": [date(2024, 1, 1)],
                 "open": [100.0],
@@ -96,7 +96,7 @@ class TestPriceIngestionFallback:
                 "volume": [1000000],
                 "source": ["yfinance"],
             })
-            mock_polygon.return_value = mock_pg_instance
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion
             stats = ingest_prices(
@@ -114,12 +114,12 @@ class TestPriceIngestionFallback:
 
             # Verify both sources were called
             mock_pg_instance.get_daily_bars.assert_called_once()
-            mock_pg_instance.get_daily_bars.assert_called_once()
+            mock_yf_instance.get_daily_bars.assert_called_once()
 
     def test_successful_polygon_ingestion_no_fallback(self, test_db):
         """Test successful Polygon ingestion without fallback."""
         with patch("hrp.data.ingestion.prices.PolygonSource") as mock_polygon, \
-             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Setup Polygon instance that succeeds
             mock_pg_instance = Mock()
@@ -138,9 +138,9 @@ class TestPriceIngestionFallback:
             mock_polygon.return_value = mock_pg_instance
 
             # Setup YFinance instance (should not be called)
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_polygon.return_value = mock_pg_instance
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion
             stats = ingest_prices(
@@ -158,16 +158,16 @@ class TestPriceIngestionFallback:
 
             # Verify only Polygon was called
             mock_pg_instance.get_daily_bars.assert_called_once()
-            mock_pg_instance.get_daily_bars.assert_not_called()
+            mock_yf_instance.get_daily_bars.assert_not_called()
 
     def test_explicit_yfinance_source_no_polygon(self, test_db):
         """Test explicit YFinance source selection (no Polygon involved)."""
-        with patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+        with patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Setup YFinance instance
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_pg_instance.get_daily_bars.return_value = pd.DataFrame({
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yf_instance.get_daily_bars.return_value = pd.DataFrame({
                 "symbol": ["MSFT"],
                 "date": [date(2024, 1, 1)],
                 "open": [200.0],
@@ -178,14 +178,14 @@ class TestPriceIngestionFallback:
                 "volume": [2000000],
                 "source": ["yfinance"],
             })
-            mock_polygon.return_value = mock_pg_instance
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion with explicit yfinance source
             stats = ingest_prices(
                 symbols=["MSFT"],
                 start=date(2024, 1, 1),
                 end=date(2024, 1, 31),
-                source="polygon",
+                source="yfinance",
             )
 
             # Verify YFinance was used
@@ -194,12 +194,12 @@ class TestPriceIngestionFallback:
             assert stats["rows_inserted"] == 1
             assert stats["fallback_used"] == 0  # No fallback with explicit source
 
-            mock_pg_instance.get_daily_bars.assert_called_once()
+            mock_yf_instance.get_daily_bars.assert_called_once()
 
     def test_both_sources_fail(self, test_db):
         """Test that symbol fails when both Polygon and YFinance fail."""
         with patch("hrp.data.ingestion.prices.PolygonSource") as mock_polygon, \
-             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Both sources fail
             mock_pg_instance = Mock()
@@ -207,10 +207,10 @@ class TestPriceIngestionFallback:
             mock_pg_instance.get_daily_bars.side_effect = BadResponse("Not found")
             mock_polygon.return_value = mock_pg_instance
 
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_pg_instance.get_daily_bars.side_effect = Exception("Network error")
-            mock_polygon.return_value = mock_pg_instance
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yf_instance.get_daily_bars.side_effect = Exception("Network error")
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion
             stats = ingest_prices(
@@ -228,12 +228,12 @@ class TestPriceIngestionFallback:
 
             # Verify both sources were attempted
             mock_pg_instance.get_daily_bars.assert_called_once()
-            mock_pg_instance.get_daily_bars.assert_called_once()
+            mock_yf_instance.get_daily_bars.assert_called_once()
 
     def test_polygon_empty_data_falls_back_to_yfinance(self, test_db):
         """Test that empty Polygon data triggers fallback to YFinance."""
         with patch("hrp.data.ingestion.prices.PolygonSource") as mock_polygon, \
-             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Polygon returns empty DataFrame
             mock_pg_instance = Mock()
@@ -242,9 +242,9 @@ class TestPriceIngestionFallback:
             mock_polygon.return_value = mock_pg_instance
 
             # YFinance succeeds
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_pg_instance.get_daily_bars.return_value = pd.DataFrame({
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yf_instance.get_daily_bars.return_value = pd.DataFrame({
                 "symbol": ["AAPL"],
                 "date": [date(2024, 1, 1)],
                 "open": [100.0],
@@ -255,7 +255,7 @@ class TestPriceIngestionFallback:
                 "volume": [1000000],
                 "source": ["yfinance"],
             })
-            mock_polygon.return_value = mock_pg_instance
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion
             stats = ingest_prices(
@@ -273,7 +273,7 @@ class TestPriceIngestionFallback:
     def test_multiple_symbols_mixed_sources(self, test_db):
         """Test ingestion with multiple symbols using different sources."""
         with patch("hrp.data.ingestion.prices.PolygonSource") as mock_polygon, \
-             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_polygon:
+             patch("hrp.data.ingestion.prices.YFinanceSource") as mock_yfinance:
 
             # Polygon succeeds for AAPL, fails for MSFT
             def polygon_side_effect(symbol, start, end):
@@ -313,10 +313,10 @@ class TestPriceIngestionFallback:
                     })
                 return pd.DataFrame()
 
-            mock_pg_instance = Mock()
-            mock_pg_instance.source_name = "yfinance"
-            mock_pg_instance.get_daily_bars.side_effect = yfinance_side_effect
-            mock_polygon.return_value = mock_pg_instance
+            mock_yf_instance = Mock()
+            mock_yf_instance.source_name = "yfinance"
+            mock_yf_instance.get_daily_bars.side_effect = yfinance_side_effect
+            mock_yfinance.return_value = mock_yf_instance
 
             # Run ingestion
             stats = ingest_prices(
