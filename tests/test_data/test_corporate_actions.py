@@ -23,10 +23,32 @@ from hrp.data.ingestion.corporate_actions import (
 )
 
 
+@pytest.fixture
+def test_db_with_symbols(test_db):
+    """Test database with symbols populated for FK constraints."""
+    from hrp.data.db import get_db
+
+    db = get_db(test_db)
+    db.execute(
+        """
+        INSERT INTO symbols (symbol, name, exchange)
+        VALUES
+            ('AAPL', 'Apple Inc.', 'NASDAQ'),
+            ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+            ('GOOGL', 'Alphabet Inc.', 'NASDAQ'),
+            ('NVDA', 'NVIDIA Corporation', 'NASDAQ'),
+            ('TSLA', 'Tesla Inc.', 'NASDAQ')
+        ON CONFLICT DO NOTHING
+        """
+    )
+
+    return test_db
+
+
 class TestIngestCorporateActions:
     """Tests for the ingest_corporate_actions function."""
 
-    def test_ingest_single_symbol_with_actions(self, test_db):
+    def test_ingest_single_symbol_with_actions(self, test_db_with_symbols):
         """Test ingesting corporate actions for a single symbol."""
         # Create mock data
         mock_actions = pd.DataFrame({
@@ -56,7 +78,7 @@ class TestIngestCorporateActions:
         assert stats['rows_inserted'] == 2
         assert stats['failed_symbols'] == []
 
-    def test_ingest_multiple_symbols(self, test_db):
+    def test_ingest_multiple_symbols(self, test_db_with_symbols):
         """Test ingesting corporate actions for multiple symbols."""
         # Create mock data for different symbols
         mock_actions_aapl = pd.DataFrame({
@@ -101,7 +123,7 @@ class TestIngestCorporateActions:
         assert stats['rows_fetched'] == 3
         assert stats['rows_inserted'] == 3
 
-    def test_ingest_symbol_with_no_actions(self, test_db):
+    def test_ingest_symbol_with_no_actions(self, test_db_with_symbols):
         """Test ingesting a symbol with no corporate actions."""
         # Return empty DataFrame
         mock_actions = pd.DataFrame()
@@ -124,7 +146,7 @@ class TestIngestCorporateActions:
         assert stats['rows_fetched'] == 0
         assert stats['rows_inserted'] == 0
 
-    def test_ingest_with_failed_symbol(self, test_db):
+    def test_ingest_with_failed_symbol(self, test_db_with_symbols):
         """Test ingestion when one symbol fails."""
         mock_actions = pd.DataFrame({
             'symbol': ['AAPL'],
@@ -159,7 +181,7 @@ class TestIngestCorporateActions:
         assert stats['symbols_failed'] == 1
         assert stats['failed_symbols'] == ['INVALID']
 
-    def test_ingest_with_both_dividends_and_splits(self, test_db):
+    def test_ingest_with_both_dividends_and_splits(self, test_db_with_symbols):
         """Test ingesting both dividend and split actions."""
         mock_actions = pd.DataFrame({
             'symbol': ['TSLA', 'TSLA', 'TSLA'],
@@ -184,7 +206,7 @@ class TestIngestCorporateActions:
         assert stats['rows_fetched'] == 3
         assert stats['rows_inserted'] == 3
 
-    def test_ingest_upsert_behavior(self, test_db):
+    def test_ingest_upsert_behavior(self, test_db_with_symbols):
         """Test that re-ingesting same data uses upsert (no duplicates)."""
         mock_actions = pd.DataFrame({
             'symbol': ['AAPL'],
@@ -224,7 +246,7 @@ class TestIngestCorporateActions:
         count = db.fetchone("SELECT COUNT(*) FROM corporate_actions")
         assert count[0] == 1
 
-    def test_ingest_invalid_source(self, test_db):
+    def test_ingest_invalid_source(self, test_db_with_symbols):
         """Test that invalid source raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
             ingest_corporate_actions(
@@ -240,7 +262,7 @@ class TestIngestCorporateActions:
 class TestUpsertCorporateActions:
     """Tests for the _upsert_corporate_actions helper function."""
 
-    def test_upsert_single_action(self, test_db):
+    def test_upsert_single_action(self, test_db_with_symbols):
         """Test upserting a single corporate action."""
         from hrp.data.db import get_db
 
@@ -267,7 +289,7 @@ class TestUpsertCorporateActions:
         assert float(result[3]) == 0.23
         assert result[4] == 'yfinance'
 
-    def test_upsert_multiple_actions(self, test_db):
+    def test_upsert_multiple_actions(self, test_db_with_symbols):
         """Test upserting multiple corporate actions."""
         from hrp.data.db import get_db
 
@@ -288,7 +310,7 @@ class TestUpsertCorporateActions:
         count = db.fetchone("SELECT COUNT(*) FROM corporate_actions")
         assert count[0] == 3
 
-    def test_upsert_empty_dataframe(self, test_db):
+    def test_upsert_empty_dataframe(self, test_db_with_symbols):
         """Test upserting empty DataFrame returns 0."""
         from hrp.data.db import get_db
 
@@ -299,7 +321,7 @@ class TestUpsertCorporateActions:
 
         assert rows == 0
 
-    def test_upsert_replaces_existing(self, test_db):
+    def test_upsert_replaces_existing(self, test_db_with_symbols):
         """Test that upsert replaces existing records with same key."""
         from hrp.data.db import get_db
 
@@ -339,7 +361,7 @@ class TestUpsertCorporateActions:
 class TestGetCorporateActionStats:
     """Tests for the get_corporate_action_stats function."""
 
-    def test_stats_empty_table(self, test_db):
+    def test_stats_empty_table(self, test_db_with_symbols):
         """Test statistics with empty corporate actions table."""
         stats = get_corporate_action_stats()
 
@@ -350,7 +372,7 @@ class TestGetCorporateActionStats:
         assert stats['by_type'] == []
         assert stats['per_symbol'] == []
 
-    def test_stats_with_single_symbol(self, test_db):
+    def test_stats_with_single_symbol(self, test_db_with_symbols):
         """Test statistics with single symbol."""
         from hrp.data.db import get_db
 
@@ -377,7 +399,7 @@ class TestGetCorporateActionStats:
         assert stats['per_symbol'][0]['symbol'] == 'AAPL'
         assert stats['per_symbol'][0]['rows'] == 2
 
-    def test_stats_with_multiple_symbols(self, test_db):
+    def test_stats_with_multiple_symbols(self, test_db_with_symbols):
         """Test statistics with multiple symbols."""
         from hrp.data.db import get_db
 
@@ -400,7 +422,7 @@ class TestGetCorporateActionStats:
         assert len(stats['by_type']) == 2
         assert len(stats['per_symbol']) == 3
 
-    def test_stats_by_action_type(self, test_db):
+    def test_stats_by_action_type(self, test_db_with_symbols):
         """Test statistics grouping by action type."""
         from hrp.data.db import get_db
 
@@ -421,7 +443,7 @@ class TestGetCorporateActionStats:
         assert by_type['dividend'] == 3
         assert by_type['split'] == 2
 
-    def test_stats_per_symbol_date_ranges(self, test_db):
+    def test_stats_per_symbol_date_ranges(self, test_db_with_symbols):
         """Test that per-symbol stats include correct date ranges."""
         from hrp.data.db import get_db
 
@@ -453,7 +475,7 @@ class TestGetCorporateActionStats:
 class TestIntegrationEndToEnd:
     """End-to-end integration tests."""
 
-    def test_full_ingestion_workflow(self, test_db):
+    def test_full_ingestion_workflow(self, test_db_with_symbols):
         """Test complete workflow from ingestion to stats."""
         # Mock corporate actions data
         mock_actions = pd.DataFrame({
@@ -502,7 +524,7 @@ class TestIntegrationEndToEnd:
         msft_count = db.fetchone("SELECT COUNT(*) FROM corporate_actions WHERE symbol = 'MSFT'")
         assert msft_count[0] == 1
 
-    def test_incremental_ingestion(self, test_db):
+    def test_incremental_ingestion(self, test_db_with_symbols):
         """Test incremental ingestion over time."""
         # First batch
         mock_actions_batch1 = pd.DataFrame({

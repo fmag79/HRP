@@ -89,8 +89,42 @@ def test_db(temp_db: str) -> Generator[str, None, None]:
     os.environ["HRP_DB_PATH"] = temp_db
 
     from hrp.data.schema import create_tables
+    from hrp.data.db import get_db
 
     create_tables(temp_db)
+
+    # Insert common test symbols to satisfy FK constraints
+    db = get_db(temp_db)
+    db.execute(
+        """
+        INSERT INTO symbols (symbol, name, exchange)
+        VALUES
+            ('AAPL', 'Apple Inc.', 'NASDAQ'),
+            ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+            ('GOOGL', 'Alphabet Inc.', 'NASDAQ'),
+            ('TSLA', 'Tesla Inc.', 'NASDAQ'),
+            ('NVDA', 'NVIDIA Corporation', 'NASDAQ'),
+            ('AMZN', 'Amazon.com Inc.', 'NASDAQ'),
+            ('META', 'Meta Platforms Inc.', 'NASDAQ'),
+            ('JPM', 'JPMorgan Chase', 'NYSE'),
+            ('TEST', 'Test Symbol', 'TEST'),
+            ('TEST1', 'Test Symbol 1', 'TEST'),
+            ('TEST2', 'Test Symbol 2', 'TEST'),
+            ('SYM1', 'Symbol 1', 'TEST'),
+            ('SYM2', 'Symbol 2', 'TEST'),
+            ('SYM3', 'Symbol 3', 'TEST'),
+            ('NORM', 'Normal Test Symbol', 'TEST'),
+            ('SPLIT', 'Split Test Symbol', 'TEST'),
+            ('GAPS', 'Gaps Test Symbol', 'TEST'),
+            ('STALE', 'Stale Test Symbol', 'TEST'),
+            ('ZERO', 'Zero Volume Test Symbol', 'TEST'),
+            ('FULL', 'Full Test Symbol', 'TEST'),
+            ('JNJ', 'Johnson and Johnson', 'NYSE'),
+            ('PFE', 'Pfizer', 'NYSE'),
+            ('PENNY', 'Penny Stock Test', 'TEST')
+        ON CONFLICT DO NOTHING
+        """
+    )
 
     yield temp_db
 

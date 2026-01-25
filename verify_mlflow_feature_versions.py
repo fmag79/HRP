@@ -55,7 +55,7 @@ def main():
         print()
         print("Manual verification required:")
         print("1. Run a backtest with feature_versions={'momentum_20d': 'v1', 'volatility_60d': 'v1'}")
-        print("2. Open MLflow UI: mlflow ui --backend-store-uri ~/hrp-data/mlflow/mlflow.db")
+        print("2. Open MLflow UI: mlflow ui --backend-store-uri sqlite:///$HOME/hrp-data/mlflow/mlflow.db")
         print("3. Verify the run params include:")
         print("   - feature_versions: '{\"momentum_20d\": \"v1\", \"volatility_60d\": \"v1\"}'")
         print("   - feature_version_momentum_20d: 'v1'")

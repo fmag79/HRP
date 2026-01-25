@@ -622,60 +622,30 @@ class TestForeignKeyConstraints:
         result = db.fetchone("SELECT source_id FROM ingestion_log WHERE log_id = 1")
         assert result[0] == "test_source"
 
-    @pytest.mark.skip(reason="FK constraint removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table")
-    def test_hypothesis_experiments_hypothesis_id_fk(self, test_db):
-        """Test that hypothesis_experiments.hypothesis_id FK is enforced."""
+    def test_hypothesis_experiments_no_fk_constraint(self, test_db):
+        """Test that hypothesis_experiments allows inserts without FK validation.
+
+        FK constraint was removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table.
+        Referential integrity is validated via migrate_constraints.py SQL JOIN checks.
+        """
         from hrp.data.db import get_db
 
         db = get_db(test_db)
 
-        # Insert with non-existent hypothesis should fail
-        with pytest.raises(Exception):
-            db.execute(
-                """
-                INSERT INTO hypothesis_experiments (hypothesis_id, experiment_id)
-                VALUES ('NONEXISTENT', 'EXP-001')
-            """
-            )
-
-        # Create a valid hypothesis
-        db.execute(
-            """
-            INSERT INTO hypotheses (hypothesis_id, title, thesis, testable_prediction)
-            VALUES ('HYP-001', 'Test Hypothesis', 'Test thesis', 'Test prediction')
-        """
-        )
-
-        # Insert with valid hypothesis should succeed
+        # Insert with non-existent hypothesis should work (no FK constraint)
         db.execute(
             """
             INSERT INTO hypothesis_experiments (hypothesis_id, experiment_id)
-            VALUES ('HYP-001', 'EXP-001')
+            VALUES ('NONEXISTENT', 'EXP-001')
         """
         )
 
         result = db.fetchone(
             "SELECT hypothesis_id FROM hypothesis_experiments WHERE experiment_id = 'EXP-001'"
         )
-        assert result[0] == "HYP-001"
+        assert result[0] == "NONEXISTENT"
 
-    @pytest.mark.skip(reason="FK constraint removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table")
-    def test_lineage_hypothesis_id_fk(self, test_db):
-        """Test that lineage.hypothesis_id FK is enforced."""
-        from hrp.data.db import get_db
-
-        db = get_db(test_db)
-
-        # Insert with non-existent hypothesis should fail
-        with pytest.raises(Exception):
-            db.execute(
-                """
-                INSERT INTO lineage (lineage_id, event_type, hypothesis_id)
-                VALUES (1, 'test_event', 'NONEXISTENT')
-            """
-            )
-
-        # Create a valid hypothesis
+        # Create a valid hypothesis and insert
         db.execute(
             """
             INSERT INTO hypotheses (hypothesis_id, title, thesis, testable_prediction)
@@ -683,46 +653,94 @@ class TestForeignKeyConstraints:
         """
         )
 
-        # Insert with valid hypothesis should succeed
+        db.execute(
+            """
+            INSERT INTO hypothesis_experiments (hypothesis_id, experiment_id)
+            VALUES ('HYP-001', 'EXP-002')
+        """
+        )
+
+        result = db.fetchone(
+            "SELECT hypothesis_id FROM hypothesis_experiments WHERE experiment_id = 'EXP-002'"
+        )
+        assert result[0] == "HYP-001"
+
+    def test_lineage_hypothesis_id_no_fk_constraint(self, test_db):
+        """Test that lineage allows inserts without FK validation on hypothesis_id.
+
+        FK constraint was removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table.
+        Referential integrity is validated via migrate_constraints.py SQL JOIN checks.
+        """
+        from hrp.data.db import get_db
+
+        db = get_db(test_db)
+
+        # Insert with non-existent hypothesis should work (no FK constraint)
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, hypothesis_id)
-            VALUES (1, 'test_event', 'HYP-001')
+            VALUES (1, 'hypothesis_created', 'NONEXISTENT')
         """
         )
 
         result = db.fetchone("SELECT hypothesis_id FROM lineage WHERE lineage_id = 1")
+        assert result[0] == "NONEXISTENT"
+
+        # Create a valid hypothesis and insert
+        db.execute(
+            """
+            INSERT INTO hypotheses (hypothesis_id, title, thesis, testable_prediction)
+            VALUES ('HYP-001', 'Test Hypothesis', 'Test thesis', 'Test prediction')
+        """
+        )
+
+        db.execute(
+            """
+            INSERT INTO lineage (lineage_id, event_type, hypothesis_id)
+            VALUES (2, 'hypothesis_created', 'HYP-001')
+        """
+        )
+
+        result = db.fetchone("SELECT hypothesis_id FROM lineage WHERE lineage_id = 2")
         assert result[0] == "HYP-001"
 
         # NULL hypothesis_id should be allowed
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, hypothesis_id)
-            VALUES (2, 'test_event', NULL)
+            VALUES (3, 'data_ingested', NULL)
         """
         )
 
-    @pytest.mark.skip(reason="FK constraint removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table")
-    def test_lineage_parent_lineage_id_self_reference_fk(self, test_db):
-        """Test that lineage.parent_lineage_id self-reference FK is enforced."""
+        result = db.fetchone("SELECT hypothesis_id FROM lineage WHERE lineage_id = 3")
+        assert result is None or result[0] is None
+
+    def test_lineage_parent_lineage_id_no_fk_constraint(self, test_db):
+        """Test that lineage allows inserts without FK validation on parent_lineage_id.
+
+        FK constraint was removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table.
+        Referential integrity is validated via migrate_constraints.py SQL JOIN checks.
+        """
         from hrp.data.db import get_db
 
         db = get_db(test_db)
 
-        # Insert with non-existent parent should fail
-        with pytest.raises(Exception):
-            db.execute(
-                """
-                INSERT INTO lineage (lineage_id, event_type, parent_lineage_id)
-                VALUES (1, 'test_event', 999)
+        # Insert with non-existent parent should work (no FK constraint)
+        db.execute(
             """
-            )
+            INSERT INTO lineage (lineage_id, event_type, parent_lineage_id)
+            VALUES (1, 'hypothesis_created', 999)
+        """
+        )
+
+        result = db.fetchone("SELECT parent_lineage_id FROM lineage WHERE lineage_id = 1")
+        assert result[0] == 999
 
         # Create a parent lineage entry
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type)
-            VALUES (1, 'parent_event')
+            VALUES (2, 'hypothesis_created')
         """
         )
 
@@ -730,20 +748,23 @@ class TestForeignKeyConstraints:
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, parent_lineage_id)
-            VALUES (2, 'child_event', 1)
+            VALUES (3, 'hypothesis_updated', 2)
         """
         )
 
-        result = db.fetchone("SELECT parent_lineage_id FROM lineage WHERE lineage_id = 2")
-        assert result[0] == 1
+        result = db.fetchone("SELECT parent_lineage_id FROM lineage WHERE lineage_id = 3")
+        assert result[0] == 2
 
         # NULL parent_lineage_id should be allowed
         db.execute(
             """
             INSERT INTO lineage (lineage_id, event_type, parent_lineage_id)
-            VALUES (3, 'orphan_event', NULL)
+            VALUES (4, 'data_ingested', NULL)
         """
         )
+
+        result = db.fetchone("SELECT parent_lineage_id FROM lineage WHERE lineage_id = 4")
+        assert result is None or result[0] is None
 
 
 class TestValidDataInsertion:
@@ -911,8 +932,8 @@ class TestIndexExistence:
         missing_indexes = expected_indexes - db_indexes
         assert len(missing_indexes) == 0, f"Missing indexes: {missing_indexes}"
 
-        # Verify we have at least the required count
-        assert len(db_indexes) >= 15, f"Expected at least 15 indexes, found {len(db_indexes)}"
+        # Verify we have at least the required count (8 indexes defined in schema.py)
+        assert len(db_indexes) >= 8, f"Expected at least 8 indexes, found {len(db_indexes)}"
 
     def test_prices_composite_index(self, test_db):
         """Test that prices(symbol, date) composite index exists."""

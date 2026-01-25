@@ -66,6 +66,18 @@ def smoke_test_db():
             """
         )
 
+        # Insert symbols first to satisfy FK constraints
+        conn.execute(
+            """
+            INSERT INTO symbols (symbol, name, exchange)
+            VALUES
+                ('AAPL', 'Apple Inc.', 'NASDAQ'),
+                ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+                ('GOOGL', 'Alphabet Inc.', 'NASDAQ')
+            ON CONFLICT DO NOTHING
+            """
+        )
+
         # Insert sample universe (3 tech stocks) - need entries for both start and query dates
         conn.execute(
             """

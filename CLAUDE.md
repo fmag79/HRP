@@ -171,6 +171,42 @@ for fold in result.fold_results:
           f"MSE={fold.metrics['mse']:.6f}")
 ```
 
+### Use overfitting guards
+```python
+from hrp.risk import TestSetGuard, validate_strategy, check_parameter_sensitivity
+
+# Test set discipline (limits to 3 evaluations per hypothesis)
+guard = TestSetGuard(hypothesis_id='HYP-2025-001')
+
+with guard.evaluate(metadata={"experiment": "final_validation"}):
+    metrics = model.evaluate(test_data)
+
+print(f"Evaluations remaining: {guard.remaining_evaluations}")
+
+# Validate strategy meets minimum criteria
+result = validate_strategy({
+    "sharpe": 0.80,
+    "num_trades": 200,
+    "max_drawdown": 0.18,
+    "win_rate": 0.52,
+})
+
+if result.passed:
+    print(f"✅ Validation passed! Confidence: {result.confidence_score:.2f}")
+else:
+    print(f"❌ Failed: {result.failed_criteria}")
+
+# Check parameter robustness
+experiments = {
+    "baseline": {"sharpe": 0.80, "params": {"lookback": 20}},
+    "var_1": {"sharpe": 0.75, "params": {"lookback": 16}},
+    "var_2": {"sharpe": 0.82, "params": {"lookback": 24}},
+}
+
+robustness = check_parameter_sensitivity(experiments, baseline_key="baseline")
+print(f"Parameter stability: {'✅ PASS' if robustness.passed else '❌ FAIL'}")
+```
+
 ## File Locations
 
 - Database: `~/hrp-data/hrp.duckdb`

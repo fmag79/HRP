@@ -13,66 +13,17 @@ from hrp.data.db import get_db
 
 
 # SQL statements for table creation
+# IMPORTANT: Tables are ordered by FK dependencies - referenced tables come first
 TABLES = {
-    "universe": """
-        CREATE TABLE IF NOT EXISTS universe (
-            symbol VARCHAR NOT NULL,
-            date DATE NOT NULL,
-            in_universe BOOLEAN DEFAULT TRUE,
-            exclusion_reason VARCHAR,
-            sector VARCHAR,
-            market_cap DECIMAL(18,2),
+    # === Base tables (no FK dependencies) ===
+    "symbols": """
+        CREATE TABLE IF NOT EXISTS symbols (
+            symbol VARCHAR PRIMARY KEY,
+            name VARCHAR,
+            exchange VARCHAR,
+            asset_type VARCHAR DEFAULT 'equity',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date)
-        )
-    """,
-    "prices": """
-        CREATE TABLE IF NOT EXISTS prices (
-            symbol VARCHAR NOT NULL,
-            date DATE NOT NULL,
-            open DECIMAL(12,4),
-            high DECIMAL(12,4),
-            low DECIMAL(12,4),
-            close DECIMAL(12,4) NOT NULL,
-            adj_close DECIMAL(12,4),
-            volume BIGINT,
-            source VARCHAR DEFAULT 'unknown',
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date)
-        )
-    """,
-    "fundamentals": """
-        CREATE TABLE IF NOT EXISTS fundamentals (
-            symbol VARCHAR NOT NULL,
-            report_date DATE NOT NULL,
-            period_end DATE NOT NULL,
-            metric VARCHAR NOT NULL,
-            value DECIMAL(18,4),
-            source VARCHAR,
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, report_date, metric)
-        )
-    """,
-    "features": """
-        CREATE TABLE IF NOT EXISTS features (
-            symbol VARCHAR NOT NULL,
-            date DATE NOT NULL,
-            feature_name VARCHAR NOT NULL,
-            value DECIMAL(18,6),
-            version VARCHAR DEFAULT 'v1',
-            computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date, feature_name, version)
-        )
-    """,
-    "corporate_actions": """
-        CREATE TABLE IF NOT EXISTS corporate_actions (
-            symbol VARCHAR NOT NULL,
-            date DATE NOT NULL,
-            action_type VARCHAR NOT NULL,
-            factor DECIMAL(12,6),
-            source VARCHAR,
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, date, action_type)
+            CHECK (asset_type IN ('equity', 'etf', 'index', 'other'))
         )
     """,
     "data_sources": """
@@ -81,19 +32,8 @@ TABLES = {
             source_type VARCHAR,
             api_name VARCHAR,
             last_fetch TIMESTAMP,
-            status VARCHAR DEFAULT 'active'
-        )
-    """,
-    "ingestion_log": """
-        CREATE TABLE IF NOT EXISTS ingestion_log (
-            log_id INTEGER PRIMARY KEY,
-            source_id VARCHAR,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            records_fetched INTEGER DEFAULT 0,
-            records_inserted INTEGER DEFAULT 0,
-            status VARCHAR DEFAULT 'running',
-            error_message VARCHAR
+            status VARCHAR DEFAULT 'active',
+            CHECK (status IN ('active', 'inactive', 'deprecated'))
         )
     """,
     "hypotheses": """
@@ -108,9 +48,130 @@ TABLES = {
             created_by VARCHAR DEFAULT 'user',
             updated_at TIMESTAMP,
             outcome TEXT,
-            confidence_score DECIMAL(3,2)
+            confidence_score DECIMAL(3,2),
+            CHECK (status IN ('draft', 'testing', 'validated', 'rejected', 'deployed', 'deleted')),
+            CHECK (confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1))
         )
     """,
+    "feature_definitions": """
+        CREATE TABLE IF NOT EXISTS feature_definitions (
+            feature_name VARCHAR NOT NULL,
+            version VARCHAR NOT NULL,
+            computation_code TEXT NOT NULL,
+            description VARCHAR,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (feature_name, version)
+        )
+    """,
+    "test_set_evaluations": """
+        CREATE TABLE IF NOT EXISTS test_set_evaluations (
+            evaluation_id INTEGER PRIMARY KEY,
+            hypothesis_id VARCHAR NOT NULL,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            override BOOLEAN DEFAULT FALSE,
+            override_reason VARCHAR,
+            metadata JSON
+        )
+    """,
+    # === Tables that depend on symbols ===
+    "universe": """
+        CREATE TABLE IF NOT EXISTS universe (
+            symbol VARCHAR NOT NULL,
+            date DATE NOT NULL,
+            in_universe BOOLEAN DEFAULT TRUE,
+            exclusion_reason VARCHAR,
+            sector VARCHAR,
+            market_cap DECIMAL(18,2),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date),
+            CHECK (market_cap IS NULL OR market_cap >= 0),
+            FOREIGN KEY (symbol) REFERENCES symbols(symbol)
+        )
+    """,
+    "prices": """
+        CREATE TABLE IF NOT EXISTS prices (
+            symbol VARCHAR NOT NULL,
+            date DATE NOT NULL,
+            open DECIMAL(12,4),
+            high DECIMAL(12,4),
+            low DECIMAL(12,4),
+            close DECIMAL(12,4) NOT NULL,
+            adj_close DECIMAL(12,4),
+            volume BIGINT,
+            source VARCHAR DEFAULT 'unknown',
+            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date),
+            CHECK (close > 0),
+            CHECK (volume IS NULL OR volume >= 0),
+            CHECK (high IS NULL OR low IS NULL OR high >= low),
+            CHECK (open IS NULL OR open > 0),
+            CHECK (adj_close IS NULL OR adj_close > 0),
+            FOREIGN KEY (symbol) REFERENCES symbols(symbol)
+        )
+    """,
+    "features": """
+        CREATE TABLE IF NOT EXISTS features (
+            symbol VARCHAR NOT NULL,
+            date DATE NOT NULL,
+            feature_name VARCHAR NOT NULL,
+            value DECIMAL(18,6),
+            version VARCHAR DEFAULT 'v1',
+            computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date, feature_name, version),
+            FOREIGN KEY (symbol) REFERENCES symbols(symbol)
+        )
+    """,
+    "corporate_actions": """
+        CREATE TABLE IF NOT EXISTS corporate_actions (
+            symbol VARCHAR NOT NULL,
+            date DATE NOT NULL,
+            action_type VARCHAR NOT NULL,
+            factor DECIMAL(12,6),
+            source VARCHAR,
+            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, date, action_type),
+            CHECK (factor IS NULL OR factor > 0),
+            CHECK (action_type IN ('split', 'dividend', 'spinoff', 'merger', 'other')),
+            FOREIGN KEY (symbol) REFERENCES symbols(symbol)
+        )
+    """,
+    # === Tables that depend on symbols AND data_sources ===
+    "fundamentals": """
+        CREATE TABLE IF NOT EXISTS fundamentals (
+            symbol VARCHAR NOT NULL,
+            report_date DATE NOT NULL,
+            period_end DATE NOT NULL,
+            metric VARCHAR NOT NULL,
+            value DECIMAL(18,4),
+            source VARCHAR,
+            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, report_date, metric),
+            CHECK (period_end <= report_date),
+            FOREIGN KEY (symbol) REFERENCES symbols(symbol),
+            FOREIGN KEY (source) REFERENCES data_sources(source_id)
+        )
+    """,
+    # === Tables that depend on data_sources ===
+    "ingestion_log": """
+        CREATE TABLE IF NOT EXISTS ingestion_log (
+            log_id INTEGER PRIMARY KEY,
+            source_id VARCHAR,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            records_fetched INTEGER DEFAULT 0,
+            records_inserted INTEGER DEFAULT 0,
+            status VARCHAR DEFAULT 'running',
+            error_message VARCHAR,
+            CHECK (records_fetched >= 0),
+            CHECK (records_inserted >= 0),
+            CHECK (status IN ('running', 'completed', 'failed')),
+            FOREIGN KEY (source_id) REFERENCES data_sources(source_id)
+        )
+    """,
+    # === Tables that depend on hypotheses ===
+    # NOTE: FK constraint removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table.
+    # Referential integrity validated via migrate_constraints.py SQL JOIN checks.
     "hypothesis_experiments": """
         CREATE TABLE IF NOT EXISTS hypothesis_experiments (
             hypothesis_id VARCHAR NOT NULL,
@@ -120,6 +181,8 @@ TABLES = {
             PRIMARY KEY (hypothesis_id, experiment_id)
         )
     """,
+    # NOTE: FK constraints removed due to DuckDB 1.4.3 limitation - FKs prevent UPDATE on parent table.
+    # Referential integrity validated via migrate_constraints.py SQL JOIN checks.
     "lineage": """
         CREATE TABLE IF NOT EXISTS lineage (
             lineage_id INTEGER PRIMARY KEY,
@@ -129,7 +192,14 @@ TABLES = {
             hypothesis_id VARCHAR,
             experiment_id VARCHAR,
             details JSON,
-            parent_lineage_id INTEGER
+            parent_lineage_id INTEGER,
+            CHECK (event_type IN (
+                   'hypothesis_created', 'hypothesis_updated', 'hypothesis_deleted',
+                   'experiment_started', 'experiment_completed', 'experiment_run', 'experiment_linked',
+                   'backtest_run', 'validation_passed', 'validation_failed',
+                   'deployment_requested', 'deployment_approved', 'deployment_rejected',
+                   'data_ingested', 'data_ingestion', 'feature_computed',
+                   'agent_run_complete', 'system_error', 'other'))
         )
     """,
 }
@@ -141,7 +211,9 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_universe_date ON universe(date)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_hypothesis ON lineage(hypothesis_id)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_timestamp ON lineage(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_timestamp_hypothesis ON lineage(timestamp, hypothesis_id)",
     "CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status)",
+    "CREATE INDEX IF NOT EXISTS idx_symbols_exchange ON symbols(exchange)",
 ]
 
 

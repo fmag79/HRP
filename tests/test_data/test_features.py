@@ -46,6 +46,18 @@ def feature_db():
     # Initialize schema
     create_tables(db_path)
 
+    # Insert common test symbols to satisfy FK constraints
+    db = DatabaseManager(db_path)
+    with db.connection() as conn:
+        conn.execute("""
+            INSERT INTO symbols (symbol, name, exchange)
+            VALUES
+                ('AAPL', 'Apple Inc.', 'NASDAQ'),
+                ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+                ('GOOGL', 'Alphabet Inc.', 'NASDAQ')
+            ON CONFLICT DO NOTHING
+        """)
+
     yield db_path
 
     # Cleanup
@@ -92,8 +104,15 @@ def populated_feature_db(feature_db):
 
     db = get_db(feature_db)
 
-    # Insert sample price data
+    # Insert symbols first to satisfy FK constraints
     symbols = ["AAPL", "MSFT", "GOOGL"]
+    for symbol in symbols:
+        db.execute(
+            "INSERT INTO symbols (symbol) VALUES (?) ON CONFLICT DO NOTHING",
+            (symbol,),
+        )
+
+    # Insert sample price data
     dates = pd.date_range("2023-01-01", "2023-03-31", freq="B")
 
     base_prices = {"AAPL": 150.0, "MSFT": 250.0, "GOOGL": 100.0}
@@ -687,3 +706,165 @@ def test_feature_versioning_reproducibility(feature_db):
     # This demonstrates that old versions (v1) are retained and accessible
     # for reproducing historical experiments, while new versions (v2) can be
     # used for new experiments.
+
+
+class TestFeatureCalendarIntegration:
+    """Tests for feature computation trading calendar integration."""
+
+    def test_load_price_data_filters_to_trading_days(self, feature_db):
+        """Feature price data loading should only include trading days."""
+        # Insert test price data including weekends and holidays
+        db = DatabaseManager(feature_db)
+        
+        test_data = []
+        symbols = ["AAPL"]
+        
+        # July 2022 data (includes July 4th holiday and weekend)
+        dates = [
+            date(2022, 7, 1),  # Friday - trading day
+            date(2022, 7, 5),  # Tuesday - trading day (after holiday weekend)
+            date(2022, 7, 6),  # Wednesday - trading day
+        ]
+        
+        for symbol in symbols:
+            for i, dt in enumerate(dates):
+                test_data.append({
+                    "symbol": symbol,
+                    "date": dt,
+                    "open": 100.0 + i,
+                    "high": 105.0 + i,
+                    "low": 95.0 + i,
+                    "close": 100.0 + i,
+                    "adj_close": 100.0 + i,
+                    "volume": 1000000,
+                })
+        
+        df = pd.DataFrame(test_data)
+        with db.connection() as conn:
+            conn.execute("""
+                INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+                SELECT * FROM df
+            """)
+        
+        # Create computer and load price data
+        computer = FeatureComputer(feature_db)
+        prices = computer._load_price_data(
+            symbols=["AAPL"],
+            start=date(2022, 7, 1),
+            end=date(2022, 7, 8),
+        )
+        
+        # Should only have 3 trading days (no data for July 4, 7, 8 in our test data)
+        assert len(prices) == 3
+        
+        # Verify dates (date is in the index)
+        dates_in_data = prices.index.get_level_values('date').date
+        assert date(2022, 7, 1) in dates_in_data
+        assert date(2022, 7, 5) in dates_in_data
+        assert date(2022, 7, 6) in dates_in_data
+
+    def test_load_price_data_excludes_holidays(self, feature_db):
+        """Feature price data should exclude holidays."""
+        db = DatabaseManager(feature_db)
+        
+        # Insert Thanksgiving week data
+        test_data = []
+        thanksgiving_dates = [
+            date(2022, 11, 21),  # Monday - trading day
+            date(2022, 11, 22),  # Tuesday - trading day
+            date(2022, 11, 23),  # Wednesday - trading day
+            date(2022, 11, 25),  # Friday - trading day (early close)
+        ]
+        
+        for i, dt in enumerate(thanksgiving_dates):
+            test_data.append({
+                "symbol": "AAPL",
+                "date": dt,
+                "open": 150.0 + i,
+                "high": 155.0 + i,
+                "low": 145.0 + i,
+                "close": 150.0 + i,
+                "adj_close": 150.0 + i,
+                "volume": 1000000,
+            })
+        
+        df = pd.DataFrame(test_data)
+        with db.connection() as conn:
+            conn.execute("""
+                INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+                SELECT * FROM df
+            """)
+        
+        # Load price data
+        computer = FeatureComputer(feature_db)
+        prices = computer._load_price_data(
+            symbols=["AAPL"],
+            start=date(2022, 11, 21),
+            end=date(2022, 11, 25),
+        )
+        
+        # Should have 4 trading days (excludes Thanksgiving)
+        assert len(prices) == 4
+        
+        # Verify Thanksgiving is not in the data (date is in the index)
+        dates_in_data = prices.index.get_level_values('date').date
+        assert date(2022, 11, 24) not in dates_in_data
+
+    def test_load_price_data_no_weekends(self, feature_db):
+        """Feature price data should never include weekends."""
+        db = DatabaseManager(feature_db)
+        
+        # Insert data for a full week
+        test_data = []
+        dates = [
+            date(2022, 7, 1),  # Friday
+            date(2022, 7, 5),  # Tuesday
+            date(2022, 7, 6),  # Wednesday
+            date(2022, 7, 7),  # Thursday
+            date(2022, 7, 8),  # Friday
+        ]
+        
+        for i, dt in enumerate(dates):
+            test_data.append({
+                "symbol": "MSFT",
+                "date": dt,
+                "open": 200.0 + i,
+                "high": 205.0 + i,
+                "low": 195.0 + i,
+                "close": 200.0 + i,
+                "adj_close": 200.0 + i,
+                "volume": 2000000,
+            })
+        
+        df = pd.DataFrame(test_data)
+        with db.connection() as conn:
+            conn.execute("""
+                INSERT INTO prices (symbol, date, open, high, low, close, adj_close, volume)
+                SELECT * FROM df
+            """)
+        
+        # Load price data
+        computer = FeatureComputer(feature_db)
+        prices = computer._load_price_data(
+            symbols=["MSFT"],
+            start=date(2022, 7, 1),
+            end=date(2022, 7, 8),
+        )
+        
+        # Check no weekend dates (date is in the index)
+        for dt in prices.index.get_level_values('date').unique():
+            weekday = dt.weekday()
+            assert weekday < 5, f"Found weekend date: {dt}"
+
+    def test_load_price_data_empty_range_returns_empty(self, feature_db):
+        """Loading price data for weekend-only range should return empty."""
+        computer = FeatureComputer(feature_db)
+        
+        # Weekend only (Saturday-Sunday)
+        prices = computer._load_price_data(
+            symbols=["AAPL"],
+            start=date(2022, 7, 2),
+            end=date(2022, 7, 3),
+        )
+        
+        assert prices.empty

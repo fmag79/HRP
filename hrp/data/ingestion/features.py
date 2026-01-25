@@ -109,9 +109,11 @@ def compute_features(
             # Compute all features
             features_df = _compute_all_features(prices_df, symbol, version)
 
-            # Filter to requested date range
+            # Filter to requested date range (convert to pd.Timestamp for comparison)
+            start_ts = pd.Timestamp(start)
+            end_ts = pd.Timestamp(end)
             features_df = features_df[
-                (features_df['date'] >= start) & (features_df['date'] <= end)
+                (features_df['date'] >= start_ts) & (features_df['date'] <= end_ts)
             ]
 
             if features_df.empty:
@@ -156,7 +158,23 @@ def compute_features(
 
 
 def _fetch_prices(db, symbol: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch price data for a symbol."""
+    """
+    Fetch price data for a symbol.
+
+    Automatically filters to NYSE trading days only (excludes weekends and holidays).
+    """
+    from hrp.utils.calendar import get_trading_days
+
+    # Filter date range to trading days only
+    trading_days = get_trading_days(start, end)
+    if len(trading_days) == 0:
+        logger.warning(f"No trading days found between {start} and {end}")
+        return pd.DataFrame()
+
+    # Update start/end to first and last trading days
+    filtered_start = trading_days[0].date()
+    filtered_end = trading_days[-1].date()
+
     with db.connection() as conn:
         df = conn.execute("""
             SELECT date, close, adj_close, volume
@@ -165,7 +183,7 @@ def _fetch_prices(db, symbol: str, start: date, end: date) -> pd.DataFrame:
             AND date >= ?
             AND date <= ?
             ORDER BY date
-        """, (symbol, start, end)).df()
+        """, (symbol, filtered_start, filtered_end)).df()
 
     return df
 

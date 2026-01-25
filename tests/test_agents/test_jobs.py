@@ -296,8 +296,8 @@ class TestFeatureComputationJob:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status, completed_at)
-                VALUES ('price_ingestion', 'completed', CURRENT_TIMESTAMP)
+                INSERT INTO ingestion_log (log_id, source_id, status, completed_at)
+                VALUES (1, 'price_ingestion', 'completed', CURRENT_TIMESTAMP)
                 """
             )
 
@@ -334,8 +334,8 @@ class TestDependencyChecking:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status, completed_at)
-                VALUES ('dep_job', 'failed', CURRENT_TIMESTAMP)
+                INSERT INTO ingestion_log (log_id, source_id, status, completed_at)
+                VALUES (1, 'dep_job', 'failed', CURRENT_TIMESTAMP)
                 """
             )
 
@@ -354,8 +354,8 @@ class TestDependencyChecking:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status, completed_at)
-                VALUES ('dep_job', 'completed', CURRENT_TIMESTAMP)
+                INSERT INTO ingestion_log (log_id, source_id, status, completed_at)
+                VALUES (1, 'dep_job', 'completed', CURRENT_TIMESTAMP)
                 """
             )
 

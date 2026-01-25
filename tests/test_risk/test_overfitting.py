@@ -8,9 +8,9 @@ from hrp.data.db import get_db
 
 
 @pytest.fixture(autouse=True)
-def clean_test_evaluations():
+def clean_test_evaluations(test_db):
     """Clean test_set_evaluations table before each test."""
-    db = get_db()
+    db = get_db(test_db)
     with db.connection() as conn:
         conn.execute("DELETE FROM test_set_evaluations WHERE hypothesis_id LIKE 'HYP-TEST-%'")
     yield

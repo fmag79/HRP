@@ -41,6 +41,31 @@ def test_db():
     # Initialize schema
     create_tables(db_path)
 
+    # Insert common test symbols to satisfy FK constraints
+    db = DatabaseManager(db_path)
+    with db.connection() as conn:
+        conn.execute("""
+            INSERT INTO symbols (symbol, name, exchange)
+            VALUES
+                ('AAPL', 'Apple Inc.', 'NASDAQ'),
+                ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+                ('GOOGL', 'Alphabet Inc.', 'NASDAQ'),
+                ('TSLA', 'Tesla Inc.', 'NASDAQ'),
+                ('NVDA', 'NVIDIA Corporation', 'NASDAQ')
+            ON CONFLICT DO NOTHING
+        """)
+        # Also insert into universe for get_prices validation
+        conn.execute("""
+            INSERT INTO universe (symbol, date, in_universe, sector, market_cap)
+            VALUES
+                ('AAPL', '2023-01-01', TRUE, 'Technology', 3000000000000),
+                ('MSFT', '2023-01-01', TRUE, 'Technology', 2800000000000),
+                ('GOOGL', '2023-01-01', TRUE, 'Technology', 1800000000000),
+                ('TSLA', '2023-01-01', TRUE, 'Consumer', 800000000000),
+                ('NVDA', '2023-01-01', TRUE, 'Technology', 1000000000000)
+            ON CONFLICT DO NOTHING
+        """)
+
     yield db_path
 
     # Cleanup

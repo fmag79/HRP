@@ -806,6 +806,78 @@ regime_result = check_regime_robustness(
 print(f"Regime Robustness: {'PASS' if regime_result.passed else 'FAIL'}")
 ```
 
+### 5.6 Overfitting Guards & Test Set Discipline
+
+```python
+from hrp.risk import TestSetGuard, validate_strategy
+
+# Test Set Guard - prevents excessive test set evaluations
+# Automatically enforced when training with hypothesis_id
+from hrp.ml import train_model, MLConfig
+
+config = MLConfig(
+    model_type='ridge',
+    target='returns_20d',
+    features=['momentum_20d', 'volatility_20d'],
+    train_start=date(2020, 1, 1),
+    train_end=date(2021, 12, 31),
+    validation_start=date(2022, 1, 1),
+    validation_end=date(2022, 6, 30),
+    test_start=date(2022, 7, 1),
+    test_end=date(2022, 12, 31),
+)
+
+# Training with hypothesis_id enables TestSetGuard automatically
+result = train_model(
+    config=config,
+    symbols=['AAPL', 'MSFT'],
+    hypothesis_id='HYP-2025-001'  # Guard tracks evaluations per hypothesis
+)
+
+# Manual guard usage for custom evaluation
+guard = TestSetGuard(hypothesis_id='HYP-2025-001')
+
+print(f"Evaluations used: {guard.evaluation_count}/3")
+print(f"Remaining: {guard.remaining_evaluations}")
+
+with guard.evaluate(metadata={"experiment": "final_validation"}):
+    # Your test set evaluation code here
+    test_metrics = model.evaluate(test_data)
+
+# Override limit (explicit justification required)
+# Use sparingly - typically only for final validation
+with guard.evaluate(override=True, reason="Final model validation after peer review"):
+    final_metrics = model.evaluate(test_data)
+
+# Strategy validation gates
+metrics = {
+    "sharpe": 0.80,
+    "num_trades": 200,
+    "max_drawdown": 0.18,
+    "win_rate": 0.52,
+    "profit_factor": 1.5,
+    "oos_period_days": 800,
+}
+
+validation = validate_strategy(metrics)
+
+if validation.passed:
+    print(f"✅ Strategy validated! Confidence: {validation.confidence_score:.2f}")
+    print(f"   Passed: {validation.passed_criteria}")
+else:
+    print(f"❌ Validation failed")
+    print(f"   Failed: {validation.failed_criteria}")
+    for criterion in validation.failed_criteria:
+        print(f"   - {criterion}")
+```
+
+**Key Points:**
+- TestSetGuard enforces 3-evaluation limit per hypothesis (prevents data snooping)
+- All evaluations logged to database with timestamp and metadata
+- Override mechanism requires explicit justification (tracked for audit)
+- Integrated with PlatformAPI validation gates
+- Validation criteria: Sharpe ≥0.5, 100+ trades, drawdown ≤25%, win rate ≥48%
+
 ---
 
 ## 6. Data Quality Monitoring

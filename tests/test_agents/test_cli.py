@@ -257,11 +257,11 @@ class TestGetJobStatus:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status)
+                INSERT INTO ingestion_log (log_id, source_id, status)
                 VALUES
-                    ('price_ingestion', 'completed'),
-                    ('feature_computation', 'completed'),
-                    ('price_ingestion', 'failed')
+                    (1, 'price_ingestion', 'completed'),
+                    (2, 'feature_computation', 'completed'),
+                    (3, 'price_ingestion', 'failed')
                 """
             )
 
@@ -279,9 +279,9 @@ class TestGetJobStatus:
         with db.connection() as conn:
             for i in range(10):
                 conn.execute(
-                    """
-                    INSERT INTO ingestion_log (source_id, status)
-                    VALUES ('price_ingestion', 'completed')
+                    f"""
+                    INSERT INTO ingestion_log (log_id, source_id, status)
+                    VALUES ({i + 1}, 'price_ingestion', 'completed')
                     """
                 )
 
@@ -297,8 +297,8 @@ class TestGetJobStatus:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status, error_message)
-                VALUES ('price_ingestion', 'failed', 'Connection timeout')
+                INSERT INTO ingestion_log (log_id, source_id, status, error_message)
+                VALUES (1, 'price_ingestion', 'failed', 'Connection timeout')
                 """
             )
 
@@ -319,9 +319,9 @@ class TestClearJobHistory:
         with db.connection() as conn:
             for i in range(5):
                 conn.execute(
-                    """
-                    INSERT INTO ingestion_log (source_id, status)
-                    VALUES ('price_ingestion', 'completed')
+                    f"""
+                    INSERT INTO ingestion_log (log_id, source_id, status)
+                    VALUES ({i + 1}, 'price_ingestion', 'completed')
                     """
                 )
 
@@ -339,11 +339,11 @@ class TestClearJobHistory:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status)
+                INSERT INTO ingestion_log (log_id, source_id, status)
                 VALUES
-                    ('price_ingestion', 'completed'),
-                    ('price_ingestion', 'completed'),
-                    ('feature_computation', 'completed')
+                    (1, 'price_ingestion', 'completed'),
+                    (2, 'price_ingestion', 'completed'),
+                    (3, 'feature_computation', 'completed')
                 """
             )
 
@@ -362,11 +362,11 @@ class TestClearJobHistory:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status)
+                INSERT INTO ingestion_log (log_id, source_id, status)
                 VALUES
-                    ('price_ingestion', 'completed'),
-                    ('price_ingestion', 'failed'),
-                    ('price_ingestion', 'failed')
+                    (1, 'price_ingestion', 'completed'),
+                    (2, 'price_ingestion', 'failed'),
+                    (3, 'price_ingestion', 'failed')
                 """
             )
 
@@ -386,15 +386,15 @@ class TestClearJobHistory:
             # Insert old record
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, started_at, status)
-                VALUES ('price_ingestion', '2024-01-01 00:00:00', 'completed')
+                INSERT INTO ingestion_log (log_id, source_id, started_at, status)
+                VALUES (1, 'price_ingestion', '2024-01-01 00:00:00', 'completed')
                 """
             )
             # Insert recent record
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, started_at, status)
-                VALUES ('price_ingestion', '2024-06-01 00:00:00', 'completed')
+                INSERT INTO ingestion_log (log_id, source_id, started_at, status)
+                VALUES (2, 'price_ingestion', '2024-06-01 00:00:00', 'completed')
                 """
             )
 
@@ -412,11 +412,11 @@ class TestClearJobHistory:
         with db.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO ingestion_log (source_id, status, started_at)
+                INSERT INTO ingestion_log (log_id, source_id, status, started_at)
                 VALUES
-                    ('price_ingestion', 'failed', '2024-01-01 00:00:00'),
-                    ('price_ingestion', 'completed', '2024-01-01 00:00:00'),
-                    ('feature_computation', 'failed', '2024-01-01 00:00:00')
+                    (1, 'price_ingestion', 'failed', '2024-01-01 00:00:00'),
+                    (2, 'price_ingestion', 'completed', '2024-01-01 00:00:00'),
+                    (3, 'feature_computation', 'failed', '2024-01-01 00:00:00')
                 """
             )
 

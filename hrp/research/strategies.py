@@ -1,0 +1,440 @@
+"""
+Trading Strategy Signal Generators.
+
+Provides signal generation functions for various trading strategies,
+including multi-factor and ML-predicted strategies.
+
+Usage:
+    from hrp.research.strategies import (
+        generate_multifactor_signals,
+        generate_ml_predicted_signals,
+        STRATEGY_REGISTRY,
+    )
+
+    # Multi-factor strategy
+    signals = generate_multifactor_signals(
+        prices=prices,
+        feature_weights={"momentum_20d": 1.0, "volatility_60d": -0.5},
+        top_n=10,
+    )
+
+    # ML-predicted strategy
+    signals = generate_ml_predicted_signals(
+        prices=prices,
+        model_type="ridge",
+        features=["momentum_20d", "volatility_60d"],
+        signal_method="rank",
+        top_pct=0.1,
+    )
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Callable
+
+import numpy as np
+import pandas as pd
+from loguru import logger
+
+from hrp.data.features.computation import FeatureComputer
+from hrp.ml.models import get_model, SUPPORTED_MODELS
+from hrp.ml.signals import predictions_to_signals
+
+
+def generate_multifactor_signals(
+    prices: pd.DataFrame,
+    feature_weights: dict[str, float],
+    top_n: int = 10,
+) -> pd.DataFrame:
+    """
+    Multi-factor strategy combining features with configurable weights.
+
+    For each date:
+    1. Fetch features for all symbols
+    2. Z-score normalize each factor cross-sectionally
+    3. Compute composite = sum(weight * factor)
+    4. Rank by composite, select top N
+
+    Args:
+        prices: Price data with 'close' level (MultiIndex columns: symbol, field)
+        feature_weights: Dict mapping feature names to weights.
+                        Positive weights prefer higher values.
+                        Negative weights prefer lower values (e.g., volatility).
+                        e.g., {"momentum_20d": 1.0, "volatility_60d": -0.5}
+        top_n: Number of top stocks to hold
+
+    Returns:
+        Signal DataFrame (1 = long, 0 = no position)
+        Index = dates, columns = symbols
+    """
+    if not feature_weights:
+        raise ValueError("feature_weights cannot be empty")
+
+    # Extract symbols and date range from prices
+    close = prices['close'] if 'close' in prices.columns.get_level_values(0) else prices
+    symbols = list(close.columns)
+    dates = close.index
+
+    logger.info(
+        f"Generating multi-factor signals: {len(feature_weights)} factors, "
+        f"top_n={top_n}, {len(symbols)} symbols"
+    )
+
+    # Initialize feature computer
+    computer = FeatureComputer()
+
+    # Get list of features to compute
+    feature_names = list(feature_weights.keys())
+
+    # Load features for all dates
+    try:
+        features_df = computer.get_stored_features(
+            symbols=symbols,
+            dates=dates,
+            feature_names=feature_names,
+        )
+    except ValueError as e:
+        logger.warning(f"Could not load stored features: {e}. Computing on-the-fly.")
+        # Compute features if not stored
+        features_df = computer.compute_features(
+            symbols=symbols,
+            dates=dates,
+            feature_names=feature_names,
+        )
+
+    if features_df.empty:
+        logger.warning("No features available, returning empty signals")
+        return pd.DataFrame(0.0, index=dates, columns=symbols)
+
+    # Initialize signals DataFrame
+    signals = pd.DataFrame(0.0, index=dates, columns=symbols)
+
+    # Process each date
+    for date_idx in dates:
+        try:
+            # Get features for this date
+            date_features = features_df.loc[date_idx]
+
+            if date_features.empty:
+                continue
+
+            # Z-score normalize each factor cross-sectionally
+            normalized = pd.DataFrame(index=date_features.index)
+
+            for feature_name in feature_names:
+                if feature_name in date_features.columns:
+                    values = date_features[feature_name]
+                    mean = values.mean()
+                    std = values.std()
+
+                    if std > 0:
+                        normalized[feature_name] = (values - mean) / std
+                    else:
+                        normalized[feature_name] = 0.0
+                else:
+                    normalized[feature_name] = 0.0
+
+            # Compute weighted composite score
+            composite = pd.Series(0.0, index=normalized.index)
+            for feature_name, weight in feature_weights.items():
+                if feature_name in normalized.columns:
+                    composite += weight * normalized[feature_name]
+
+            # Skip dates with all NaN composites
+            valid_composite = composite.dropna()
+            if len(valid_composite) == 0:
+                continue
+
+            # Select top N symbols by composite score
+            n_select = min(top_n, len(valid_composite))
+            top_symbols = valid_composite.nlargest(n_select).index.tolist()
+
+            # Set signals for top symbols
+            for symbol in top_symbols:
+                if symbol in signals.columns:
+                    signals.loc[date_idx, symbol] = 1.0
+
+        except KeyError:
+            # Date not in features_df
+            continue
+
+    logger.info(
+        f"Multi-factor signals generated: {signals.sum().sum():.0f} total positions"
+    )
+
+    return signals
+
+
+def generate_ml_predicted_signals(
+    prices: pd.DataFrame,
+    model_type: str = "ridge",
+    features: list[str] | None = None,
+    signal_method: str = "rank",
+    top_pct: float = 0.1,
+    threshold: float = 0.0,
+    train_lookback: int = 252,
+    retrain_frequency: int = 21,
+) -> pd.DataFrame:
+    """
+    ML-predicted strategy using trained model.
+
+    For each rebalance date:
+    1. Train model on past `train_lookback` days of data
+    2. Generate predictions for all symbols
+    3. Convert to signals via predictions_to_signals()
+
+    Args:
+        prices: Price data with 'close' level (MultiIndex columns: symbol, field)
+        model_type: Model type from SUPPORTED_MODELS
+                   ("ridge", "lasso", "random_forest", "lightgbm", "xgboost")
+        features: List of feature names to use. If None, uses default features.
+        signal_method: Signal generation method ("rank", "threshold", "zscore")
+        top_pct: For rank method, fraction of symbols to select (default 0.1)
+        threshold: For threshold method, minimum prediction value
+        train_lookback: Days of historical data for training (default 252)
+        retrain_frequency: Days between model retraining (default 21 = monthly)
+
+    Returns:
+        Signal DataFrame (1 = long, 0 = no position for rank/threshold)
+        Index = dates, columns = symbols
+    """
+    if model_type not in SUPPORTED_MODELS:
+        available = ", ".join(sorted(SUPPORTED_MODELS.keys()))
+        raise ValueError(f"Unsupported model_type: '{model_type}'. Available: {available}")
+
+    # Extract symbols and date range from prices
+    close = prices['close'] if 'close' in prices.columns.get_level_values(0) else prices
+    symbols = list(close.columns)
+    dates = close.index
+
+    # Default features
+    if features is None:
+        features = ["momentum_20d", "volatility_60d"]
+
+    logger.info(
+        f"Generating ML-predicted signals: model={model_type}, "
+        f"{len(features)} features, method={signal_method}, {len(symbols)} symbols"
+    )
+
+    # Initialize feature computer
+    computer = FeatureComputer()
+
+    # Target: forward 20-day returns (for training)
+    # We'll compute returns from prices directly
+    returns_20d = close.pct_change(20).shift(-20)  # Forward returns
+
+    # Initialize predictions DataFrame
+    predictions = pd.DataFrame(np.nan, index=dates, columns=symbols)
+
+    # Determine rebalance dates (every retrain_frequency days)
+    rebalance_indices = list(range(train_lookback, len(dates), retrain_frequency))
+
+    logger.info(f"Processing {len(rebalance_indices)} rebalance dates")
+
+    for idx in rebalance_indices:
+        current_date = dates[idx]
+
+        # Training window: from idx - train_lookback to idx - 1
+        train_start_idx = idx - train_lookback
+        train_end_idx = idx - 1
+
+        if train_start_idx < 0:
+            continue
+
+        train_dates = dates[train_start_idx:train_end_idx + 1]
+
+        try:
+            # Load features for training period
+            train_features = computer.get_stored_features(
+                symbols=symbols,
+                dates=train_dates,
+                feature_names=features,
+            )
+        except ValueError:
+            # Try computing if not stored
+            try:
+                train_features = computer.compute_features(
+                    symbols=symbols,
+                    dates=train_dates,
+                    feature_names=features,
+                )
+            except Exception as e:
+                logger.warning(f"Could not compute features for {current_date}: {e}")
+                continue
+
+        if train_features.empty:
+            continue
+
+        # Get target (forward returns) for training period
+        train_targets = returns_20d.loc[train_dates]
+
+        # Prepare training data (flatten multi-index)
+        X_train = train_features.reset_index()
+        y_train_list = []
+
+        for _, row in X_train.iterrows():
+            date_val = row['date']
+            symbol = row['symbol']
+            if hasattr(date_val, 'strftime'):
+                # Already datetime
+                pass
+            else:
+                date_val = pd.to_datetime(date_val)
+
+            if date_val in train_targets.index and symbol in train_targets.columns:
+                y_train_list.append(train_targets.loc[date_val, symbol])
+            else:
+                y_train_list.append(np.nan)
+
+        X_train = X_train.drop(columns=['date', 'symbol'], errors='ignore')
+        y_train = pd.Series(y_train_list)
+
+        # Drop NaN rows
+        valid_mask = ~y_train.isna() & X_train.notna().all(axis=1)
+        X_train = X_train[valid_mask]
+        y_train = y_train[valid_mask]
+
+        if len(X_train) < 50:  # Minimum samples for training
+            continue
+
+        # Train model
+        model = get_model(model_type)
+        try:
+            model.fit(X_train, y_train)
+        except Exception as e:
+            logger.warning(f"Model training failed at {current_date}: {e}")
+            continue
+
+        # Load features for prediction (current date)
+        try:
+            pred_features = computer.get_stored_features(
+                symbols=symbols,
+                dates=[current_date],
+                feature_names=features,
+            )
+        except ValueError:
+            try:
+                pred_features = computer.compute_features(
+                    symbols=symbols,
+                    dates=[current_date],
+                    feature_names=features,
+                )
+            except Exception:
+                continue
+
+        if pred_features.empty:
+            continue
+
+        # Generate predictions
+        X_pred = pred_features.reset_index()
+        pred_symbols = X_pred['symbol'].tolist()
+        X_pred = X_pred.drop(columns=['date', 'symbol'], errors='ignore')
+
+        # Handle missing features
+        valid_pred_mask = X_pred.notna().all(axis=1)
+        X_pred_valid = X_pred[valid_pred_mask]
+        pred_symbols_valid = [s for s, v in zip(pred_symbols, valid_pred_mask) if v]
+
+        if len(X_pred_valid) == 0:
+            continue
+
+        try:
+            preds = model.predict(X_pred_valid)
+        except Exception as e:
+            logger.warning(f"Prediction failed at {current_date}: {e}")
+            continue
+
+        # Store predictions
+        for symbol, pred in zip(pred_symbols_valid, preds):
+            if symbol in predictions.columns:
+                predictions.loc[current_date, symbol] = pred
+
+        # Forward fill predictions until next rebalance
+        next_rebal_idx = min(idx + retrain_frequency, len(dates))
+        for future_idx in range(idx + 1, next_rebal_idx):
+            future_date = dates[future_idx]
+            for symbol, pred in zip(pred_symbols_valid, preds):
+                if symbol in predictions.columns:
+                    predictions.loc[future_date, symbol] = pred
+
+    # Convert predictions to signals
+    valid_predictions = predictions.dropna(how='all')
+
+    if valid_predictions.empty:
+        logger.warning("No valid predictions generated, returning empty signals")
+        return pd.DataFrame(0.0, index=dates, columns=symbols)
+
+    signals = predictions_to_signals(
+        predictions=valid_predictions,
+        method=signal_method,
+        top_pct=top_pct,
+        threshold=threshold,
+    )
+
+    # Reindex to original dates and fill with 0
+    signals = signals.reindex(dates).fillna(0.0)
+
+    logger.info(
+        f"ML-predicted signals generated: {signals.sum().sum():.0f} total positions"
+    )
+
+    return signals
+
+
+# Strategy registry for dashboard integration
+STRATEGY_REGISTRY: dict[str, dict] = {
+    "momentum": {
+        "name": "Momentum",
+        "description": "Long top N stocks by trailing return",
+        "generator": "generate_momentum_signals",  # From backtest.py
+        "params": ["lookback", "top_n"],
+    },
+    "multifactor": {
+        "name": "Multi-Factor",
+        "description": "Combine multiple factors with configurable weights",
+        "generator": "generate_multifactor_signals",
+        "params": ["feature_weights", "top_n"],
+    },
+    "ml_predicted": {
+        "name": "ML-Predicted",
+        "description": "Use trained ML model predictions as signals",
+        "generator": "generate_ml_predicted_signals",
+        "params": [
+            "model_type",
+            "features",
+            "signal_method",
+            "top_pct",
+            "train_lookback",
+            "retrain_frequency",
+        ],
+    },
+}
+
+
+def get_strategy_generator(strategy_type: str) -> Callable:
+    """
+    Get the signal generator function for a strategy type.
+
+    Args:
+        strategy_type: One of the keys in STRATEGY_REGISTRY
+
+    Returns:
+        Signal generator function
+
+    Raises:
+        ValueError: If strategy_type not in registry
+    """
+    from hrp.research.backtest import generate_momentum_signals
+
+    generators = {
+        "momentum": generate_momentum_signals,
+        "multifactor": generate_multifactor_signals,
+        "ml_predicted": generate_ml_predicted_signals,
+    }
+
+    if strategy_type not in generators:
+        available = ", ".join(sorted(generators.keys()))
+        raise ValueError(f"Unknown strategy: '{strategy_type}'. Available: {available}")
+
+    return generators[strategy_type]

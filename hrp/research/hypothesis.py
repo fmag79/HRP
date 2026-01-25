@@ -523,8 +523,11 @@ def _log_lineage(
     details_json = json.dumps(details) if details else None
 
     query = """
-        INSERT INTO lineage (event_type, actor, hypothesis_id, experiment_id, details)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO lineage (lineage_id, event_type, actor, hypothesis_id, experiment_id, details)
+        VALUES (
+            (SELECT COALESCE(MAX(lineage_id), 0) + 1 FROM lineage),
+            ?, ?, ?, ?, ?
+        )
     """
 
     try:

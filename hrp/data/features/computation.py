@@ -208,6 +208,8 @@ class FeatureComputer:
         """
         Load price data from database.
 
+        Automatically filters to NYSE trading days only (excludes weekends and holidays).
+
         Args:
             symbols: List of stock symbols
             start: Start date
@@ -216,6 +218,23 @@ class FeatureComputer:
         Returns:
             DataFrame with MultiIndex (date, symbol) and price columns
         """
+        from hrp.utils.calendar import get_trading_days
+
+        # Filter date range to trading days only
+        trading_days = get_trading_days(start, end)
+        if len(trading_days) == 0:
+            logger.warning(f"No trading days found between {start} and {end}")
+            return pd.DataFrame()
+
+        # Update start/end to first and last trading days
+        filtered_start = trading_days[0].date()
+        filtered_end = trading_days[-1].date()
+
+        logger.debug(
+            f"Loading price data for {len(trading_days)} trading days: "
+            f"{filtered_start} to {filtered_end}"
+        )
+
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         query = f"""
             SELECT symbol, date, open, high, low, close, adj_close, volume
@@ -226,7 +245,7 @@ class FeatureComputer:
             ORDER BY date, symbol
         """
 
-        df = self.db.fetchdf(query, (start, end))
+        df = self.db.fetchdf(query, (filtered_start, filtered_end))
 
         if df.empty:
             logger.warning(f"No price data found for {symbols} from {start} to {end}")

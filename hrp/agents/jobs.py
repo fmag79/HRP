@@ -231,8 +231,11 @@ class IngestionJob(ABC):
             with db.connection() as conn:
                 result = conn.execute(
                     """
-                    INSERT INTO ingestion_log (source_id, started_at, status)
-                    VALUES (?, CURRENT_TIMESTAMP, 'running')
+                    INSERT INTO ingestion_log (log_id, source_id, started_at, status)
+                    VALUES (
+                        (SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log),
+                        ?, CURRENT_TIMESTAMP, 'running'
+                    )
                     RETURNING log_id
                     """,
                     (self.job_id,),
@@ -292,8 +295,11 @@ class IngestionJob(ABC):
             with db.connection() as conn:
                 result = conn.execute(
                     """
-                    INSERT INTO ingestion_log (source_id, started_at, status, error_message)
-                    VALUES (?, CURRENT_TIMESTAMP, 'failed', ?)
+                    INSERT INTO ingestion_log (log_id, source_id, started_at, status, error_message)
+                    VALUES (
+                        (SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log),
+                        ?, CURRENT_TIMESTAMP, 'failed', ?
+                    )
                     RETURNING log_id
                     """,
                     (self.job_id, error_msg),

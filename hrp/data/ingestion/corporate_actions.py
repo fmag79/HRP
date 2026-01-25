@@ -12,6 +12,7 @@ import pandas as pd
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.data.sources.polygon_source import PolygonSource
 from hrp.data.sources.yfinance_source import YFinanceSource
 
 
@@ -34,7 +35,7 @@ def ingest_corporate_actions(
     symbols: list[str],
     start: date,
     end: date,
-    source: str = "yfinance",
+    source: str = "polygon",
 ) -> dict[str, Any]:
     """
     Ingest corporate actions for given symbols.
@@ -43,7 +44,7 @@ def ingest_corporate_actions(
         symbols: List of stock tickers
         start: Start date
         end: End date
-        source: Data source to use ('yfinance')
+        source: Data source to use ('polygon' or 'yfinance')
 
     Returns:
         Dictionary with ingestion stats
@@ -51,7 +52,9 @@ def ingest_corporate_actions(
     db = get_db()
 
     # Initialize data source
-    if source == "yfinance":
+    if source == "polygon":
+        data_source = PolygonSource()
+    elif source == "yfinance":
         data_source = YFinanceSource()
     else:
         raise ValueError(f"Unknown source: {source}")
@@ -118,6 +121,8 @@ def _upsert_corporate_actions(db, df: pd.DataFrame) -> int:
 
         # Insert into temp table
         for record in records:
+            # Handle both 'factor' (Polygon) and 'value' (YFinance) field names
+            factor_value = record.get('factor') or record.get('value')
             conn.execute("""
                 INSERT INTO temp_corporate_actions (symbol, date, action_type, factor, source)
                 VALUES (?, ?, ?, ?, ?)
@@ -125,7 +130,7 @@ def _upsert_corporate_actions(db, df: pd.DataFrame) -> int:
                 record['symbol'],
                 record['date'],
                 record['action_type'],
-                record.get('value'),  # YFinanceSource uses 'value', DB uses 'factor'
+                factor_value,
                 record.get('source', 'unknown'),
             ))
 
@@ -217,8 +222,8 @@ def main():
     parser.add_argument(
         "--source",
         type=str,
-        default="yfinance",
-        choices=["yfinance"],
+        default="polygon",
+        choices=["polygon", "yfinance"],
         help="Data source",
     )
     parser.add_argument(

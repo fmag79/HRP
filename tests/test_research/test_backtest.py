@@ -27,9 +27,22 @@ def test_db():
     # Reset the singleton to ensure fresh state
     DatabaseManager.reset()
 
+    # Set environment variable so get_db() uses the test database
+    os.environ["HRP_DB_PATH"] = db_path
+
     # Create database and schema
     create_tables(db_path)
     db = DatabaseManager(db_path)
+
+    # Insert symbols first to satisfy FK constraints
+    with db.connection() as conn:
+        conn.execute("""
+            INSERT INTO symbols (symbol, name, exchange)
+            VALUES
+                ('AAPL', 'Apple Inc.', 'NASDAQ'),
+                ('MSFT', 'Microsoft Corporation', 'NASDAQ')
+            ON CONFLICT DO NOTHING
+        """)
 
     # Insert test price data
     test_data = []
@@ -93,6 +106,8 @@ def test_db():
 
     # Cleanup
     DatabaseManager.reset()
+    if "HRP_DB_PATH" in os.environ:
+        del os.environ["HRP_DB_PATH"]
     try:
         os.remove(db_path)
     except Exception:
@@ -234,6 +249,7 @@ def fundamentals_db():
 
     os.remove(db_path)
     DatabaseManager.reset()
+    os.environ["HRP_DB_PATH"] = db_path
     create_tables(db_path)
     db = DatabaseManager(db_path)
 
@@ -265,6 +281,8 @@ def fundamentals_db():
     yield db_path
 
     DatabaseManager.reset()
+    if "HRP_DB_PATH" in os.environ:
+        del os.environ["HRP_DB_PATH"]
     try:
         os.remove(db_path)
     except Exception:

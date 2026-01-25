@@ -1,0 +1,17 @@
+{
+  "completed_symbols": [
+    "AAPL",
+    "GOOGL",
+    "MSFT"
+  ],
+  "failed_symbols": [],
+  "symbols": [
+    "AAPL",
+    "MSFT",
+    "GOOGL"
+  ],
+  "start_date": "2023-01-01",
+  "end_date": "2023-01-31",
+  "total_symbols": 3,
+  "progress_percent": 100.0
+}

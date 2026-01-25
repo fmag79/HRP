@@ -181,7 +181,7 @@ print(f"Model is stable: {result.is_stable}")
 | Phase 2: Hypothesis | ✅ Complete | Hypothesis registry, lineage |
 | Phase 3: Dashboard | ✅ Complete | Streamlit UI |
 | Phase 4: Data Pipeline | ✅ Complete | Multi-source ingestion, quality checks |
-| Phase 5: ML Framework | ✅ Complete | Walk-forward validation, overfitting guards |
+| Phase 5: ML Framework | ✅ Complete | Walk-forward validation, overfitting guards, robustness testing |
 
 ### Test Suite Status
 - **Pass Rate**: ~86% (902 passed / 1,048 total tests)

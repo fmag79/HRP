@@ -66,6 +66,7 @@ def log_backtest(
     hypothesis_id: str = None,
     tags: dict = None,
     feature_versions: dict[str, str] = None,
+    strategy_config: dict = None,
 ) -> str:
     """
     Log a backtest result to MLflow.
@@ -77,6 +78,7 @@ def log_backtest(
         hypothesis_id: Optional linked hypothesis ID
         tags: Additional tags
         feature_versions: Dict mapping feature names to versions
+        strategy_config: Strategy-specific configuration parameters
 
     Returns:
         MLflow run ID
@@ -100,6 +102,17 @@ def log_backtest(
         # Log cost model
         mlflow.log_param("spread_bps", config.costs.spread_bps)
         mlflow.log_param("slippage_bps", config.costs.slippage_bps)
+
+        # Log strategy configuration
+        if strategy_config:
+            for key, value in strategy_config.items():
+                # Handle complex values (dicts, lists)
+                if isinstance(value, dict):
+                    mlflow.log_param(f"strategy_{key}", json.dumps(value))
+                elif isinstance(value, list):
+                    mlflow.log_param(f"strategy_{key}", ",".join(str(v) for v in value))
+                else:
+                    mlflow.log_param(f"strategy_{key}", value)
 
         # Log feature versions
         if feature_versions:

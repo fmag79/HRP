@@ -47,7 +47,7 @@ class TestGetPriceDataDividends:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test price data
         test_dates = pd.date_range(start='2020-01-01', end='2020-01-10', freq='D')
@@ -87,7 +87,7 @@ class TestGetPriceDataDividends:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test price data
         test_dates = pd.date_range(start='2020-01-01', end='2020-01-10', freq='D')
@@ -118,7 +118,7 @@ class TestGetPriceDataDividends:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test price data: flat $100 prices
         test_dates = pd.date_range(start='2020-01-01', end='2020-01-10', freq='D')
@@ -209,7 +209,7 @@ class TestBacktestWithDividends:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test price data spanning a dividend
         test_dates = pd.date_range(start='2020-01-01', end='2020-12-31', freq='B')
@@ -272,7 +272,7 @@ class TestBacktestWithDividends:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test price data with modest growth
         test_dates = pd.date_range(start='2020-01-01', end='2020-12-31', freq='B')
@@ -357,7 +357,7 @@ class TestBacktestWithDividends:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test price data without dividends
         test_dates = pd.date_range(start='2020-01-01', end='2020-03-31', freq='B')
@@ -441,7 +441,7 @@ class TestBackwardCompatibility:
         db = get_db()
 
         # Insert symbol first (FK constraint)
-        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL')")
+        db.execute("INSERT INTO symbols (symbol) VALUES ('AAPL') ON CONFLICT DO NOTHING")
 
         # Insert test data with dividend
         test_dates = pd.date_range(start='2020-01-01', end='2020-01-10', freq='D')

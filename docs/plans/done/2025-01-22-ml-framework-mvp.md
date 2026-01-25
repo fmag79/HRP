@@ -1166,7 +1166,7 @@ Mark the MVP deliverables as complete:
 - [x] Walk-forward validation (`hrp/ml/validation.py`) - ✅ COMPLETE (expanding/rolling windows, stability score)
 - [x] Feature selection (in `hrp/ml/training.py`)
 - [x] Signal generation from predictions (`hrp/ml/signals.py`)
-- [ ] Overfitting guards (test set discipline) - Future
+- [x] Overfitting guards (test set discipline) - ✅ COMPLETE (TestSetGuard, validation gates, robustness checks)
 
 **Step 2: Commit**
 

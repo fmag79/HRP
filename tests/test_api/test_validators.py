@@ -72,6 +72,20 @@ def populated_db(test_db_manager):
 
     Returns the DatabaseManager instance for convenience.
     """
+    # Insert symbols first to satisfy FK constraints
+    test_db_manager.execute(
+        """
+        INSERT INTO symbols (symbol, name, exchange)
+        VALUES
+            ('AAPL', 'Apple Inc.', 'NASDAQ'),
+            ('MSFT', 'Microsoft Corporation', 'NASDAQ'),
+            ('GOOGL', 'Alphabet Inc.', 'NASDAQ'),
+            ('JPM', 'JPMorgan Chase', 'NYSE'),
+            ('TSLA', 'Tesla Inc.', 'NASDAQ')
+        ON CONFLICT DO NOTHING
+        """
+    )
+
     # Insert sample universe data
     test_db_manager.execute(
         """

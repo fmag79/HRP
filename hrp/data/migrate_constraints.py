@@ -2,12 +2,14 @@
 Database migration script for adding constraints and indexes to existing HRP databases.
 
 This script migrates databases created before constraint enforcement was added.
-It adds indexes and validates that existing data meets new constraint requirements.
+It adds indexes, creates the symbols table, and validates that existing data
+meets new constraint requirements.
 
 Usage:
     python -m hrp.data.migrate_constraints --migrate [--dry-run] [--db PATH]
     python -m hrp.data.migrate_constraints --validate [--db PATH]
     python -m hrp.data.migrate_constraints --status [--db PATH]
+    python -m hrp.data.migrate_constraints --populate-symbols [--db PATH]
 """
 
 import argparse
@@ -17,6 +19,104 @@ from loguru import logger
 
 from hrp.data.db import get_db
 from hrp.data.schema import INDEXES, TABLES
+
+
+def create_symbols_table(db_path: str | None = None, dry_run: bool = False) -> int:
+    """
+    Create the symbols table if it doesn't exist.
+
+    Returns the number of symbols in the table after creation.
+    """
+    db = get_db(db_path)
+    existing_tables = get_existing_tables(db_path)
+
+    if "symbols" in existing_tables:
+        logger.debug("symbols table already exists")
+        with db.connection() as conn:
+            result = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()
+            return result[0] if result else 0
+
+    if dry_run:
+        logger.info("[DRY RUN] Would create symbols table")
+        return 0
+
+    with db.connection() as conn:
+        conn.execute(TABLES["symbols"])
+        logger.info("Created symbols table")
+
+    return 0
+
+
+def populate_symbols_from_existing_data(db_path: str | None = None, dry_run: bool = False) -> int:
+    """
+    Populate the symbols table from existing data in prices, features, universe tables.
+
+    This extracts unique symbols from existing tables and inserts them into
+    the symbols table to enable FK constraints.
+
+    Returns the number of symbols inserted.
+    """
+    db = get_db(db_path)
+    existing_tables = get_existing_tables(db_path)
+
+    # Ensure symbols table exists
+    if "symbols" not in existing_tables:
+        create_symbols_table(db_path, dry_run)
+
+    with db.connection() as conn:
+        # Collect unique symbols from all relevant tables
+        symbols_query = """
+            SELECT DISTINCT symbol FROM (
+                SELECT DISTINCT symbol FROM prices
+                UNION
+                SELECT DISTINCT symbol FROM features
+                UNION
+                SELECT DISTINCT symbol FROM universe
+                UNION
+                SELECT DISTINCT symbol FROM fundamentals
+                UNION
+                SELECT DISTINCT symbol FROM corporate_actions
+            ) AS all_symbols
+            WHERE symbol IS NOT NULL
+        """
+
+        try:
+            result = conn.execute(symbols_query).fetchall()
+            unique_symbols = [row[0] for row in result]
+        except Exception as e:
+            logger.warning(f"Could not query existing symbols: {e}")
+            unique_symbols = []
+
+        if not unique_symbols:
+            logger.info("No existing symbols found to migrate")
+            return 0
+
+        # Get symbols already in symbols table
+        try:
+            existing = conn.execute("SELECT symbol FROM symbols").fetchall()
+            existing_symbols = {row[0] for row in existing}
+        except Exception:
+            existing_symbols = set()
+
+        new_symbols = [s for s in unique_symbols if s not in existing_symbols]
+
+        if not new_symbols:
+            logger.info(f"All {len(unique_symbols)} symbols already in symbols table")
+            return 0
+
+        if dry_run:
+            logger.info(f"[DRY RUN] Would insert {len(new_symbols)} symbols")
+            return len(new_symbols)
+
+        # Insert new symbols
+        for symbol in new_symbols:
+            conn.execute(
+                "INSERT INTO symbols (symbol) VALUES (?)",
+                [symbol]
+            )
+
+        logger.info(f"Inserted {len(new_symbols)} symbols into symbols table")
+        return len(new_symbols)
 
 
 def get_existing_indexes(db_path: str | None = None) -> set[str]:
@@ -205,6 +305,88 @@ def validate_data_constraints(db_path: str | None = None) -> dict[str, list[str]
         except Exception:
             pass
 
+        # Validate symbol FK relationships (prices.symbol, features.symbol -> symbols)
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM prices p
+                LEFT JOIN symbols s ON p.symbol = s.symbol
+                WHERE s.symbol IS NULL
+            """).fetchone()
+            if result and result[0] > 0:
+                violations.setdefault("prices", []).append(
+                    f"{result[0]} rows reference non-existent symbols (run --populate-symbols)"
+                )
+        except Exception:
+            pass
+
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM features f
+                LEFT JOIN symbols s ON f.symbol = s.symbol
+                WHERE s.symbol IS NULL
+            """).fetchone()
+            if result and result[0] > 0:
+                violations.setdefault("features", []).append(
+                    f"{result[0]} rows reference non-existent symbols (run --populate-symbols)"
+                )
+        except Exception:
+            pass
+
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM universe u
+                LEFT JOIN symbols s ON u.symbol = s.symbol
+                WHERE s.symbol IS NULL
+            """).fetchone()
+            if result and result[0] > 0:
+                violations.setdefault("universe", []).append(
+                    f"{result[0]} rows reference non-existent symbols (run --populate-symbols)"
+                )
+        except Exception:
+            pass
+
+        # Validate lineage.hypothesis_id -> hypotheses FK
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM lineage l
+                LEFT JOIN hypotheses h ON l.hypothesis_id = h.hypothesis_id
+                WHERE l.hypothesis_id IS NOT NULL AND h.hypothesis_id IS NULL
+            """).fetchone()
+            if result and result[0] > 0:
+                violations.setdefault("lineage", []).append(
+                    f"{result[0]} rows reference non-existent hypotheses"
+                )
+        except Exception:
+            pass
+
+        # Validate hypothesis_experiments.hypothesis_id -> hypotheses FK
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM hypothesis_experiments he
+                LEFT JOIN hypotheses h ON he.hypothesis_id = h.hypothesis_id
+                WHERE h.hypothesis_id IS NULL
+            """).fetchone()
+            if result and result[0] > 0:
+                violations.setdefault("hypothesis_experiments", []).append(
+                    f"{result[0]} rows reference non-existent hypotheses"
+                )
+        except Exception:
+            pass
+
+        # Validate lineage.parent_lineage_id self-reference
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM lineage l1
+                LEFT JOIN lineage l2 ON l1.parent_lineage_id = l2.lineage_id
+                WHERE l1.parent_lineage_id IS NOT NULL AND l2.lineage_id IS NULL
+            """).fetchone()
+            if result and result[0] > 0:
+                violations.setdefault("lineage", []).append(
+                    f"{result[0]} rows reference non-existent parent_lineage_id"
+                )
+        except Exception:
+            pass
+
     return violations
 
 
@@ -318,9 +500,21 @@ def migrate(db_path: str | None = None, dry_run: bool = False) -> bool:
         logger.error("No tables found in database. Run schema initialization first.")
         return False
 
-    # Validate data before migration
-    logger.info("Validating existing data against new constraints...")
-    violations = status["constraints"]["violations"]
+    # Step 1: Create symbols table if missing
+    existing_tables = get_existing_tables(db_path)
+    if "symbols" not in existing_tables:
+        logger.info("\nCreating symbols table...")
+        create_symbols_table(db_path, dry_run)
+
+    # Step 2: Populate symbols table from existing data
+    logger.info("\nPopulating symbols table from existing data...")
+    symbols_added = populate_symbols_from_existing_data(db_path, dry_run)
+    if symbols_added > 0:
+        logger.info(f"  Added {symbols_added} symbols")
+
+    # Step 3: Validate data before migration
+    logger.info("\nValidating existing data against new constraints...")
+    violations = validate_data_constraints(db_path)
 
     if violations:
         logger.error("Data validation failed! The following issues must be fixed:")
@@ -334,7 +528,7 @@ def migrate(db_path: str | None = None, dry_run: bool = False) -> bool:
 
     logger.info("✓ Data validation passed - all data meets new constraints")
 
-    # Add indexes
+    # Step 4: Add indexes
     logger.info(f"\nAdding {len(status['indexes']['missing'])} missing indexes...")
     index_stats = add_indexes(db_path, dry_run)
 
@@ -384,6 +578,11 @@ def main() -> None:
     parser.add_argument(
         "--status", action="store_true", help="Check current migration status"
     )
+    parser.add_argument(
+        "--populate-symbols",
+        action="store_true",
+        help="Populate symbols table from existing data",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Preview changes without applying")
     parser.add_argument("--db", type=str, help="Database path (optional)")
 
@@ -392,6 +591,14 @@ def main() -> None:
     if args.migrate:
         success = migrate(args.db, args.dry_run)
         exit(0 if success else 1)
+    elif args.populate_symbols:
+        create_symbols_table(args.db, args.dry_run)
+        count = populate_symbols_from_existing_data(args.db, args.dry_run)
+        if args.dry_run:
+            print(f"\n[DRY RUN] Would populate {count} symbols")
+        else:
+            print(f"\n✓ Symbols table populated with {count} new symbols")
+        exit(0)
     elif args.validate:
         violations = validate_data_constraints(args.db)
         if violations:

@@ -25,6 +25,15 @@ from hrp.api.platform import PlatformAPI
 from hrp.research.backtest import get_price_data, generate_momentum_signals, run_backtest
 from hrp.research.config import BacktestConfig, CostModel
 from hrp.research.mlflow_utils import setup_mlflow, get_or_create_experiment, get_best_runs
+from hrp.research.strategies import (
+    generate_multifactor_signals,
+    generate_ml_predicted_signals,
+    STRATEGY_REGISTRY,
+)
+from hrp.dashboard.components.strategy_config import (
+    render_multifactor_config,
+    render_ml_predicted_config,
+)
 
 
 # MLflow configuration
@@ -596,33 +605,43 @@ def render_run_backtest_tab() -> None:
 
         # Strategy configuration
         st.markdown("### Strategy Settings")
-        col1, col2, col3 = st.columns(3)
 
-        with col1:
-            strategy_type = st.selectbox(
-                "Strategy Type",
-                ["momentum"],
-                help="Strategy to backtest"
-            )
+        strategy_type = st.selectbox(
+            "Strategy Type",
+            ["momentum", "multifactor", "ml_predicted"],
+            format_func=lambda x: STRATEGY_REGISTRY.get(x, {}).get("name", x.title()),
+            help="Strategy to backtest"
+        )
 
-        with col2:
-            lookback_period = st.number_input(
-                "Lookback Period (days)",
-                min_value=20,
-                max_value=504,
-                value=252,
-                step=21,
-                help="Period for signal calculation"
-            )
+        # Strategy-specific configuration
+        strategy_config = {}
 
-        with col3:
-            top_n = st.number_input(
-                "Number of Holdings",
-                min_value=1,
-                max_value=50,
-                value=10,
-                help="Number of top stocks to hold"
-            )
+        if strategy_type == "momentum":
+            col1, col2 = st.columns(2)
+            with col1:
+                lookback_period = st.number_input(
+                    "Lookback Period (days)",
+                    min_value=20,
+                    max_value=504,
+                    value=252,
+                    step=21,
+                    help="Period for signal calculation"
+                )
+            with col2:
+                top_n = st.number_input(
+                    "Number of Holdings",
+                    min_value=1,
+                    max_value=50,
+                    value=10,
+                    help="Number of top stocks to hold"
+                )
+            strategy_config = {"lookback": lookback_period, "top_n": top_n}
+
+        elif strategy_type == "multifactor":
+            strategy_config = render_multifactor_config()
+
+        elif strategy_type == "ml_predicted":
+            strategy_config = render_ml_predicted_config()
 
         # Position sizing
         st.markdown("### Position Sizing")
@@ -738,8 +757,31 @@ def render_run_backtest_tab() -> None:
                 if strategy_type == "momentum":
                     signals = generate_momentum_signals(
                         prices,
-                        lookback=lookback_period,
-                        top_n=top_n
+                        lookback=strategy_config.get("lookback", 252),
+                        top_n=strategy_config.get("top_n", 10)
+                    )
+                elif strategy_type == "multifactor":
+                    if not strategy_config.get("feature_weights"):
+                        st.error("Please select at least one factor for multi-factor strategy.")
+                        return
+                    signals = generate_multifactor_signals(
+                        prices,
+                        feature_weights=strategy_config["feature_weights"],
+                        top_n=strategy_config.get("top_n", 10),
+                    )
+                elif strategy_type == "ml_predicted":
+                    if not strategy_config.get("features"):
+                        st.error("Please select at least one feature for ML-predicted strategy.")
+                        return
+                    signals = generate_ml_predicted_signals(
+                        prices,
+                        model_type=strategy_config.get("model_type", "ridge"),
+                        features=strategy_config.get("features"),
+                        signal_method=strategy_config.get("signal_method", "rank"),
+                        top_pct=strategy_config.get("top_pct", 0.1),
+                        threshold=strategy_config.get("threshold", 0.0),
+                        train_lookback=strategy_config.get("train_lookback", 252),
+                        retrain_frequency=strategy_config.get("retrain_frequency", 21),
                     )
                 else:
                     st.error(f"Unknown strategy type: {strategy_type}")
@@ -758,7 +800,8 @@ def render_run_backtest_tab() -> None:
                     experiment_name=DEFAULT_EXPERIMENT,
                     run_name=backtest_name,
                     hypothesis_id=hypothesis_id,
-                    tags={"actor": "user", "strategy": strategy_type}
+                    tags={"actor": "user", "strategy": strategy_type},
+                    strategy_config=strategy_config,
                 )
 
                 st.success(f"Backtest completed! Run ID: `{run_id}`")
@@ -772,27 +815,90 @@ def render_run_backtest_tab() -> None:
                 col3.metric("Max Drawdown", f"{result.max_drawdown * 100:.1f}%")
                 col4.metric("CAGR", f"{result.metrics.get('cagr', 0) * 100:.1f}%")
 
-                # Equity curve
+                # Equity curve with benchmark comparison
                 if result.equity_curve is not None and len(result.equity_curve) > 0:
                     st.markdown("### Equity Curve")
 
-                    eq_df = pd.DataFrame({
-                        "Date": result.equity_curve.index,
-                        "Portfolio Value": result.equity_curve.values
-                    })
+                    # Get benchmark data for comparison
+                    try:
+                        from hrp.research.benchmark import get_benchmark_prices
+                        
+                        benchmark_prices = get_benchmark_prices(
+                            "SPY",
+                            start=start_date,
+                            end=end_date
+                        )
+                        
+                        # Calculate benchmark equity curve (buy and hold)
+                        benchmark_prices['date'] = pd.to_datetime(benchmark_prices['date'])
+                        benchmark_prices = benchmark_prices.set_index('date')
+                        
+                        # Align with strategy dates
+                        benchmark_prices = benchmark_prices.reindex(result.equity_curve.index, method='ffill')
+                        
+                        # Normalize to same starting value as strategy
+                        initial_value = result.equity_curve.iloc[0]
+                        benchmark_normalized = (benchmark_prices['adj_close'] / benchmark_prices['adj_close'].iloc[0]) * initial_value
+                        
+                        # Create comparison dataframe
+                        eq_df = pd.DataFrame({
+                            "Date": result.equity_curve.index,
+                            "Strategy": result.equity_curve.values,
+                            "SPY (Buy & Hold)": benchmark_normalized.values
+                        })
+                        
+                        # Melt for plotly
+                        eq_df_melted = eq_df.melt(
+                            id_vars=["Date"],
+                            value_vars=["Strategy", "SPY (Buy & Hold)"],
+                            var_name="Portfolio",
+                            value_name="Value"
+                        )
+                        
+                        fig = px.line(
+                            eq_df_melted,
+                            x="Date",
+                            y="Value",
+                            color="Portfolio",
+                            title="Equity Curve vs Benchmark",
+                            color_discrete_map={
+                                "Strategy": "#1f77b4",
+                                "SPY (Buy & Hold)": "#ff7f0e"
+                            }
+                        )
+                        fig.update_layout(
+                            xaxis_title="Date",
+                            yaxis_title="Portfolio Value ($)",
+                            hovermode="x unified",
+                            legend=dict(
+                                yanchor="top",
+                                y=0.99,
+                                xanchor="left",
+                                x=0.01
+                            )
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    except Exception as e:
+                        logger.warning(f"Could not add benchmark comparison: {e}")
+                        # Fallback to strategy only
+                        eq_df = pd.DataFrame({
+                            "Date": result.equity_curve.index,
+                            "Portfolio Value": result.equity_curve.values
+                        })
 
-                    fig = px.line(
-                        eq_df,
-                        x="Date",
-                        y="Portfolio Value",
-                        title="Equity Curve"
-                    )
-                    fig.update_layout(
-                        xaxis_title="Date",
-                        yaxis_title="Portfolio Value ($)",
-                        hovermode="x unified"
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                        fig = px.line(
+                            eq_df,
+                            x="Date",
+                            y="Portfolio Value",
+                            title="Equity Curve"
+                        )
+                        fig.update_layout(
+                            xaxis_title="Date",
+                            yaxis_title="Portfolio Value ($)",
+                            hovermode="x unified"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
 
                 # Trade summary
                 if result.trades is not None and len(result.trades) > 0:

@@ -43,17 +43,20 @@ def _log_evaluation(
 ):
     """Log test set evaluation to database."""
     db = get_db()
-    
+
     # Convert metadata dict to JSON string if present
     import json
     metadata_json = json.dumps(metadata) if metadata else None
-    
+
     with db.connection() as conn:
         conn.execute(
             """
-            INSERT INTO test_set_evaluations 
-            (hypothesis_id, evaluated_at, override, override_reason, metadata)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO test_set_evaluations
+            (evaluation_id, hypothesis_id, evaluated_at, override, override_reason, metadata)
+            VALUES (
+                (SELECT COALESCE(MAX(evaluation_id), 0) + 1 FROM test_set_evaluations),
+                ?, ?, ?, ?, ?
+            )
             """,
             (
                 hypothesis_id,
