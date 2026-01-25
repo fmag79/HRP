@@ -15,6 +15,7 @@ from loguru import logger
 
 from hrp.data.db import get_db
 from hrp.data.ingestion.features import compute_features
+from hrp.data.ingestion.fundamentals import ingest_fundamentals
 from hrp.data.ingestion.prices import TEST_SYMBOLS, ingest_prices
 from hrp.data.universe import UniverseManager
 from hrp.notifications.email import EmailNotifier
@@ -594,4 +595,162 @@ class UniverseUpdateJob(IngestionJob):
             "symbols_removed": result["removed"],
             "symbols_excluded": result["excluded"],
             "exclusion_breakdown": result["exclusion_reasons"],
+        }
+
+
+class FundamentalsIngestionJob(IngestionJob):
+    """
+    Scheduled job for weekly fundamentals data ingestion.
+
+    Wraps the ingest_fundamentals() function with retry logic and logging.
+    Fetches revenue, EPS, book value, and other fundamental data with
+    point-in-time correctness for backtesting.
+    """
+
+    def __init__(
+        self,
+        symbols: list[str] | None = None,
+        metrics: list[str] | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        source: str = "simfin",
+        job_id: str = "fundamentals_ingestion",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        dependencies: list[str] | None = None,
+    ):
+        """
+        Initialize fundamentals ingestion job.
+
+        Args:
+            symbols: List of stock tickers to ingest (None = all universe symbols)
+            metrics: List of metrics to fetch (None = all default metrics)
+            start_date: Start date filter (optional)
+            end_date: End date filter (optional)
+            source: Data source ('simfin' or 'yfinance', default: 'simfin')
+            job_id: Unique identifier for this job
+            max_retries: Maximum number of retry attempts
+            retry_backoff: Exponential backoff multiplier (seconds)
+            dependencies: List of job IDs that must complete before this job runs
+        """
+        super().__init__(job_id, max_retries, retry_backoff, dependencies or [])
+        self.symbols = symbols
+        self.metrics = metrics
+        self.start_date = start_date
+        self.end_date = end_date
+        self.source = source
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute fundamentals data ingestion.
+
+        Returns:
+            Dictionary with job execution stats
+        """
+        # Get symbols from universe if not specified
+        symbols = self.symbols
+        if symbols is None:
+            manager = UniverseManager()
+            symbols = manager.get_current_members()
+            if not symbols:
+                # Fallback to test symbols if universe is empty
+                symbols = TEST_SYMBOLS
+            logger.info(f"Using {len(symbols)} symbols from universe")
+
+        logger.info(
+            f"Ingesting fundamentals for {len(symbols)} symbols using {self.source}"
+        )
+
+        # Call the underlying ingest_fundamentals function
+        result = ingest_fundamentals(
+            symbols=symbols,
+            metrics=self.metrics,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            source=self.source,
+        )
+
+        # Convert to standardized format expected by base class logging
+        return {
+            "records_fetched": result["records_fetched"],
+            "records_inserted": result["records_inserted"],
+            "symbols_success": result["symbols_success"],
+            "symbols_failed": result["symbols_failed"],
+            "failed_symbols": result.get("failed_symbols", []),
+            "fallback_used": result.get("fallback_used", 0),
+            "pit_violations_filtered": result.get("pit_violations_filtered", 0),
+        }
+
+
+class SnapshotFundamentalsJob(IngestionJob):
+    """
+    Scheduled job for weekly snapshot fundamentals ingestion.
+
+    Fetches current fundamental metrics (P/E ratio, P/B ratio, market cap,
+    dividend yield, EV/EBITDA) from Yahoo Finance. Unlike quarterly fundamentals,
+    these are point-in-time snapshots stored in the features table.
+
+    Recommended schedule: Weekly (fundamentals don't change daily)
+    """
+
+    def __init__(
+        self,
+        symbols: list[str] | None = None,
+        as_of_date: date | None = None,
+        job_id: str = "snapshot_fundamentals",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        dependencies: list[str] | None = None,
+    ):
+        """
+        Initialize snapshot fundamentals job.
+
+        Args:
+            symbols: List of stock tickers to ingest (None = all universe symbols)
+            as_of_date: Date to record for these values (default: today)
+            job_id: Unique identifier for this job
+            max_retries: Maximum number of retry attempts
+            retry_backoff: Exponential backoff multiplier (seconds)
+            dependencies: List of job IDs that must complete before this job runs
+        """
+        super().__init__(job_id, max_retries, retry_backoff, dependencies or [])
+        self.symbols = symbols
+        self.as_of_date = as_of_date or date.today()
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute snapshot fundamentals ingestion.
+
+        Returns:
+            Dictionary with job execution stats
+        """
+        from hrp.data.ingestion.fundamentals import ingest_snapshot_fundamentals
+
+        # Get symbols from universe if not specified
+        symbols = self.symbols
+        if symbols is None:
+            manager = UniverseManager()
+            symbols = manager.get_current_members()
+            if not symbols:
+                # Fallback to test symbols if universe is empty
+                symbols = TEST_SYMBOLS
+            logger.info(f"Using {len(symbols)} symbols from universe")
+
+        logger.info(
+            f"Ingesting snapshot fundamentals for {len(symbols)} symbols as of {self.as_of_date}"
+        )
+
+        # Call the underlying ingest_snapshot_fundamentals function
+        result = ingest_snapshot_fundamentals(
+            symbols=symbols,
+            as_of_date=self.as_of_date,
+        )
+
+        # Convert to standardized format expected by base class logging
+        return {
+            "records_fetched": result["records_fetched"],
+            "records_inserted": result["records_inserted"],
+            "symbols_success": result["symbols_success"],
+            "symbols_failed": result["symbols_failed"],
+            "failed_symbols": result.get("failed_symbols", []),
         }

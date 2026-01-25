@@ -68,7 +68,7 @@ prices = api.get_prices(['AAPL', 'MSFT'], start_date, end_date)
 features = api.get_features(['AAPL'], ['momentum_20d', 'volatility_60d'], date)
 ```
 
-### Available Features (32 total)
+### Available Features (44 total)
 
 | Category | Features |
 |----------|----------|
@@ -76,11 +76,27 @@ features = api.get_features(['AAPL'], ['momentum_20d', 'volatility_60d'], date)
 | **Momentum** | `momentum_20d`, `momentum_60d`, `momentum_252d` |
 | **Volatility** | `volatility_20d`, `volatility_60d` |
 | **Volume** | `volume_20d`, `volume_ratio`, `obv` |
-| **Oscillators** | `rsi_14d`, `cci_20d`, `roc_10d`, `stoch_k_14d`, `stoch_d_14d` |
+| **Oscillators** | `rsi_14d`, `cci_20d`, `roc_10d`, `stoch_k_14d`, `stoch_d_14d`, `williams_r_14d`, `mfi_14d` |
 | **Trend** | `atr_14d`, `adx_14d`, `macd_line`, `macd_signal`, `macd_histogram`, `trend` |
-| **Moving Averages** | `sma_20d`, `sma_50d`, `sma_200d` |
+| **Moving Averages** | `sma_20d`, `sma_50d`, `sma_200d`, `ema_12d`, `ema_26d` |
+| **EMA Signals** | `ema_crossover` |
 | **Price Ratios** | `price_to_sma_20d`, `price_to_sma_50d`, `price_to_sma_200d` |
 | **Bollinger Bands** | `bb_upper_20d`, `bb_lower_20d`, `bb_width_20d` |
+| **VWAP** | `vwap_20d` |
+| **Fundamental** | `market_cap`, `pe_ratio`, `pb_ratio`, `dividend_yield`, `ev_ebitda` |
+
+### Ingest Fundamental Data
+```python
+from hrp.data.ingestion.fundamentals import ingest_snapshot_fundamentals
+from datetime import date
+
+# Ingest current P/E, P/B, market cap, dividend yield, EV/EBITDA
+result = ingest_snapshot_fundamentals(
+    symbols=['AAPL', 'MSFT'],
+    as_of_date=date.today(),
+)
+print(f"Inserted {result['records_inserted']} fundamental records")
+```
 
 ### Run data quality checks
 ```python
@@ -104,7 +120,7 @@ scheduler.start()
 
 ### Run a job manually
 ```python
-from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob, UniverseUpdateJob
+from hrp.agents.jobs import PriceIngestionJob, FeatureComputationJob, UniverseUpdateJob, FundamentalsIngestionJob
 
 job = PriceIngestionJob(symbols=['AAPL'], start=date.today() - timedelta(days=7))
 result = job.run()  # Returns status, records_fetched, records_inserted
@@ -112,6 +128,23 @@ result = job.run()  # Returns status, records_fetched, records_inserted
 # Or update the universe
 universe_job = UniverseUpdateJob()
 result = universe_job.run()  # Fetches S&P 500 from Wikipedia, applies exclusions
+
+# Or run fundamentals ingestion (revenue, EPS, book value with point-in-time correctness)
+fundamentals_job = FundamentalsIngestionJob(symbols=['AAPL', 'MSFT'], source='yfinance')
+result = fundamentals_job.run()  # Uses SimFin (primary) or YFinance (fallback)
+```
+
+### Schedule weekly fundamentals ingestion
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+scheduler.setup_weekly_fundamentals(
+    fundamentals_time='10:00',  # Saturday 10 AM ET
+    day_of_week='sat',
+    source='simfin',  # or 'yfinance'
+)
+scheduler.start()
 ```
 
 ### Run a multi-factor strategy backtest
@@ -274,7 +307,7 @@ if not result.passed:
 
 ```bash
 pytest tests/ -v
-# Pass rate: 100% (1,279 passed, 1 skipped)
+# Pass rate: 100% (1,456 passed, 1 skipped)
 ```
 
 ## Services
@@ -293,6 +326,7 @@ pytest tests/ -v
 | `RESEND_API_KEY` | Resend API key for email notifications | For alerts |
 | `NOTIFICATION_EMAIL` | Email address for notifications | For alerts |
 | `NOTIFICATION_FROM_EMAIL` | From address (default: `noreply@hrp.local`) | No |
+| `SIMFIN_API_KEY` | SimFin API key for fundamentals (falls back to YFinance) | For fundamentals |
 
 ## Current Scope
 

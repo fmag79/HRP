@@ -68,7 +68,31 @@ def main():
         nargs="+",
         help="Symbols to ingest (default: all universe symbols)",
     )
-    
+    parser.add_argument(
+        "--fundamentals-time",
+        type=str,
+        default="10:00",
+        help="Time to run fundamentals ingestion (HH:MM format, default: 10:00 = 10 AM ET)",
+    )
+    parser.add_argument(
+        "--fundamentals-day",
+        type=str,
+        default="sat",
+        help="Day of week to run fundamentals (mon-sun, default: sat)",
+    )
+    parser.add_argument(
+        "--fundamentals-source",
+        type=str,
+        default="simfin",
+        choices=["simfin", "yfinance"],
+        help="Data source for fundamentals (default: simfin)",
+    )
+    parser.add_argument(
+        "--no-fundamentals",
+        action="store_true",
+        help="Disable weekly fundamentals ingestion job",
+    )
+
     args = parser.parse_args()
     
     # Create scheduler
@@ -91,7 +115,16 @@ def main():
             keep_days=args.backup_keep_days,
             include_mlflow=True,
         )
-    
+
+    # Setup weekly fundamentals ingestion
+    if not args.no_fundamentals:
+        logger.info("Setting up weekly fundamentals ingestion job...")
+        scheduler.setup_weekly_fundamentals(
+            fundamentals_time=args.fundamentals_time,
+            day_of_week=args.fundamentals_day,
+            source=args.fundamentals_source,
+        )
+
     # Start scheduler
     logger.info("Starting scheduler...")
     scheduler.start()

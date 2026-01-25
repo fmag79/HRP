@@ -10,7 +10,7 @@
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
 **Codebase:** ~18,000 lines of production code across 80+ modules
-**Test Suite:** 1,279 tests (100% pass rate)
+**Test Suite:** 1,456 tests (100% pass rate)
 
 ## Current Progress
 
@@ -62,6 +62,7 @@ Everything needed for a working research platform with reliable data.
 | Multi-source ingestion | ✅ | Polygon.io (primary) + Yahoo Finance (fallback) |
 | Feature store | ✅ | 32 technical indicators with versioning (`hrp/data/features/`) |
 | Scheduled jobs | ✅ | APScheduler: Prices (18:00) → Universe (18:05) → Features (18:10) |
+| **Weekly fundamentals** | ✅ | Saturday 10 AM ET via `FundamentalsIngestionJob` (SimFin + YFinance fallback) |
 | Data quality | ✅ | 5 check types: anomaly, completeness, gaps, stale, volume |
 | Backup system | ✅ | Automated daily, SHA-256 verification, 30-day retention |
 | Email notifications | ✅ | Via Resend for failures and summaries |
@@ -261,6 +262,7 @@ Complete feature tracking with spec links.
 | F-011 | Data Quality Framework | 1 | ✅ done | 005 |
 | F-012 | Backup & Recovery System | 1 | ✅ done | — |
 | F-013 | Feature Store Versioning | 1 | ✅ done | 006 |
+| F-044 | Weekly Fundamentals Ingestion | 1 | ✅ done | — |
 | F-014 | PyFolio/Empyrical Integration | 2 | ❌ planned | — |
 | F-015 | Statistical Significance Testing | 2 | ✅ done | — |
 | F-016 | Robustness Testing Framework | 2 | ✅ done | — |
@@ -344,6 +346,13 @@ Complete feature tracking with spec links.
 ## Document History
 
 **Last Updated:** January 25, 2026
+
+**Changes (January 25, 2026 - Weekly Fundamentals Ingestion):**
+- Added weekly fundamentals ingestion (Saturday 10 AM ET)
+- SimFin source with YFinance fallback for point-in-time correctness
+- New `FundamentalsIngestionJob` with scheduler integration
+- 31 new tests for fundamentals (18 ingestion + 13 job tests)
+- Test suite now at 1,456 tests (100% pass rate)
 
 **Changes (January 25, 2026 - ML Pipeline Optimization):**
 - Added parallel fold processing (`n_jobs` parameter) to walk-forward validation

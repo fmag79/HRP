@@ -726,6 +726,274 @@ def compute_stoch_d_14d(prices: pd.DataFrame) -> pd.DataFrame:
     return result.to_frame(name="stoch_d_14d")
 
 
+def compute_ema_12d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 12-day Exponential Moving Average.
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with EMA-12 values
+    """
+    close = prices["close"].unstack(level="symbol")
+    ema = close.ewm(span=12, adjust=False).mean()
+    result = ema.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="ema_12d")
+
+
+def compute_ema_26d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 26-day Exponential Moving Average.
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with EMA-26 values
+    """
+    close = prices["close"].unstack(level="symbol")
+    ema = close.ewm(span=26, adjust=False).mean()
+    result = ema.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="ema_26d")
+
+
+def compute_ema_crossover(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate EMA crossover signal.
+
+    Returns +1 when EMA-12 > EMA-26 (bullish), -1 when EMA-12 < EMA-26 (bearish).
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with crossover signal values (+1 or -1)
+    """
+    close = prices["close"].unstack(level="symbol")
+    ema_12 = close.ewm(span=12, adjust=False).mean()
+    ema_26 = close.ewm(span=26, adjust=False).mean()
+
+    # +1 for bullish (EMA-12 > EMA-26), -1 for bearish
+    crossover = np.sign(ema_12 - ema_26)
+
+    result = crossover.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="ema_crossover")
+
+
+def compute_williams_r_14d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 14-day Williams %R.
+
+    Williams %R = ((Highest High - Close) / (Highest High - Lowest Low)) * -100
+
+    Range: -100 to 0 (oversold < -80, overbought > -20)
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'high', 'low', 'close' columns
+
+    Returns:
+        DataFrame with Williams %R values (-100 to 0)
+    """
+    high = prices["high"].unstack(level="symbol")
+    low = prices["low"].unstack(level="symbol")
+    close = prices["close"].unstack(level="symbol")
+
+    highest_high = high.rolling(window=14).max()
+    lowest_low = low.rolling(window=14).min()
+
+    # Williams %R formula
+    williams_r = ((highest_high - close) / (highest_high - lowest_low)) * -100
+
+    result = williams_r.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="williams_r_14d")
+
+
+def compute_mfi_14d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 14-day Money Flow Index.
+
+    MFI is a volume-weighted RSI that uses typical price.
+    Range: 0 to 100 (oversold < 20, overbought > 80)
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and
+                'high', 'low', 'close', 'volume' columns
+
+    Returns:
+        DataFrame with MFI values (0-100)
+    """
+    high = prices["high"].unstack(level="symbol")
+    low = prices["low"].unstack(level="symbol")
+    close = prices["close"].unstack(level="symbol")
+    volume = prices["volume"].unstack(level="symbol")
+
+    # Typical Price
+    tp = (high + low + close) / 3
+
+    # Raw Money Flow
+    raw_mf = tp * volume
+
+    # Money Flow Direction
+    tp_diff = tp.diff()
+    positive_mf = raw_mf.where(tp_diff > 0, 0.0)
+    negative_mf = raw_mf.where(tp_diff < 0, 0.0)
+
+    # 14-period sums
+    positive_mf_sum = positive_mf.rolling(window=14).sum()
+    negative_mf_sum = negative_mf.rolling(window=14).sum()
+
+    # Money Flow Ratio and MFI
+    mfr = positive_mf_sum / negative_mf_sum
+    mfi = 100 - (100 / (1 + mfr))
+
+    # Handle edge cases
+    mfi = mfi.replace([np.inf, -np.inf], np.nan)
+
+    result = mfi.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="mfi_14d")
+
+
+def compute_vwap_20d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 20-day rolling VWAP approximation.
+
+    Note: True VWAP requires intraday data. This is a daily approximation
+    using typical price weighted by volume over a 20-day window.
+
+    VWAP = Sum(Typical Price * Volume) / Sum(Volume)
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and
+                'high', 'low', 'close', 'volume' columns
+
+    Returns:
+        DataFrame with VWAP approximation values
+    """
+    high = prices["high"].unstack(level="symbol")
+    low = prices["low"].unstack(level="symbol")
+    close = prices["close"].unstack(level="symbol")
+    volume = prices["volume"].unstack(level="symbol")
+
+    # Typical Price
+    tp = (high + low + close) / 3
+
+    # VWAP = Sum(TP * Volume) / Sum(Volume) over 20 days
+    tp_volume = tp * volume
+    vwap = tp_volume.rolling(window=20).sum() / volume.rolling(window=20).sum()
+
+    result = vwap.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="vwap_20d")
+
+
+# =============================================================================
+# Fundamental Feature Passthroughs
+# =============================================================================
+# These features are fetched from external sources (Yahoo Finance) and stored
+# directly in the features table. The compute functions are placeholders that
+# return NaN - actual values come from hrp/data/ingestion/fundamentals.py
+
+
+def compute_market_cap(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Market capitalization passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="market_cap")
+
+
+def compute_pe_ratio(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Price-to-Earnings ratio passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="pe_ratio")
+
+
+def compute_pb_ratio(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Price-to-Book ratio passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="pb_ratio")
+
+
+def compute_dividend_yield(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Dividend yield passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="dividend_yield")
+
+
+def compute_ev_ebitda(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enterprise Value to EBITDA ratio passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="ev_ebitda")
+
+
 # Registry of feature computation functions
 FEATURE_FUNCTIONS: dict[str, Callable[[pd.DataFrame], pd.DataFrame]] = {
     "momentum_20d": compute_momentum_20d,
@@ -761,6 +1029,18 @@ FEATURE_FUNCTIONS: dict[str, Callable[[pd.DataFrame], pd.DataFrame]] = {
     "price_to_sma_20d": compute_price_to_sma_20d,
     "price_to_sma_50d": compute_price_to_sma_50d,
     "price_to_sma_200d": compute_price_to_sma_200d,
+    "ema_12d": compute_ema_12d,
+    "ema_26d": compute_ema_26d,
+    "ema_crossover": compute_ema_crossover,
+    "williams_r_14d": compute_williams_r_14d,
+    "mfi_14d": compute_mfi_14d,
+    "vwap_20d": compute_vwap_20d,
+    # Fundamental features (passthrough - values from ingestion)
+    "market_cap": compute_market_cap,
+    "pe_ratio": compute_pe_ratio,
+    "pb_ratio": compute_pb_ratio,
+    "dividend_yield": compute_dividend_yield,
+    "ev_ebitda": compute_ev_ebitda,
 }
 
 
@@ -1352,6 +1632,73 @@ def register_default_features(db_path: str | None = None) -> None:
             "version": "v1",
             "computation_fn": compute_price_to_sma_200d,
             "description": "Price to 200-day SMA ratio. >1 = above SMA, <1 = below.",
+        },
+        {
+            "feature_name": "ema_12d",
+            "version": "v1",
+            "computation_fn": compute_ema_12d,
+            "description": "12-day Exponential Moving Average.",
+        },
+        {
+            "feature_name": "ema_26d",
+            "version": "v1",
+            "computation_fn": compute_ema_26d,
+            "description": "26-day Exponential Moving Average.",
+        },
+        {
+            "feature_name": "ema_crossover",
+            "version": "v1",
+            "computation_fn": compute_ema_crossover,
+            "description": "EMA crossover signal. +1 when EMA-12 > EMA-26 (bullish), -1 otherwise.",
+        },
+        {
+            "feature_name": "williams_r_14d",
+            "version": "v1",
+            "computation_fn": compute_williams_r_14d,
+            "description": "14-day Williams %R oscillator. Range -100 to 0. Oversold < -80, overbought > -20.",
+        },
+        {
+            "feature_name": "mfi_14d",
+            "version": "v1",
+            "computation_fn": compute_mfi_14d,
+            "description": "14-day Money Flow Index. Volume-weighted RSI. Range 0-100.",
+        },
+        {
+            "feature_name": "vwap_20d",
+            "version": "v1",
+            "computation_fn": compute_vwap_20d,
+            "description": "20-day rolling VWAP approximation using typical price weighted by volume.",
+        },
+        # Fundamental features (passthrough - values from external ingestion)
+        {
+            "feature_name": "market_cap",
+            "version": "v1",
+            "computation_fn": compute_market_cap,
+            "description": "Market capitalization in USD. Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "pe_ratio",
+            "version": "v1",
+            "computation_fn": compute_pe_ratio,
+            "description": "Trailing Price-to-Earnings ratio. Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "pb_ratio",
+            "version": "v1",
+            "computation_fn": compute_pb_ratio,
+            "description": "Price-to-Book ratio. Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "dividend_yield",
+            "version": "v1",
+            "computation_fn": compute_dividend_yield,
+            "description": "Dividend yield (decimal, e.g., 0.02 = 2%). Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "ev_ebitda",
+            "version": "v1",
+            "computation_fn": compute_ev_ebitda,
+            "description": "Enterprise Value to EBITDA ratio. Ingested from Yahoo Finance.",
         },
     ]
 

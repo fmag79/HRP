@@ -1,3 +1,22 @@
+## [1.4.0] - 2026-01-25
+
+### Added
+- **Weekly Fundamentals Ingestion**: Complete system for fetching quarterly fundamental data (revenue, EPS, book value, net income, total assets, total liabilities) with point-in-time correctness for backtesting:
+  - **SimFin Source** (`hrp/data/sources/simfin_source.py`): Primary data source using `publish_date` for true point-in-time correctness, with rate limiting (60 req/hour for free tier)
+  - **YFinance Fallback** (`hrp/data/ingestion/fundamentals.py`): Fallback adapter with 45-day conservative buffer for point-in-time estimates
+  - **Point-in-Time Validation**: `_validate_point_in_time()` filters records where `period_end > report_date` to prevent look-ahead bias
+  - **FundamentalsIngestionJob** (`hrp/agents/jobs.py`): Scheduled job with retry logic, logging, and email notifications on failure
+  - **Scheduler Integration**: `setup_weekly_fundamentals()` method for Saturday 10 AM ET scheduling
+  - **CLI Support**: `run_scheduler.py` with `--fundamentals-time`, `--fundamentals-day`, `--fundamentals-source`, `--no-fundamentals` flags
+- **SimFin API Key Config**: Added `SIMFIN_API_KEY` environment variable support in `hrp/utils/config.py`
+- **Fundamentals CLI**: `python -m hrp.data.ingestion.fundamentals --stats` for diagnostics
+
+### Testing
+- 31 new tests for fundamentals ingestion:
+  - `tests/test_data/test_fundamentals_ingestion.py`: 18 tests (point-in-time validation, upsert, adapter behavior)
+  - `tests/test_agents/test_fundamentals_job.py`: 13 tests (job init, execute, run, notifications)
+- 1,456 tests passing (100% pass rate)
+
 ## [1.3.2] - 2026-01-25
 
 ### Testing

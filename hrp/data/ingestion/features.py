@@ -29,7 +29,7 @@ def compute_features(
     """
     Compute technical features for given symbols.
 
-    Computes 32 technical indicators:
+    Computes 38 technical indicators:
     - Returns: returns_1d, returns_5d, returns_20d, returns_60d, returns_252d
     - Momentum: momentum_20d, momentum_60d, momentum_252d
     - Volatility: volatility_20d, volatility_60d
@@ -223,7 +223,7 @@ def compute_features_batch(
     # Generate date range for feature computation
     dates = pd.date_range(start, end, freq="B").date.tolist()
 
-    # Feature names to compute (all 32 standard features)
+    # Feature names to compute (all 38 standard features)
     feature_names = [
         "returns_1d", "returns_5d", "returns_20d", "returns_60d", "returns_252d",
         "momentum_20d", "momentum_60d", "momentum_252d",
@@ -236,6 +236,8 @@ def compute_features_batch(
         "trend",
         "bb_upper_20d", "bb_lower_20d", "bb_width_20d",
         "stoch_k_14d", "stoch_d_14d",
+        "ema_12d", "ema_26d", "ema_crossover",
+        "williams_r_14d", "mfi_14d", "vwap_20d",
     ]
 
     try:
@@ -415,6 +417,30 @@ def _compute_all_features(df: pd.DataFrame, symbol: str, version: str) -> pd.Dat
     df['stoch_k_14d'] = 100 * (df['price'] - lowest_low) / (highest_high - lowest_low)
     df['stoch_d_14d'] = df['stoch_k_14d'].rolling(window=3).mean()
 
+    # === EMA ===
+    df['ema_12d'] = df['price'].ewm(span=12, adjust=False).mean()
+    df['ema_26d'] = df['price'].ewm(span=26, adjust=False).mean()
+    df['ema_crossover'] = np.sign(df['ema_12d'] - df['ema_26d'])
+
+    # === WILLIAMS %R ===
+    df['williams_r_14d'] = ((highest_high - df['price']) / (highest_high - lowest_low)) * -100
+
+    # === MFI (Money Flow Index) ===
+    tp = (df['high'] + df['low'] + df['price']) / 3
+    raw_mf = tp * df['volume']
+    tp_diff = tp.diff()
+    positive_mf = raw_mf.where(tp_diff > 0, 0.0)
+    negative_mf = raw_mf.where(tp_diff < 0, 0.0)
+    positive_mf_sum = positive_mf.rolling(window=14).sum()
+    negative_mf_sum = negative_mf.rolling(window=14).sum()
+    mfr = positive_mf_sum / negative_mf_sum
+    df['mfi_14d'] = 100 - (100 / (1 + mfr))
+    df['mfi_14d'] = df['mfi_14d'].replace([np.inf, -np.inf], np.nan)
+
+    # === VWAP (20-day rolling approximation) ===
+    tp_vwap = (df['high'] + df['low'] + df['price']) / 3
+    df['vwap_20d'] = (tp_vwap * df['volume']).rolling(window=20).sum() / df['volume'].rolling(window=20).sum()
+
     # Convert wide format to long format
     feature_columns = [
         'returns_1d', 'returns_5d', 'returns_20d', 'returns_60d', 'returns_252d',
@@ -428,6 +454,8 @@ def _compute_all_features(df: pd.DataFrame, symbol: str, version: str) -> pd.Dat
         'trend',
         'bb_upper_20d', 'bb_lower_20d', 'bb_width_20d',
         'stoch_k_14d', 'stoch_d_14d',
+        'ema_12d', 'ema_26d', 'ema_crossover',
+        'williams_r_14d', 'mfi_14d', 'vwap_20d',
     ]
 
     for feature_name in feature_columns:

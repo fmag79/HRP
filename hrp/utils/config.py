@@ -51,6 +51,7 @@ class APIConfig:
     tiingo_api_key: str | None = None
     anthropic_api_key: str | None = None
     resend_api_key: str | None = None
+    simfin_api_key: str | None = None
 
 
 @dataclass
@@ -100,6 +101,7 @@ class Config:
                 tiingo_api_key=os.getenv("TIINGO_API_KEY"),
                 anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
                 resend_api_key=os.getenv("RESEND_API_KEY"),
+                simfin_api_key=os.getenv("SIMFIN_API_KEY"),
             ),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             notification_email=os.getenv("NOTIFICATION_EMAIL"),

@@ -314,6 +314,113 @@ class IngestionScheduler:
         )
         logger.info(f"Scheduled daily backup at {backup_time} ET (keep {keep_days} days)")
 
+    def setup_weekly_fundamentals(
+        self,
+        fundamentals_time: str = "10:00",
+        day_of_week: str = "sat",
+        source: str = "simfin",
+    ) -> None:
+        """
+        Configure weekly fundamentals data ingestion.
+
+        Schedules a job to fetch fundamental data (revenue, EPS, book value, etc.)
+        on the specified day of the week. Default is Saturday at 10 AM ET.
+
+        Args:
+            fundamentals_time: Time to run fundamentals ingestion (HH:MM format, default: 10:00)
+            day_of_week: Day of week to run (mon, tue, wed, thu, fri, sat, sun, default: sat)
+            source: Data source ('simfin' or 'yfinance', default: 'simfin')
+        """
+        from hrp.agents.jobs import FundamentalsIngestionJob
+
+        # Parse and validate time
+        hour, minute = _parse_time(fundamentals_time, "fundamentals_time")
+
+        # Validate day of week
+        valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+        day_lower = day_of_week.lower()
+        if day_lower not in valid_days:
+            raise ValueError(
+                f"day_of_week must be one of {valid_days}, got '{day_of_week}'"
+            )
+
+        # Create job instance
+        fundamentals_job = FundamentalsIngestionJob(
+            symbols=None,  # Use universe symbols
+            source=source,
+        )
+
+        # Schedule fundamentals ingestion job
+        self.add_job(
+            func=fundamentals_job.run,
+            job_id="fundamentals_ingestion",
+            trigger=CronTrigger(
+                day_of_week=day_lower,
+                hour=hour,
+                minute=minute,
+                timezone=ET_TIMEZONE,
+            ),
+            name="Weekly Fundamentals Ingestion",
+        )
+        logger.info(
+            f"Scheduled weekly fundamentals ingestion at {fundamentals_time} ET "
+            f"on {day_of_week.upper()} using {source}"
+        )
+
+    def setup_weekly_snapshot_fundamentals(
+        self,
+        snapshot_time: str = "10:30",
+        day_of_week: str = "sat",
+    ) -> None:
+        """
+        Configure weekly snapshot fundamentals ingestion.
+
+        Schedules a job to fetch current fundamental metrics (P/E ratio, P/B ratio,
+        market cap, dividend yield, EV/EBITDA) on the specified day of the week.
+        Default is Saturday at 10:30 AM ET.
+
+        These are point-in-time snapshots stored in the features table, unlike
+        quarterly fundamentals which have report dates for backtesting.
+
+        Args:
+            snapshot_time: Time to run snapshot ingestion (HH:MM format, default: 10:30)
+            day_of_week: Day of week to run (mon, tue, wed, thu, fri, sat, sun, default: sat)
+        """
+        from hrp.agents.jobs import SnapshotFundamentalsJob
+
+        # Parse and validate time
+        hour, minute = _parse_time(snapshot_time, "snapshot_time")
+
+        # Validate day of week
+        valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+        day_lower = day_of_week.lower()
+        if day_lower not in valid_days:
+            raise ValueError(
+                f"day_of_week must be one of {valid_days}, got '{day_of_week}'"
+            )
+
+        # Create job instance
+        snapshot_job = SnapshotFundamentalsJob(
+            symbols=None,  # Use universe symbols
+        )
+
+        # Schedule snapshot fundamentals ingestion job
+        self.add_job(
+            func=snapshot_job.run,
+            job_id="snapshot_fundamentals",
+            trigger=CronTrigger(
+                day_of_week=day_lower,
+                hour=hour,
+                minute=minute,
+                timezone=ET_TIMEZONE,
+            ),
+            name="Weekly Snapshot Fundamentals",
+        )
+        logger.info(
+            f"Scheduled weekly snapshot fundamentals at {snapshot_time} ET "
+            f"on {day_of_week.upper()}"
+        )
+
     def __repr__(self) -> str:
         """String representation of the scheduler."""
         status = "running" if self.running else "stopped"
