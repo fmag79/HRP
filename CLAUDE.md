@@ -316,7 +316,7 @@ pytest tests/ -v
 |---------|---------|------|
 | Dashboard | `streamlit run hrp/dashboard/app.py` | 8501 |
 | MLflow UI | `mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db` | 5000 |
-| Scheduler | `python run_scheduler.py` (or use launchd - see cookbook) | - |
+| Scheduler | `python -m hrp.agents.run_scheduler` (or use launchd - see cookbook) | - |
 
 ## Environment Variables
 
@@ -349,8 +349,28 @@ hrp/
 ├── mcp/            # Claude MCP servers
 ├── agents/         # Scheduled agents
 ├── notifications/  # Email alerts
+├── execution/      # Live trading, broker integration (Tier 4)
+├── monitoring/     # System health, ops alerting (Tier 3)
 └── utils/          # Shared utilities
 ```
+
+## Where Does New Code Go?
+
+| Adding... | Put it in... | Example |
+|-----------|--------------|---------|
+| New data provider | `hrp/data/sources/` | `simfin_source.py` |
+| New ingestion pipeline | `hrp/data/ingestion/` | `fundamentals.py` |
+| New computed feature | `hrp/data/features/definitions.py` + `computation.py` | `pe_ratio` |
+| New strategy/signal type | `hrp/research/strategies/` | pairs trading signals |
+| New ML model type | `hrp/ml/` | transformer model |
+| New risk check | `hrp/risk/` | correlation limits |
+| New dashboard page | `hrp/dashboard/pages/` | execution monitor |
+| New scheduled job | `hrp/agents/jobs.py` | weekly rebalance |
+| Expose via API | `hrp/api/platform.py` | new method |
+| Live trading (future) | `hrp/execution/` | order manager |
+| System monitoring (future) | `hrp/monitoring/` | uptime checks |
+
+**The Rule:** Data layer modules access `hrp/data/db.py` directly. Everything else goes through `hrp/api/platform.py`.
 
 ## Development Status
 

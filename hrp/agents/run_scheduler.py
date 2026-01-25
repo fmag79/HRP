@@ -7,10 +7,11 @@ This script starts the background scheduler that runs:
 - Daily universe update at 6:05 PM ET
 - Daily feature computation at 6:10 PM ET
 - Daily backup at 2:00 AM ET
+- Weekly fundamentals ingestion (Saturday 10 AM ET)
 
 Usage:
-    python run_scheduler.py
-    python run_scheduler.py --price-time 18:00 --universe-time 18:05 --feature-time 18:10
+    python -m hrp.agents.run_scheduler
+    python -m hrp.agents.run_scheduler --price-time 18:00 --universe-time 18:05 --feature-time 18:10
 """
 
 import argparse
@@ -26,7 +27,7 @@ def main():
         description="Run HRP Data Ingestion Scheduler",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    
+
     parser.add_argument(
         "--price-time",
         type=str,
@@ -94,10 +95,10 @@ def main():
     )
 
     args = parser.parse_args()
-    
+
     # Create scheduler
     scheduler = IngestionScheduler()
-    
+
     # Setup daily ingestion
     logger.info("Setting up daily data ingestion pipeline...")
     scheduler.setup_daily_ingestion(
@@ -106,7 +107,7 @@ def main():
         universe_job_time=args.universe_time,
         feature_job_time=args.feature_time,
     )
-    
+
     # Setup daily backup
     if not args.no_backup:
         logger.info("Setting up daily backup job...")
@@ -128,23 +129,23 @@ def main():
     # Start scheduler
     logger.info("Starting scheduler...")
     scheduler.start()
-    
+
     # List scheduled jobs
     jobs = scheduler.list_jobs()
     logger.info(f"Scheduler is running with {len(jobs)} jobs:")
     for job in jobs:
         logger.info(f"  - {job['id']}: next run at {job['next_run']}")
-    
+
     # Handle shutdown gracefully
     def signal_handler(sig, frame):
         logger.info("Received shutdown signal, stopping scheduler...")
         scheduler.shutdown(wait=True)
         logger.info("Scheduler stopped")
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     # Keep running
     logger.info("Scheduler is running. Press Ctrl+C to stop.")
     try:
