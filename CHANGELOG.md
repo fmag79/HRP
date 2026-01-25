@@ -1,3 +1,19 @@
+## [1.3.1] - 2026-01-25
+
+### Added
+- **Strategy Presets**: 4 named multi-factor strategy presets in `hrp/research/strategies.py`:
+  - **Mean Reversion**: rsi_14d (-1.0), price_to_sma_20d (-1.0), bb_width_20d (+1.0)
+  - **Trend Following**: trend (+1.0), adx_14d (+1.0), macd_histogram (+1.0)
+  - **Quality Momentum**: momentum_60d (+1.0), volatility_60d (-1.0), atr_14d (-0.5)
+  - **Volume Breakout**: volume_ratio (+1.0), obv (+1.0), momentum_20d (+0.5)
+- **Preset Helper Function**: `get_preset_strategy()` for programmatic access to preset configurations
+- **Dashboard Preset UI**: Preset dropdown in multi-factor strategy configuration with auto-populated weights
+- **Roadmap Items**: Added F-040 to F-043 (GARP, Sector Rotation, Risk Parity, Pairs Trading) as parked features
+
+### Testing
+- 7 new preset strategy tests (all passing)
+- 1,399 tests passing (100% pass rate)
+
 ## [1.3.0] - 2026-01-25
 
 ### Added
