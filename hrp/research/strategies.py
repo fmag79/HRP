@@ -412,6 +412,75 @@ STRATEGY_REGISTRY: dict[str, dict] = {
 }
 
 
+# Named presets for common strategy configurations
+PRESET_STRATEGIES: dict[str, dict] = {
+    "mean_reversion": {
+        "name": "Mean Reversion",
+        "description": "Buy oversold stocks expecting bounce-back",
+        "feature_weights": {
+            "rsi_14d": -1.0,
+            "price_to_sma_20d": -1.0,
+            "bb_width_20d": 1.0,
+        },
+        "default_top_n": 10,
+    },
+    "trend_following": {
+        "name": "Trend Following",
+        "description": "Ride established trends with strong momentum",
+        "feature_weights": {
+            "trend": 1.0,
+            "adx_14d": 1.0,
+            "macd_histogram": 1.0,
+        },
+        "default_top_n": 10,
+    },
+    "quality_momentum": {
+        "name": "Quality Momentum",
+        "description": "Momentum filtered by low volatility",
+        "feature_weights": {
+            "momentum_60d": 1.0,
+            "volatility_60d": -1.0,
+            "atr_14d": -0.5,
+        },
+        "default_top_n": 10,
+    },
+    "volume_breakout": {
+        "name": "Volume Breakout",
+        "description": "Detect accumulation via volume surge",
+        "feature_weights": {
+            "volume_ratio": 1.0,
+            "obv": 1.0,
+            "momentum_20d": 0.5,
+        },
+        "default_top_n": 10,
+    },
+}
+
+
+def get_preset_strategy(preset_name: str) -> dict:
+    """
+    Get preset strategy configuration.
+
+    Args:
+        preset_name: One of the keys in PRESET_STRATEGIES
+
+    Returns:
+        Dictionary with feature_weights and top_n
+
+    Raises:
+        ValueError: If preset_name not in registry
+    """
+    if preset_name not in PRESET_STRATEGIES:
+        available = ", ".join(sorted(PRESET_STRATEGIES.keys()))
+        raise ValueError(f"Unknown preset: '{preset_name}'. Available: {available}")
+
+    preset = PRESET_STRATEGIES[preset_name]
+    return {
+        "feature_weights": preset["feature_weights"].copy(),
+        "top_n": preset["default_top_n"],
+    }
+
+
 def get_strategy_generator(strategy_type: str) -> Callable:
     """
     Get the signal generator function for a strategy type.

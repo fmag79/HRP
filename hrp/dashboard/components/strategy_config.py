@@ -24,6 +24,7 @@ import streamlit as st
 from loguru import logger
 
 from hrp.ml.models import SUPPORTED_MODELS
+from hrp.research.strategies import PRESET_STRATEGIES
 
 
 def get_available_features() -> list[str]:
@@ -63,6 +64,29 @@ def render_multifactor_config() -> dict[str, Any]:
     """
     st.markdown("#### Multi-Factor Configuration")
 
+    # Preset selection
+    preset_options = ["Custom"] + [
+        PRESET_STRATEGIES[key]["name"] for key in PRESET_STRATEGIES
+    ]
+    preset_keys = ["custom"] + list(PRESET_STRATEGIES.keys())
+
+    selected_preset_name = st.selectbox(
+        "Strategy Preset",
+        options=preset_options,
+        index=0,
+        help="Select a preset or customize your own factors",
+        key="mf_preset",
+    )
+
+    # Map display name back to key
+    selected_preset_idx = preset_options.index(selected_preset_name)
+    selected_preset = preset_keys[selected_preset_idx]
+
+    # Show preset description if selected
+    if selected_preset != "custom":
+        preset_info = PRESET_STRATEGIES[selected_preset]
+        st.info(f"**{preset_info['name']}:** {preset_info['description']}")
+
     # Get available features
     available_features = get_available_features()
 
@@ -77,6 +101,11 @@ def render_multifactor_config() -> dict[str, Any]:
         "Negative weights favor lower values (e.g., volatility)."
     )
 
+    # Get preset weights if a preset is selected
+    preset_weights = {}
+    if selected_preset != "custom":
+        preset_weights = PRESET_STRATEGIES[selected_preset]["feature_weights"]
+
     feature_weights = {}
 
     # Create a grid for feature selection
@@ -90,36 +119,52 @@ def render_multifactor_config() -> dict[str, Any]:
         cols = st.columns(cols_per_row)
         for col, feature in zip(cols, chunk):
             with col:
+                # Determine default selection based on preset
+                if selected_preset != "custom":
+                    default_selected = feature in preset_weights
+                else:
+                    default_selected = feature in ["momentum_20d"]
+
                 # Checkbox to include feature
                 include = st.checkbox(
                     feature.replace("_", " ").title(),
-                    value=feature in ["momentum_20d"],  # Default momentum selected
-                    key=f"mf_include_{feature}",
+                    value=default_selected,
+                    key=f"mf_include_{feature}_{selected_preset}",  # Key includes preset to reset on change
                 )
 
                 if include:
-                    # Weight slider (-1 to 1)
-                    default_weight = -0.5 if "volatility" in feature else 1.0
+                    # Get default weight from preset or use standard defaults
+                    if feature in preset_weights:
+                        default_weight = preset_weights[feature]
+                    elif "volatility" in feature:
+                        default_weight = -0.5
+                    else:
+                        default_weight = 1.0
+
                     weight = st.slider(
                         f"Weight",
                         min_value=-1.0,
                         max_value=1.0,
                         value=default_weight,
                         step=0.1,
-                        key=f"mf_weight_{feature}",
+                        key=f"mf_weight_{feature}_{selected_preset}",  # Key includes preset to reset on change
                     )
                     feature_weights[feature] = weight
 
     # Top N selection
     st.markdown("**Position Settings**")
+    default_top_n = 10
+    if selected_preset != "custom":
+        default_top_n = PRESET_STRATEGIES[selected_preset]["default_top_n"]
+
     top_n = st.number_input(
         "Number of Holdings (Top N)",
         min_value=1,
         max_value=50,
-        value=10,
+        value=default_top_n,
         step=1,
         help="Number of top-ranked stocks to hold",
-        key="mf_top_n",
+        key=f"mf_top_n_{selected_preset}",  # Key includes preset to reset on change
     )
 
     # Show summary

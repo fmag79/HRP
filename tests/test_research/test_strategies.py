@@ -18,7 +18,9 @@ from hrp.research.strategies import (
     generate_multifactor_signals,
     generate_ml_predicted_signals,
     STRATEGY_REGISTRY,
+    PRESET_STRATEGIES,
     get_strategy_generator,
+    get_preset_strategy,
 )
 
 
@@ -438,3 +440,109 @@ class TestEdgeCases:
         )
 
         assert isinstance(signals, pd.DataFrame)
+
+
+class TestPresetStrategies:
+    """Tests for PRESET_STRATEGIES and get_preset_strategy()."""
+
+    def test_preset_registry_contains_expected_presets(self):
+        """Registry should contain all four strategy presets."""
+        assert "mean_reversion" in PRESET_STRATEGIES
+        assert "trend_following" in PRESET_STRATEGIES
+        assert "quality_momentum" in PRESET_STRATEGIES
+        assert "volume_breakout" in PRESET_STRATEGIES
+
+    def test_preset_entries_have_required_fields(self):
+        """Each preset should have name, description, feature_weights, default_top_n."""
+        required_fields = ["name", "description", "feature_weights", "default_top_n"]
+        for preset_name, preset in PRESET_STRATEGIES.items():
+            for field in required_fields:
+                assert field in preset, f"{preset_name} missing '{field}'"
+            # Validate types
+            assert isinstance(preset["name"], str)
+            assert isinstance(preset["description"], str)
+            assert isinstance(preset["feature_weights"], dict)
+            assert isinstance(preset["default_top_n"], int)
+            assert preset["default_top_n"] > 0
+
+    def test_preset_feature_weights_use_valid_features(self):
+        """Feature weights should use valid feature names from the feature store."""
+        # Known valid features from CLAUDE.md
+        valid_features = {
+            "returns_1d", "returns_5d", "returns_20d", "returns_60d", "returns_252d",
+            "momentum_20d", "momentum_60d", "momentum_252d",
+            "volatility_20d", "volatility_60d",
+            "volume_20d", "volume_ratio", "obv",
+            "rsi_14d", "cci_20d", "roc_10d", "stoch_k_14d", "stoch_d_14d",
+            "atr_14d", "adx_14d", "macd_line", "macd_signal", "macd_histogram", "trend",
+            "sma_20d", "sma_50d", "sma_200d",
+            "price_to_sma_20d", "price_to_sma_50d", "price_to_sma_200d",
+            "bb_upper_20d", "bb_lower_20d", "bb_width_20d",
+        }
+
+        for preset_name, preset in PRESET_STRATEGIES.items():
+            for feature in preset["feature_weights"]:
+                assert feature in valid_features, (
+                    f"Preset '{preset_name}' uses unknown feature '{feature}'"
+                )
+
+    def test_get_preset_strategy_returns_config(self):
+        """get_preset_strategy should return feature_weights and top_n."""
+        config = get_preset_strategy("mean_reversion")
+
+        assert "feature_weights" in config
+        assert "top_n" in config
+        assert isinstance(config["feature_weights"], dict)
+        assert isinstance(config["top_n"], int)
+
+        # Verify it returns a copy (not the original)
+        config["feature_weights"]["test_feature"] = 999
+        assert "test_feature" not in PRESET_STRATEGIES["mean_reversion"]["feature_weights"]
+
+    def test_get_preset_strategy_all_presets(self):
+        """get_preset_strategy should work for all defined presets."""
+        for preset_name in PRESET_STRATEGIES:
+            config = get_preset_strategy(preset_name)
+            assert config["feature_weights"] == PRESET_STRATEGIES[preset_name]["feature_weights"]
+            assert config["top_n"] == PRESET_STRATEGIES[preset_name]["default_top_n"]
+
+    def test_get_preset_strategy_unknown_raises(self):
+        """get_preset_strategy should raise ValueError for unknown preset."""
+        with pytest.raises(ValueError, match="Unknown preset"):
+            get_preset_strategy("unknown_preset")
+
+    def test_preset_generates_valid_signals(self, sample_prices, mock_feature_computer):
+        """Each preset should generate valid signals when used with generate_multifactor_signals."""
+        dates = sample_prices.index
+        symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
+
+        # Create mock features with all required features
+        all_features = set()
+        for preset in PRESET_STRATEGIES.values():
+            all_features.update(preset["feature_weights"].keys())
+
+        mock_data = {
+            feature: np.random.randn(len(dates) * len(symbols))
+            for feature in all_features
+        }
+        mock_features = pd.DataFrame(
+            mock_data,
+            index=pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"]),
+        )
+        mock_feature_computer.get_stored_features.return_value = mock_features
+
+        # Test each preset
+        for preset_name in PRESET_STRATEGIES:
+            config = get_preset_strategy(preset_name)
+            signals = generate_multifactor_signals(
+                sample_prices,
+                feature_weights=config["feature_weights"],
+                top_n=config["top_n"],
+            )
+
+            assert isinstance(signals, pd.DataFrame), f"Preset {preset_name} failed"
+            assert len(signals) == len(dates)
+            # Signals should be binary (0 or 1)
+            unique_values = signals.values.flatten()
+            unique_values = unique_values[~np.isnan(unique_values)]
+            assert set(unique_values).issubset({0.0, 1.0})

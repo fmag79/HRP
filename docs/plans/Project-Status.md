@@ -165,6 +165,10 @@ ML capabilities, statistical rigor, and agent integration.
 | `trend_strength` | Deferred | Combined ADX * sign(price-SMA) for signed strength; existing `adx_14d` + `trend` sufficient for now |
 | `wr_14d` | Low priority | Williams %R oscillator - similar to Stochastic %K, redundant with existing oscillators |
 | `efi_13d` | Low priority | Elder's Force Index - combines price change with volume; OBV provides similar insight |
+| `garp` | Needs fundamentals | Requires P/E, earnings growth features |
+| `sector_rotation` | Needs sector data | Requires sector labels in universe table |
+| `risk_parity` | Position sizing | Needs sizing logic, not just signal generation |
+| `pairs_trading` | Long-only constraint | Requires short positions |
 
 ---
 
@@ -283,6 +287,10 @@ Complete feature tracking with spec links.
 | F-037 | Combined Trend Strength | 2 | 🅿️ parked | — |
 | F-038 | Williams %R (wr_14d) | 2 | 🅿️ parked | — |
 | F-039 | Elder's Force Index (efi_13d) | 2 | 🅿️ parked | — |
+| F-040 | GARP Strategy | 2 | 🅿️ parked | — |
+| F-041 | Sector Rotation | 2 | 🅿️ parked | — |
+| F-042 | Risk Parity | 2 | 🅿️ parked | — |
+| F-043 | Pairs Trading | 4 | 🅿️ parked | — |
 
 ---
 
