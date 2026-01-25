@@ -1,3 +1,13 @@
+## [1.2.0] - 2026-01-24
+
+### Added
+- **FeatureCountValidator**: New validator in `hrp/risk/overfitting.py` to prevent overfitting by limiting feature count in ML models:
+  - Configurable warning threshold (default 30 features)
+  - Configurable maximum threshold (default 50 features)
+  - Features-per-sample ratio check (warns if < 10 samples per feature)
+  - Returns detailed validation results with pass/warning status
+- **FeatureCountValidator Tests**: 5 comprehensive tests covering all validation scenarios
+
 ## [1.1.1] - 2026-01-24
 
 ### Added
