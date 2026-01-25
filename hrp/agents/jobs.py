@@ -651,7 +651,7 @@ class FundamentalsIngestionJob(IngestionJob):
         symbols = self.symbols
         if symbols is None:
             manager = UniverseManager()
-            symbols = manager.get_current_members()
+            symbols = manager.get_universe_at_date(date.today())
             if not symbols:
                 # Fallback to test symbols if universe is empty
                 symbols = TEST_SYMBOLS
@@ -730,7 +730,7 @@ class SnapshotFundamentalsJob(IngestionJob):
         symbols = self.symbols
         if symbols is None:
             manager = UniverseManager()
-            symbols = manager.get_current_members()
+            symbols = manager.get_universe_at_date(date.today())
             if not symbols:
                 # Fallback to test symbols if universe is empty
                 symbols = TEST_SYMBOLS

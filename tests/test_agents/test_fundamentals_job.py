@@ -153,7 +153,7 @@ class TestFundamentalsIngestionJobExecute:
         from hrp.agents.jobs import FundamentalsIngestionJob
 
         mock_manager = MagicMock()
-        mock_manager.get_current_members.return_value = ["AAPL", "MSFT", "GOOGL"]
+        mock_manager.get_universe_at_date.return_value = ["AAPL", "MSFT", "GOOGL"]
         mock_manager_class.return_value = mock_manager
 
         mock_ingest.return_value = {
@@ -169,7 +169,7 @@ class TestFundamentalsIngestionJobExecute:
         job = FundamentalsIngestionJob(symbols=None)  # Use universe
         result = job.execute()
 
-        mock_manager.get_current_members.assert_called_once()
+        mock_manager.get_universe_at_date.assert_called_once()
         call_kwargs = mock_ingest.call_args[1]
         assert call_kwargs["symbols"] == ["AAPL", "MSFT", "GOOGL"]
 
