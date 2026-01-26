@@ -2,19 +2,282 @@
 Job scheduler for HRP data ingestion pipeline.
 
 Uses APScheduler to orchestrate daily data ingestion with dependency management.
+Includes LineageEventWatcher for event-driven agent coordination.
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Union
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 from pytz import timezone
 
 
 # Configure timezone for market close (6 PM ET)
 ET_TIMEZONE = timezone("US/Eastern")
+
+
+@dataclass
+class LineageTrigger:
+    """Configuration for a lineage event trigger."""
+
+    event_type: str
+    actor_filter: str | None
+    callback: Callable[[dict], None]
+    name: str = ""
+
+
+class LineageEventWatcher:
+    """
+    Polls lineage table for events and triggers callbacks.
+
+    Enables automatic agent coordination by watching for specific lineage events
+    and triggering downstream agents when events match configured criteria.
+
+    Example:
+        watcher = LineageEventWatcher(poll_interval_seconds=60)
+
+        # Trigger Alpha Researcher when Signal Scientist creates hypotheses
+        watcher.register_trigger(
+            event_type="hypothesis_created",
+            actor_filter="agent:signal-scientist",
+            callback=lambda event: alpha_researcher.run(event["hypothesis_id"]),
+        )
+
+        watcher.start()  # Starts polling in background
+    """
+
+    def __init__(
+        self,
+        poll_interval_seconds: int = 60,
+        scheduler: "IngestionScheduler | None" = None,
+    ):
+        """
+        Initialize the LineageEventWatcher.
+
+        Args:
+            poll_interval_seconds: How often to poll for new events (default: 60)
+            scheduler: Optional existing scheduler to use for polling job
+        """
+        self.poll_interval_seconds = poll_interval_seconds
+        self._triggers: list[LineageTrigger] = []
+        self._last_lineage_id: int = 0
+        self._running = False
+        self._scheduler = scheduler
+        self._owns_scheduler = scheduler is None
+
+        # Initialize last_lineage_id from database
+        self._init_last_lineage_id()
+
+    def _init_last_lineage_id(self) -> None:
+        """Initialize last_lineage_id from database to avoid reprocessing old events."""
+        try:
+            from hrp.data.db import get_db
+
+            db = get_db()
+            result = db.fetchone("SELECT COALESCE(MAX(lineage_id), 0) FROM lineage")
+            self._last_lineage_id = result[0] if result else 0
+            logger.debug(f"LineageEventWatcher initialized at lineage_id={self._last_lineage_id}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize last_lineage_id: {e}")
+            self._last_lineage_id = 0
+
+    def register_trigger(
+        self,
+        event_type: str,
+        callback: Callable[[dict], None],
+        actor_filter: str | None = None,
+        name: str = "",
+    ) -> None:
+        """
+        Register a callback for matching lineage events.
+
+        Args:
+            event_type: Event type to match (e.g., "hypothesis_created")
+            callback: Function to call when event matches. Receives event dict.
+            actor_filter: Optional actor to filter on (e.g., "agent:signal-scientist")
+            name: Optional name for this trigger (for logging)
+        """
+        trigger = LineageTrigger(
+            event_type=event_type,
+            actor_filter=actor_filter,
+            callback=callback,
+            name=name or f"{event_type}:{actor_filter or '*'}",
+        )
+        self._triggers.append(trigger)
+        logger.info(f"Registered lineage trigger: {trigger.name}")
+
+    def unregister_trigger(self, event_type: str, actor_filter: str | None = None) -> bool:
+        """
+        Unregister a trigger by event_type and actor_filter.
+
+        Args:
+            event_type: Event type of trigger to remove
+            actor_filter: Actor filter of trigger to remove
+
+        Returns:
+            True if trigger was found and removed, False otherwise
+        """
+        for i, trigger in enumerate(self._triggers):
+            if trigger.event_type == event_type and trigger.actor_filter == actor_filter:
+                removed = self._triggers.pop(i)
+                logger.info(f"Unregistered lineage trigger: {removed.name}")
+                return True
+        return False
+
+    def poll(self) -> int:
+        """
+        Check for new events and fire matching callbacks.
+
+        Returns:
+            Number of events processed
+        """
+        if not self._triggers:
+            return 0
+
+        try:
+            from hrp.data.db import get_db
+
+            db = get_db()
+
+            # Get events newer than last processed
+            query = """
+                SELECT lineage_id, event_type, timestamp, actor,
+                       hypothesis_id, experiment_id, details, parent_lineage_id
+                FROM lineage
+                WHERE lineage_id > ?
+                ORDER BY lineage_id ASC
+                LIMIT 100
+            """
+            rows = db.fetchall(query, (self._last_lineage_id,))
+
+            events_processed = 0
+
+            for row in rows:
+                event = {
+                    "lineage_id": row[0],
+                    "event_type": row[1],
+                    "timestamp": row[2],
+                    "actor": row[3],
+                    "hypothesis_id": row[4],
+                    "experiment_id": row[5],
+                    "details": row[6],
+                    "parent_lineage_id": row[7],
+                }
+
+                # Update last processed ID
+                self._last_lineage_id = event["lineage_id"]
+
+                # Check each trigger
+                for trigger in self._triggers:
+                    if self._matches_trigger(event, trigger):
+                        try:
+                            logger.info(
+                                f"Firing trigger '{trigger.name}' for event "
+                                f"{event['event_type']} (lineage_id={event['lineage_id']})"
+                            )
+                            trigger.callback(event)
+                            events_processed += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Trigger '{trigger.name}' failed for event "
+                                f"{event['lineage_id']}: {e}"
+                            )
+
+            if events_processed > 0:
+                logger.debug(f"LineageEventWatcher processed {events_processed} events")
+
+            return events_processed
+
+        except Exception as e:
+            logger.error(f"LineageEventWatcher poll failed: {e}")
+            return 0
+
+    def _matches_trigger(self, event: dict, trigger: LineageTrigger) -> bool:
+        """Check if an event matches a trigger's criteria."""
+        # Check event type
+        if event["event_type"] != trigger.event_type:
+            return False
+
+        # Check actor filter if specified
+        if trigger.actor_filter is not None:
+            if event["actor"] != trigger.actor_filter:
+                return False
+
+        return True
+
+    def start(self) -> None:
+        """Start polling for events in background."""
+        if self._running:
+            logger.warning("LineageEventWatcher is already running")
+            return
+
+        # Create scheduler if needed
+        if self._scheduler is None:
+            self._scheduler = IngestionScheduler()
+            self._owns_scheduler = True
+
+        # Add polling job
+        self._scheduler.add_job(
+            func=self.poll,
+            job_id="lineage_event_watcher",
+            trigger=IntervalTrigger(seconds=self.poll_interval_seconds),
+            name="Lineage Event Watcher",
+        )
+
+        # Start scheduler if we own it
+        if self._owns_scheduler:
+            self._scheduler.start()
+
+        self._running = True
+        logger.info(
+            f"LineageEventWatcher started (poll interval: {self.poll_interval_seconds}s, "
+            f"triggers: {len(self._triggers)})"
+        )
+
+    def stop(self) -> None:
+        """Stop polling for events."""
+        if not self._running:
+            logger.warning("LineageEventWatcher is not running")
+            return
+
+        if self._scheduler:
+            try:
+                self._scheduler.remove_job("lineage_event_watcher")
+            except Exception:
+                pass  # Job may not exist
+
+            if self._owns_scheduler:
+                self._scheduler.shutdown()
+
+        self._running = False
+        logger.info("LineageEventWatcher stopped")
+
+    @property
+    def running(self) -> bool:
+        """Check if watcher is running."""
+        return self._running
+
+    @property
+    def trigger_count(self) -> int:
+        """Number of registered triggers."""
+        return len(self._triggers)
+
+    @property
+    def last_lineage_id(self) -> int:
+        """Last processed lineage ID."""
+        return self._last_lineage_id
+
+    def __repr__(self) -> str:
+        """String representation."""
+        status = "running" if self._running else "stopped"
+        return (
+            f"<LineageEventWatcher status={status} triggers={len(self._triggers)} "
+            f"last_id={self._last_lineage_id}>"
+        )
 
 
 def _parse_time(time_str: str, param_name: str) -> tuple[int, int]:
@@ -480,6 +743,49 @@ class IngestionScheduler:
         logger.info(
             f"Scheduled weekly signal scan at {scan_time} ET on {day_of_week.upper()} "
             f"(IC threshold: {ic_threshold}, create_hypotheses: {create_hypotheses})"
+        )
+
+    def setup_quality_sentinel(
+        self,
+        audit_time: str = "06:00",
+        audit_window_days: int = 1,
+        include_monitoring: bool = True,
+        send_alerts: bool = True,
+    ) -> None:
+        """
+        Configure daily ML Quality Sentinel audit.
+
+        Schedules the ML Quality Sentinel to run daily, auditing recent experiments
+        for overfitting, leakage, and other quality issues.
+
+        Args:
+            audit_time: Time to run audit (HH:MM format, default: 06:00 AM ET)
+            audit_window_days: Days of recent experiments to audit (default: 1)
+            include_monitoring: Whether to monitor deployed models (default: True)
+            send_alerts: Whether to send email alerts for critical issues (default: True)
+        """
+        from hrp.agents.research_agents import MLQualitySentinel
+
+        # Parse and validate time
+        hour, minute = _parse_time(audit_time, "audit_time")
+
+        # Create agent instance
+        sentinel = MLQualitySentinel(
+            audit_window_days=audit_window_days,
+            include_monitoring=include_monitoring,
+            send_alerts=send_alerts,
+        )
+
+        # Schedule quality sentinel job
+        self.add_job(
+            func=sentinel.run,
+            job_id="ml_quality_sentinel",
+            trigger=CronTrigger(hour=hour, minute=minute, timezone=ET_TIMEZONE),
+            name="Daily ML Quality Sentinel",
+        )
+        logger.info(
+            f"Scheduled ML Quality Sentinel at {audit_time} ET "
+            f"(window: {audit_window_days} days, monitoring: {include_monitoring})"
         )
 
     def __repr__(self) -> str:

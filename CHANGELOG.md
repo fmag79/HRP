@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### Performance
+- **SignalScientist Query Optimization**: Pre-load all data at scan start to reduce database queries from ~22,800 to 2:
+  - `_load_all_features()`: Load all features in single query
+  - `_compute_forward_returns()`: Pre-compute forward returns for all horizons
+  - `_scan_feature()` and `_scan_combination()` now accept pre-loaded data
+  - Vectorized ranking operations in combination scanning (removed per-date loop)
+
 ### Added
 - **Signal Scientist Research Agent**: First automated research agent for feature/signal discovery:
   - **ResearchAgent Base Class** (`hrp/agents/research_agents.py`): Abstract base extending `IngestionJob` with actor tracking, lineage logging, and Platform API access

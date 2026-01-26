@@ -1030,6 +1030,130 @@ def get_deployed_strategies() -> dict[str, Any]:
 
 
 # =============================================================================
+# Agent Tools (1)
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_ml_quality_sentinel(
+    experiment_ids: Optional[list[str]] = None,
+    hypothesis_ids: Optional[list[str]] = None,
+    audit_window_days: int = 1,
+    include_monitoring: bool = True,
+) -> dict[str, Any]:
+    """
+    Run ML Quality Sentinel to audit experiments for overfitting and quality issues.
+
+    The Sentinel acts as an independent watchdog, checking ML experiments for:
+    - Sharpe decay (train vs test) - flags if >50%
+    - Target leakage - flags if correlation >0.95
+    - Feature count - flags if >50 features or insufficient samples/feature
+    - Fold stability - flags if CV >2.0 or sign flips across folds
+    - Suspiciously good results - flags if IC >0.15 or Sharpe >3.0
+
+    Can also monitor deployed models for IC degradation and loss streaks.
+
+    Args:
+        experiment_ids: Specific experiment IDs to audit (optional)
+        hypothesis_ids: Audit all experiments for these hypothesis IDs (optional)
+        audit_window_days: Days of recent experiments to audit if no IDs provided (default 1)
+        include_monitoring: Whether to monitor deployed models (default True)
+
+    Returns:
+        Audit summary with counts of passed/flagged experiments and issues found
+    """
+    from hrp.agents.research_agents import MLQualitySentinel
+
+    sentinel = MLQualitySentinel(
+        experiment_ids=experiment_ids,
+        hypothesis_ids=hypothesis_ids,
+        audit_window_days=audit_window_days,
+        include_monitoring=include_monitoring,
+        fail_on_critical=False,  # Don't raise exception in MCP context
+        send_alerts=False,  # Let Claude decide on notifications
+    )
+
+    result = sentinel.run()
+
+    return format_response(
+        success=result.get("status") == "success",
+        data={
+            "report_date": result.get("result", {}).get("report_date"),
+            "experiments_audited": result.get("result", {}).get("experiments_audited", 0),
+            "experiments_passed": result.get("result", {}).get("experiments_passed", 0),
+            "experiments_flagged": result.get("result", {}).get("experiments_flagged", 0),
+            "critical_issues_count": result.get("result", {}).get("critical_issues_count", 0),
+            "warnings_count": result.get("result", {}).get("warnings_count", 0),
+            "models_monitored": result.get("result", {}).get("models_monitored", 0),
+            "model_alerts_count": result.get("result", {}).get("model_alerts_count", 0),
+            "duration_seconds": result.get("result", {}).get("duration_seconds", 0),
+        },
+        message=(
+            f"Audited {result.get('result', {}).get('experiments_audited', 0)} experiments, "
+            f"flagged {result.get('result', {}).get('experiments_flagged', 0)} with issues"
+        ),
+    )
+
+
+# =============================================================================
+# Alpha Researcher Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_alpha_researcher(
+    hypothesis_ids: Optional[list[str]] = None,
+    write_research_note: bool = True,
+) -> dict[str, Any]:
+    """
+    Run Alpha Researcher to review and refine draft hypotheses.
+
+    The Alpha Researcher uses Claude to analyze hypotheses and add:
+    - Economic rationale (why the signal might work)
+    - Regime context (performance in different market conditions)
+    - Related hypothesis search (novelty assessment)
+    - Refined thesis and falsification criteria
+
+    Hypotheses that pass review are promoted from "draft" to "testing" status.
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to review (optional).
+                       If not provided, reviews all hypotheses in "draft" status.
+        write_research_note: Whether to write research note to docs/research/ (default True)
+
+    Returns:
+        Summary of reviewed hypotheses with recommendations
+    """
+    from hrp.agents.alpha_researcher import AlphaResearcher, AlphaResearcherConfig
+
+    config = AlphaResearcherConfig(
+        hypothesis_ids=hypothesis_ids,
+        write_research_note=write_research_note,
+    )
+
+    researcher = AlphaResearcher(config=config)
+    result = researcher.run()
+
+    return format_response(
+        success=True,
+        data={
+            "hypotheses_reviewed": result.get("hypotheses_reviewed", 0),
+            "hypotheses_promoted": result.get("hypotheses_promoted", 0),
+            "hypotheses_deferred": result.get("hypotheses_deferred", 0),
+            "analyses": result.get("analyses", []),
+            "research_note_path": result.get("research_note_path"),
+            "token_usage": result.get("token_usage", {}),
+        },
+        message=(
+            f"Reviewed {result.get('hypotheses_reviewed', 0)} hypotheses, "
+            f"promoted {result.get('hypotheses_promoted', 0)} to testing"
+        ),
+    )
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 

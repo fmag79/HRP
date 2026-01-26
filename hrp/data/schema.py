@@ -215,6 +215,18 @@ TABLES = {
                    'universe_update', 'agent_run_complete', 'system_error', 'other'))
         )
     """,
+    "agent_checkpoints": """
+        CREATE TABLE IF NOT EXISTS agent_checkpoints (
+            agent_type VARCHAR NOT NULL,
+            run_id VARCHAR NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            state_json TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            completed BOOLEAN DEFAULT FALSE,
+            PRIMARY KEY (agent_type, run_id)
+        )
+    """,
 }
 
 # Indexes for performance

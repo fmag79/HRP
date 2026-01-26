@@ -10,7 +10,7 @@
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
 **Codebase:** ~23,500 lines of production code across 85+ modules
-**Test Suite:** 1,711 tests (100% pass rate)
+**Test Suite:** 2,101 tests (100% pass rate)
 
 ## Current Progress
 
@@ -362,7 +362,15 @@ Complete feature tracking with spec links.
 
 ## Document History
 
-**Last Updated:** January 25, 2026
+**Last Updated:** January 26, 2026
+
+**Changes (January 26, 2026 - SignalScientist Performance Optimization):**
+- Optimized SignalScientist to pre-load all data at scan start
+- Reduced database queries from ~22,800 to 2 per scan
+- Added `_load_all_features()` and `_compute_forward_returns()` methods
+- Refactored `_scan_feature()` and `_scan_combination()` to use pre-loaded data
+- Vectorized ranking operations in combination scanning
+- Test suite now at 2,101 tests (100% pass rate)
 
 **Changes (January 25, 2026 - Signal Scientist Implementation):**
 - Implemented Signal Scientist research agent (`hrp/agents/research_agents.py`)

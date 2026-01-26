@@ -466,7 +466,7 @@ print(f"Regime stability: {'PASS' if stability.passed else 'FAIL'}")
 
 ```bash
 pytest tests/ -v
-# Pass rate: 100% (1,828 passed, 18 skipped)
+# Pass rate: 100% (2,101 passed, 18 skipped)
 ```
 
 ## Services

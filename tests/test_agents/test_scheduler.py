@@ -1,11 +1,13 @@
 """
-Tests for IngestionScheduler.
+Tests for IngestionScheduler and LineageEventWatcher.
 
 Tests cover:
 - Scheduler initialization
 - Job lifecycle (add, remove, list)
 - Daily ingestion setup
 - Start/shutdown behavior
+- LineageEventWatcher trigger registration
+- LineageEventWatcher polling
 """
 
 from datetime import datetime
@@ -13,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hrp.agents.scheduler import IngestionScheduler
+from hrp.agents.scheduler import IngestionScheduler, LineageEventWatcher, LineageTrigger
 
 
 class TestSchedulerInit:
@@ -420,3 +422,440 @@ class TestSetupWeeklySignalScan:
 
         with pytest.raises(ValueError):
             scheduler.setup_weekly_signal_scan(scan_time="25:00")
+
+
+class TestLineageTrigger:
+    """Tests for LineageTrigger dataclass."""
+
+    def test_trigger_creation(self):
+        """Should create a LineageTrigger with all fields."""
+
+        def dummy_callback(event):
+            pass
+
+        trigger = LineageTrigger(
+            event_type="hypothesis_created",
+            actor_filter="agent:signal-scientist",
+            callback=dummy_callback,
+            name="test-trigger",
+        )
+
+        assert trigger.event_type == "hypothesis_created"
+        assert trigger.actor_filter == "agent:signal-scientist"
+        assert trigger.callback == dummy_callback
+        assert trigger.name == "test-trigger"
+
+    def test_trigger_default_name(self):
+        """Should use empty string as default name."""
+
+        def dummy_callback(event):
+            pass
+
+        trigger = LineageTrigger(
+            event_type="hypothesis_created",
+            actor_filter=None,
+            callback=dummy_callback,
+        )
+
+        assert trigger.name == ""
+
+
+class TestLineageEventWatcherInit:
+    """Tests for LineageEventWatcher initialization."""
+
+    @patch("hrp.data.db.get_db")
+    def test_init_default_interval(self, mock_get_db):
+        """Should initialize with default poll interval."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        assert watcher.poll_interval_seconds == 60
+        assert not watcher.running
+        assert watcher.trigger_count == 0
+
+    @patch("hrp.data.db.get_db")
+    def test_init_custom_interval(self, mock_get_db):
+        """Should accept custom poll interval."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher(poll_interval_seconds=30)
+
+        assert watcher.poll_interval_seconds == 30
+
+    @patch("hrp.data.db.get_db")
+    def test_init_reads_last_lineage_id(self, mock_get_db):
+        """Should initialize last_lineage_id from database."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (42,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        assert watcher.last_lineage_id == 42
+
+    @patch("hrp.data.db.get_db")
+    def test_init_handles_db_error(self, mock_get_db):
+        """Should handle database error gracefully."""
+        mock_get_db.side_effect = Exception("DB error")
+
+        watcher = LineageEventWatcher()
+
+        assert watcher.last_lineage_id == 0
+
+    @patch("hrp.data.db.get_db")
+    def test_repr(self, mock_get_db):
+        """Should show status and trigger count in repr."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (10,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        repr_str = repr(watcher)
+        assert "LineageEventWatcher" in repr_str
+        assert "stopped" in repr_str
+        assert "triggers=0" in repr_str
+        assert "last_id=10" in repr_str
+
+
+class TestLineageEventWatcherTriggers:
+    """Tests for LineageEventWatcher trigger registration."""
+
+    @patch("hrp.data.db.get_db")
+    def test_register_trigger(self, mock_get_db):
+        """Should register a trigger."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        def callback(event):
+            pass
+
+        watcher.register_trigger(
+            event_type="hypothesis_created",
+            callback=callback,
+            actor_filter="agent:test",
+            name="test-trigger",
+        )
+
+        assert watcher.trigger_count == 1
+
+    @patch("hrp.data.db.get_db")
+    def test_register_multiple_triggers(self, mock_get_db):
+        """Should register multiple triggers."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        def callback(event):
+            pass
+
+        watcher.register_trigger("event1", callback)
+        watcher.register_trigger("event2", callback)
+        watcher.register_trigger("event3", callback)
+
+        assert watcher.trigger_count == 3
+
+    @patch("hrp.data.db.get_db")
+    def test_unregister_trigger(self, mock_get_db):
+        """Should unregister a trigger."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        def callback(event):
+            pass
+
+        watcher.register_trigger("event1", callback, actor_filter="agent:test")
+        assert watcher.trigger_count == 1
+
+        result = watcher.unregister_trigger("event1", actor_filter="agent:test")
+
+        assert result is True
+        assert watcher.trigger_count == 0
+
+    @patch("hrp.data.db.get_db")
+    def test_unregister_nonexistent_trigger(self, mock_get_db):
+        """Should return False for nonexistent trigger."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        result = watcher.unregister_trigger("nonexistent", actor_filter=None)
+
+        assert result is False
+
+    @patch("hrp.data.db.get_db")
+    def test_register_trigger_auto_name(self, mock_get_db):
+        """Should generate name when not provided."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        def callback(event):
+            pass
+
+        watcher.register_trigger("event1", callback, actor_filter="agent:test")
+
+        # Verify trigger was registered (name is generated internally)
+        assert watcher.trigger_count == 1
+
+
+class TestLineageEventWatcherPoll:
+    """Tests for LineageEventWatcher polling."""
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_no_triggers_returns_zero(self, mock_get_db):
+        """Should return 0 when no triggers registered."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+        result = watcher.poll()
+
+        assert result == 0
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_fires_matching_callback(self, mock_get_db):
+        """Should fire callback for matching event."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_db.fetchall.return_value = [
+            (1, "hypothesis_created", datetime.now(), "agent:signal-scientist", "HYP-001", None, None, None)
+        ]
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        received_events = []
+
+        def callback(event):
+            received_events.append(event)
+
+        watcher.register_trigger("hypothesis_created", callback, actor_filter="agent:signal-scientist")
+        result = watcher.poll()
+
+        assert result == 1
+        assert len(received_events) == 1
+        assert received_events[0]["hypothesis_id"] == "HYP-001"
+        assert watcher.last_lineage_id == 1
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_filters_by_event_type(self, mock_get_db):
+        """Should not fire callback for non-matching event type."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_db.fetchall.return_value = [
+            (1, "experiment_run", datetime.now(), "agent:test", None, "EXP-001", None, None)
+        ]
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        received_events = []
+
+        def callback(event):
+            received_events.append(event)
+
+        watcher.register_trigger("hypothesis_created", callback)
+        result = watcher.poll()
+
+        assert result == 0
+        assert len(received_events) == 0
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_filters_by_actor(self, mock_get_db):
+        """Should not fire callback for non-matching actor."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_db.fetchall.return_value = [
+            (1, "hypothesis_created", datetime.now(), "user", "HYP-001", None, None, None)
+        ]
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        received_events = []
+
+        def callback(event):
+            received_events.append(event)
+
+        watcher.register_trigger("hypothesis_created", callback, actor_filter="agent:signal-scientist")
+        result = watcher.poll()
+
+        assert result == 0
+        assert len(received_events) == 0
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_wildcard_actor(self, mock_get_db):
+        """Should match any actor when actor_filter is None."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_db.fetchall.return_value = [
+            (1, "hypothesis_created", datetime.now(), "any-actor", "HYP-001", None, None, None)
+        ]
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        received_events = []
+
+        def callback(event):
+            received_events.append(event)
+
+        watcher.register_trigger("hypothesis_created", callback, actor_filter=None)
+        result = watcher.poll()
+
+        assert result == 1
+        assert len(received_events) == 1
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_handles_callback_error(self, mock_get_db):
+        """Should continue processing after callback error."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_db.fetchall.return_value = [
+            (1, "event1", datetime.now(), "agent", None, None, None, None),
+            (2, "event2", datetime.now(), "agent", None, None, None, None),
+        ]
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        call_count = {"value": 0}
+
+        def failing_callback(event):
+            call_count["value"] += 1
+            if event["lineage_id"] == 1:
+                raise Exception("Test error")
+
+        watcher.register_trigger("event1", failing_callback)
+        watcher.register_trigger("event2", failing_callback)
+
+        # Should not raise, and should process second event
+        result = watcher.poll()
+
+        # First callback fails, second succeeds
+        assert call_count["value"] == 2
+        assert watcher.last_lineage_id == 2
+
+    @patch("hrp.data.db.get_db")
+    def test_poll_handles_db_error(self, mock_get_db):
+        """Should handle database error gracefully."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+
+        def callback(event):
+            pass
+
+        watcher.register_trigger("event1", callback)
+
+        # Simulate DB error on poll
+        mock_db.fetchall.side_effect = Exception("DB error")
+
+        result = watcher.poll()
+
+        assert result == 0
+
+
+class TestLineageEventWatcherStartStop:
+    """Tests for LineageEventWatcher start/stop."""
+
+    @patch("hrp.data.db.get_db")
+    def test_start_creates_scheduler(self, mock_get_db):
+        """Should create scheduler when not provided."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+        watcher.start()
+
+        try:
+            assert watcher.running
+        finally:
+            watcher.stop()
+
+    @patch("hrp.data.db.get_db")
+    def test_start_uses_provided_scheduler(self, mock_get_db):
+        """Should use provided scheduler."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        scheduler = IngestionScheduler()
+        scheduler.start()
+
+        try:
+            watcher = LineageEventWatcher(scheduler=scheduler)
+            watcher.start()
+
+            assert watcher.running
+            # Verify job was added to existing scheduler
+            jobs = scheduler.list_jobs()
+            job_ids = [j["id"] for j in jobs]
+            assert "lineage_event_watcher" in job_ids
+        finally:
+            watcher.stop()
+            scheduler.shutdown(wait=False)
+
+    @patch("hrp.data.db.get_db")
+    def test_start_already_running(self, mock_get_db):
+        """Should not raise when starting already running watcher."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+        watcher.start()
+
+        try:
+            watcher.start()  # Should not raise
+            assert watcher.running
+        finally:
+            watcher.stop()
+
+    @patch("hrp.data.db.get_db")
+    def test_stop_watcher(self, mock_get_db):
+        """Should stop running watcher."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+        watcher.start()
+        assert watcher.running
+
+        watcher.stop()
+        assert not watcher.running
+
+    @patch("hrp.data.db.get_db")
+    def test_stop_not_running(self, mock_get_db):
+        """Should not raise when stopping non-running watcher."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        watcher = LineageEventWatcher()
+        watcher.stop()  # Should not raise
+
+        assert not watcher.running

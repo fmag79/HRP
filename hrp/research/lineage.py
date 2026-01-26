@@ -24,6 +24,7 @@ class EventType(str, Enum):
     HYPOTHESIS_CREATED = "hypothesis_created"
     HYPOTHESIS_UPDATED = "hypothesis_updated"
     HYPOTHESIS_DELETED = "hypothesis_deleted"
+    HYPOTHESIS_FLAGGED = "hypothesis_flagged"
     EXPERIMENT_RUN = "experiment_run"
     EXPERIMENT_LINKED = "experiment_linked"
     VALIDATION_PASSED = "validation_passed"
@@ -31,6 +32,8 @@ class EventType(str, Enum):
     DEPLOYMENT_APPROVED = "deployment_approved"
     DEPLOYMENT_REJECTED = "deployment_rejected"
     AGENT_RUN_COMPLETE = "agent_run_complete"
+    ML_QUALITY_SENTINEL_AUDIT = "ml_quality_sentinel_audit"
+    ALPHA_RESEARCHER_REVIEW = "alpha_researcher_review"
     DATA_INGESTION = "data_ingestion"
     SYSTEM_ERROR = "system_error"
 
