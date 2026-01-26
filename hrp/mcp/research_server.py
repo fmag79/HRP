@@ -1036,6 +1036,12 @@ def get_deployed_strategies() -> dict[str, Any]:
 
 def main() -> None:
     """Run the MCP server."""
+    import sys
+
+    # Configure loguru to write to stderr (stdout must be clean for MCP JSON-RPC)
+    logger.remove()
+    logger.add(sys.stderr, level="INFO")
+
     logger.info("Starting HRP Research MCP Server")
     mcp.run()
 
