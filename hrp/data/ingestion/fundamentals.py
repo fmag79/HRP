@@ -562,7 +562,7 @@ def main():
     if not symbols:
         from hrp.data.universe import UniverseManager
         manager = UniverseManager()
-        symbols = manager.get_current_members()
+        symbols = manager.get_universe_at_date(date.today())
         if not symbols:
             # Fallback to some test symbols
             symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
