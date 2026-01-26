@@ -25,7 +25,14 @@
   - `tests/test_agents/test_signal_scientist.py`: 21 tests (IC calculation, hypothesis creation, MLflow, email)
   - `tests/test_agents/test_research_agents.py`: 11 tests (base class, dataclasses)
   - `tests/test_agents/test_scheduler.py`: 6 new tests (weekly signal scan setup)
-- 1,554 tests passing (100% pass rate)
+- Expanded test coverage for core modules:
+  - `tests/test_data/test_simfin_source.py`: 38 tests (SimFin API, rate limiting)
+  - `tests/test_data/test_computation.py`: 64 tests (44 feature functions, FeatureComputer class)
+  - `tests/test_data/test_prices_ingestion.py`: 19 tests (ingest_prices, upsert, stats)
+  - `tests/test_data/test_fundamentals_ingestion.py`: 34 tests (point-in-time, adapters)
+  - `tests/test_ml/test_validation.py`: 51 tests (walk-forward validation, fold processing)
+- Coverage improvements: simfin_source.py 0%→88%, computation.py 0%→77%, validation.py 71%→93%
+- 1,680 tests passing (100% pass rate)
 
 ## [1.4.1] - 2026-01-25
 
