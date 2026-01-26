@@ -33,12 +33,21 @@ class SweepConstraint:
         constraint_type: Type of constraint
             - "sum_equals": Parameters must sum to value
             - "max_total": Parameters must sum to at most value
+            - "min_total": Parameters must sum to at least value
             - "ratio_bound": Ratio between params within bounds
             - "difference_min": Minimum difference between two params
+            - "difference_max": Maximum difference between two params
             - "exclusion": Mutually exclusive parameters
+            - "range_bound": Single param must be within [value, upper_bound]
+            - "product_max": Product of params must be <= value
+            - "product_min": Product of params must be >= value
+            - "same_sign": All params must have same sign (positive/negative)
+            - "step_multiple": Param must be a multiple of value
+            - "monotonic_increasing": params[0] < params[1] < params[2] ...
+            - "at_least_n_nonzero": At least N params must be non-zero
         params: List of parameter names involved
         value: Constraint value
-        upper_bound: Upper bound for ratio_bound (optional)
+        upper_bound: Upper bound for ratio_bound/range_bound (optional)
     """
 
     constraint_type: str
@@ -51,18 +60,39 @@ class SweepConstraint:
         valid_types = (
             "sum_equals",
             "max_total",
+            "min_total",
             "ratio_bound",
             "difference_min",
+            "difference_max",
             "exclusion",
+            "range_bound",
+            "product_max",
+            "product_min",
+            "same_sign",
+            "step_multiple",
+            "monotonic_increasing",
+            "at_least_n_nonzero",
         )
         if self.constraint_type not in valid_types:
             raise ValueError(
                 f"Invalid constraint_type: '{self.constraint_type}'. "
                 f"Valid types: {', '.join(valid_types)}"
             )
-        if len(self.params) < 2 and self.constraint_type != "max_total":
+        # Single-param constraints
+        single_param_types = ("range_bound", "step_multiple")
+        # Multi-param constraints requiring at least 2
+        multi_param_types = (
+            "sum_equals", "ratio_bound", "difference_min", "difference_max",
+            "exclusion", "product_max", "product_min", "same_sign",
+            "monotonic_increasing", "at_least_n_nonzero",
+        )
+        if self.constraint_type in multi_param_types and len(self.params) < 2:
             raise ValueError(
                 f"Constraint type '{self.constraint_type}' requires at least 2 params"
+            )
+        if self.constraint_type in single_param_types and len(self.params) < 1:
+            raise ValueError(
+                f"Constraint type '{self.constraint_type}' requires at least 1 param"
             )
 
 
@@ -175,10 +205,21 @@ def validate_constraints(
             if sum(param_values) > constraint.value:
                 return False
 
+        elif constraint.constraint_type == "min_total":
+            # Parameters must sum to at least value
+            if sum(param_values) < constraint.value:
+                return False
+
         elif constraint.constraint_type == "difference_min":
             # For difference_min, params[0] - params[1] >= value
             if len(param_values) >= 2:
                 if param_values[0] - param_values[1] < constraint.value:
+                    return False
+
+        elif constraint.constraint_type == "difference_max":
+            # For difference_max, params[0] - params[1] <= value
+            if len(param_values) >= 2:
+                if param_values[0] - param_values[1] > constraint.value:
                     return False
 
         elif constraint.constraint_type == "ratio_bound":
@@ -194,6 +235,58 @@ def validate_constraints(
             # At most one param can be non-zero
             non_zero_count = sum(1 for v in param_values if v != 0)
             if non_zero_count > 1:
+                return False
+
+        elif constraint.constraint_type == "range_bound":
+            # Single param must be within [value, upper_bound]
+            if len(param_values) >= 1:
+                val = param_values[0]
+                if val < constraint.value:
+                    return False
+                if constraint.upper_bound is not None and val > constraint.upper_bound:
+                    return False
+
+        elif constraint.constraint_type == "product_max":
+            # Product of params must be <= value
+            product = 1
+            for v in param_values:
+                product *= v
+            if product > constraint.value:
+                return False
+
+        elif constraint.constraint_type == "product_min":
+            # Product of params must be >= value
+            product = 1
+            for v in param_values:
+                product *= v
+            if product < constraint.value:
+                return False
+
+        elif constraint.constraint_type == "same_sign":
+            # All params must have the same sign (all positive or all negative)
+            if len(param_values) >= 2:
+                signs = [1 if v > 0 else (-1 if v < 0 else 0) for v in param_values]
+                non_zero_signs = [s for s in signs if s != 0]
+                if non_zero_signs and not all(s == non_zero_signs[0] for s in non_zero_signs):
+                    return False
+
+        elif constraint.constraint_type == "step_multiple":
+            # Param must be a multiple of value (e.g., only multiples of 5)
+            if len(param_values) >= 1 and constraint.value != 0:
+                for val in param_values:
+                    if not np.isclose(val % constraint.value, 0) and not np.isclose(val % constraint.value, constraint.value):
+                        return False
+
+        elif constraint.constraint_type == "monotonic_increasing":
+            # params[0] < params[1] < params[2] ...
+            for i in range(len(param_values) - 1):
+                if param_values[i] >= param_values[i + 1]:
+                    return False
+
+        elif constraint.constraint_type == "at_least_n_nonzero":
+            # At least N params must be non-zero (value = N)
+            non_zero_count = sum(1 for v in param_values if v != 0)
+            if non_zero_count < int(constraint.value):
                 return False
 
     return True

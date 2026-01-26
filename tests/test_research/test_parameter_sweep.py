@@ -194,6 +194,112 @@ class TestValidateConstraints:
         # Invalid: violates difference_min
         assert validate_constraints({"a": 0.5, "b": 0.5}, constraints) is False
 
+    def test_min_total_constraint(self):
+        """Test min_total constraint."""
+        constraint = SweepConstraint("min_total", ["a", "b", "c"], 0.5)
+
+        # Valid: sum >= 0.5
+        assert validate_constraints({"a": 0.3, "b": 0.3, "c": 0.0}, [constraint]) is True
+        assert validate_constraints({"a": 0.5, "b": 0.5, "c": 0.5}, [constraint]) is True
+
+        # Invalid: sum < 0.5
+        assert validate_constraints({"a": 0.1, "b": 0.1, "c": 0.1}, [constraint]) is False
+
+    def test_difference_max_constraint(self):
+        """Test difference_max constraint (a - b <= value)."""
+        constraint = SweepConstraint("difference_max", ["a", "b"], 10)
+
+        # Valid: a - b <= 10
+        assert validate_constraints({"a": 20, "b": 15}, [constraint]) is True
+        assert validate_constraints({"a": 20, "b": 10}, [constraint]) is True
+
+        # Invalid: a - b > 10
+        assert validate_constraints({"a": 30, "b": 10}, [constraint]) is False
+
+    def test_range_bound_constraint(self):
+        """Test range_bound constraint (single param in range)."""
+        constraint = SweepConstraint("range_bound", ["alpha"], 0.1, upper_bound=10.0)
+
+        # Valid: 0.1 <= alpha <= 10.0
+        assert validate_constraints({"alpha": 1.0}, [constraint]) is True
+        assert validate_constraints({"alpha": 0.1}, [constraint]) is True
+        assert validate_constraints({"alpha": 10.0}, [constraint]) is True
+
+        # Invalid: outside range
+        assert validate_constraints({"alpha": 0.05}, [constraint]) is False
+        assert validate_constraints({"alpha": 15.0}, [constraint]) is False
+
+    def test_product_max_constraint(self):
+        """Test product_max constraint."""
+        constraint = SweepConstraint("product_max", ["a", "b"], 100)
+
+        # Valid: a * b <= 100
+        assert validate_constraints({"a": 5, "b": 10}, [constraint]) is True
+        assert validate_constraints({"a": 10, "b": 10}, [constraint]) is True
+
+        # Invalid: a * b > 100
+        assert validate_constraints({"a": 15, "b": 10}, [constraint]) is False
+
+    def test_product_min_constraint(self):
+        """Test product_min constraint."""
+        constraint = SweepConstraint("product_min", ["a", "b"], 50)
+
+        # Valid: a * b >= 50
+        assert validate_constraints({"a": 10, "b": 10}, [constraint]) is True
+        assert validate_constraints({"a": 5, "b": 10}, [constraint]) is True
+
+        # Invalid: a * b < 50
+        assert validate_constraints({"a": 3, "b": 10}, [constraint]) is False
+
+    def test_same_sign_constraint(self):
+        """Test same_sign constraint."""
+        constraint = SweepConstraint("same_sign", ["a", "b", "c"], 0)
+
+        # Valid: all same sign
+        assert validate_constraints({"a": 1.0, "b": 2.0, "c": 0.5}, [constraint]) is True
+        assert validate_constraints({"a": -1.0, "b": -2.0, "c": -0.5}, [constraint]) is True
+        assert validate_constraints({"a": 1.0, "b": 0, "c": 2.0}, [constraint]) is True  # Zero ignored
+
+        # Invalid: mixed signs
+        assert validate_constraints({"a": 1.0, "b": -1.0, "c": 0.5}, [constraint]) is False
+
+    def test_step_multiple_constraint(self):
+        """Test step_multiple constraint."""
+        constraint = SweepConstraint("step_multiple", ["period"], 5)
+
+        # Valid: multiples of 5
+        assert validate_constraints({"period": 10}, [constraint]) is True
+        assert validate_constraints({"period": 25}, [constraint]) is True
+        assert validate_constraints({"period": 0}, [constraint]) is True
+
+        # Invalid: not a multiple of 5
+        assert validate_constraints({"period": 12}, [constraint]) is False
+        assert validate_constraints({"period": 7}, [constraint]) is False
+
+    def test_monotonic_increasing_constraint(self):
+        """Test monotonic_increasing constraint."""
+        constraint = SweepConstraint("monotonic_increasing", ["short", "medium", "long"], 0)
+
+        # Valid: short < medium < long
+        assert validate_constraints({"short": 5, "medium": 10, "long": 20}, [constraint]) is True
+        assert validate_constraints({"short": 1, "medium": 2, "long": 3}, [constraint]) is True
+
+        # Invalid: not strictly increasing
+        assert validate_constraints({"short": 10, "medium": 10, "long": 20}, [constraint]) is False
+        assert validate_constraints({"short": 15, "medium": 10, "long": 20}, [constraint]) is False
+
+    def test_at_least_n_nonzero_constraint(self):
+        """Test at_least_n_nonzero constraint."""
+        constraint = SweepConstraint("at_least_n_nonzero", ["a", "b", "c", "d"], 2)
+
+        # Valid: at least 2 non-zero
+        assert validate_constraints({"a": 1, "b": 1, "c": 0, "d": 0}, [constraint]) is True
+        assert validate_constraints({"a": 1, "b": 1, "c": 1, "d": 0}, [constraint]) is True
+
+        # Invalid: fewer than 2 non-zero
+        assert validate_constraints({"a": 1, "b": 0, "c": 0, "d": 0}, [constraint]) is False
+        assert validate_constraints({"a": 0, "b": 0, "c": 0, "d": 0}, [constraint]) is False
+
     def test_constraint_validation(self):
         """Test constraint validation works as expected."""
         constraint = SweepConstraint("sum_equals", ["a", "b"], 1.0)

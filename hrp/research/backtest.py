@@ -12,9 +12,10 @@ import vectorbt as vbt
 from loguru import logger
 
 from hrp.data.db import get_db
-from hrp.research.config import BacktestConfig, BacktestResult, CostModel
+from hrp.research.config import BacktestConfig, BacktestResult, CostModel, StopLossConfig
 from hrp.research.metrics import calculate_metrics
 from hrp.research.benchmark import get_benchmark_returns
+from hrp.research.stops import apply_trailing_stops
 
 
 def get_price_data(
@@ -119,6 +120,21 @@ def run_backtest(
 
     # Align signals with prices
     signals = signals.reindex(close.index).fillna(0)
+
+    # Apply trailing stops if configured
+    stop_events = None
+    if config.stop_loss is not None and config.stop_loss.enabled:
+        logger.info(
+            f"Applying {config.stop_loss.type} trailing stops "
+            f"(ATR multiplier: {config.stop_loss.atr_multiplier})"
+        )
+        signals, stop_events = apply_trailing_stops(
+            signals=signals,
+            prices=prices,
+            stop_config=config.stop_loss,
+        )
+        n_stops = (stop_events > 0).sum().sum() if stop_events is not None else 0
+        logger.debug(f"Trailing stops triggered {n_stops} exit signals")
 
     # Calculate fees as percentage
     fees = config.costs.total_cost_pct()
