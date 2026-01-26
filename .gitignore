@@ -67,3 +67,4 @@ features.db*
 .worktrees/
 .security-key
 logs/security/
+backfill_progress*.json
