@@ -10,7 +10,7 @@
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
 **Codebase:** ~24,000 lines of production code across 90+ modules
-**Test Suite:** 2,101 tests (100% pass rate)
+**Test Suite:** 2,115 tests (100% pass rate)
 
 ## Current Progress
 
@@ -304,7 +304,7 @@ Complete feature tracking with spec links.
 | F-012 | Backup & Recovery System | 1 | ✅ done | — |
 | F-013 | Feature Store Versioning | 1 | ✅ done | 006 |
 | F-044 | Weekly Fundamentals Ingestion | 1 | ✅ done | — |
-| F-014 | PyFolio/Empyrical Integration | 2 | ❌ planned | — |
+| F-014 | PyFolio/Empyrical Integration | 2 | ✅ done | — |
 | F-015 | Statistical Significance Testing | 2 | ✅ done | — |
 | F-016 | Robustness Testing Framework | 2 | ✅ done | — |
 | F-017 | ML Model Registry & Training | 2 | ✅ done | — |
@@ -350,7 +350,7 @@ Complete feature tracking with spec links.
 | 1. Hypothesis Formation | ✅ Complete | — |
 | 2. Preliminary Analysis | ⚠️ Partial (robustness done, missing some filters) | Medium |
 | 3. Build Backtest | ⚠️ Partial (have engine, missing IC decay) | Medium |
-| 4. Assess Risk & Reward | ⚠️ Partial (stats done, missing CVaR, PyFolio) | High |
+| 4. Assess Risk & Reward | ✅ Complete (stats, CVaR/VaR, tear sheets) | — |
 | 5. Paper Trade | ❌ Not started | Medium |
 | 6. Live Trade | ❌ Future | Low |
 
@@ -360,7 +360,7 @@ Complete feature tracking with spec links.
 |----------|-----------|------------|
 | Data | OpenBB | ✅ Polygon.io + Yahoo Finance |
 | Backtesting | Zipline | ✅ VectorBT |
-| Performance | PyFolio | ⚠️ Custom + scipy |
+| Performance | PyFolio | ✅ Empyrical + tear sheets |
 | Signal Analysis | Alphalens | ⚠️ Basic IC only |
 | Portfolio Opt | Riskfolio-Lib | ❌ Planned |
 | Execution | IBKR API | ❌ Planned |
@@ -391,6 +391,28 @@ Complete feature tracking with spec links.
 ## Document History
 
 **Last Updated:** January 26, 2026
+
+**Changes (January 26, 2026 - Agent Definition Files):**
+- Created standalone agent definition files for all 4 implemented research agents:
+  - `2026-01-26-signal-scientist-agent.md`: Signal discovery, IC analysis, hypothesis creation
+  - `2026-01-26-ml-scientist-agent.md`: Walk-forward validation, model training, hypothesis validation
+  - `2026-01-26-alpha-researcher-agent.md`: Claude-powered hypothesis review and refinement
+  - `2026-01-26-ml-quality-sentinel-agent.md`: Experiment auditing (already existed)
+- Each definition includes: identity, configuration, outputs, trigger model, integration points
+
+**Changes (January 26, 2026 - Empyrical Integration):**
+- Integrated empyrical-reloaded library for battle-tested portfolio performance metrics (F-014)
+- Added 5 new metrics: `omega_ratio`, `value_at_risk`, `conditional_value_at_risk`, `tail_ratio`, `stability`
+- Replaced custom numpy implementations with Empyrical calls (CAGR, Sortino, max_drawdown)
+- Kept backward-compatible API (`calculate_metrics()`, `format_metrics()`)
+- Added PyFolio-inspired tear sheet visualizations to dashboard (`hrp/dashboard/components/tearsheet_viz.py`)
+  - Returns distribution with normal overlay, monthly returns heatmap
+  - Rolling Sharpe/volatility charts, drawdown analysis
+  - Tail risk analysis with VaR/CVaR visualization
+- Added VaR/CVaR thresholds to strategy validation criteria (`max_var=0.05`, `max_cvar=0.08`)
+- MLflow now saves equity curve data as artifact for tear sheet analysis
+- Added 15 new tests (9 Empyrical metrics + 6 VaR/CVaR validation)
+- Test suite now at 2,115 tests (100% pass rate)
 
 **Changes (January 26, 2026 - Research Agent Pipeline Complete):**
 - Implemented ML Scientist agent for walk-forward validation of hypotheses in testing status

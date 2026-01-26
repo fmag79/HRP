@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### Documentation
+- **Agent Definition Files**: Created standalone definition files for all 4 implemented research agents:
+  - `docs/plans/2026-01-26-signal-scientist-agent.md`: IC analysis, signal discovery, hypothesis creation
+  - `docs/plans/2026-01-26-ml-scientist-agent.md`: Walk-forward validation, model training, status updates
+  - `docs/plans/2026-01-26-alpha-researcher-agent.md`: Claude-powered hypothesis review and refinement
+  - Each file includes: identity, configuration, outputs, trigger model, integration points, example research notes
+
 ### Added
 - **Research Agent Pipeline**: Complete event-driven agent coordination system:
   - **ML Scientist Agent** (`hrp/agents/research_agents.py`): Validates hypotheses in testing status using walk-forward validation
