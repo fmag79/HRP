@@ -5,18 +5,18 @@
 | Tier | Focus | Completion | Status |
 |------|-------|------------|--------|
 | **Foundation** | Data + Research Core | 100% | ✅ Complete |
-| **Intelligence** | ML + Agents | 85% | 🟡 Active |
+| **Intelligence** | ML + Agents | 90% | 🟡 Active |
 | **Production** | Security + Ops | 0% | ⏳ Planned |
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
-**Codebase:** ~23,500 lines of production code across 85+ modules
+**Codebase:** ~24,000 lines of production code across 90+ modules
 **Test Suite:** 2,101 tests (100% pass rate)
 
 ## Current Progress
 
 ```
 Tier 1: Foundation                       [████████████████████] 100%
-Tier 2: Intelligence                     [█████████████████░░░]  85%
+Tier 2: Intelligence                     [██████████████████░░]  90%
 Tier 3: Production                       [░░░░░░░░░░░░░░░░░░░░]   0%
 Tier 4: Trading                          [░░░░░░░░░░░░░░░░░░░░]   0%
 ```
@@ -81,7 +81,7 @@ Everything needed for a working research platform with reliable data.
 
 ---
 
-## Tier 2: Intelligence (85%)
+## Tier 2: Intelligence (90%)
 
 ML capabilities, statistical rigor, and agent integration.
 
@@ -154,9 +154,26 @@ ML capabilities, statistical rigor, and agent integration.
 | Feature | Status | Implementation |
 |---------|--------|----------------|
 | **Signal Scientist** | ✅ | Rolling IC analysis, hypothesis creation (`hrp/agents/research_agents.py`) |
-| Alpha Researcher | ❌ | Coordinate research, manage hypothesis pipeline |
-| ML Quality Sentinel | ❌ | Monitor model performance, drift detection |
+| **ML Scientist** | ✅ | Walk-forward validation, model training (`hrp/agents/research_agents.py`) |
+| **ML Quality Sentinel** | ✅ | Experiment auditing, overfitting detection (`hrp/agents/research_agents.py`) |
+| **Alpha Researcher** | ✅ | SDK agent for hypothesis review (`hrp/agents/alpha_researcher.py`) |
+| **SDKAgent Base** | ✅ | Claude API integration base class (`hrp/agents/sdk_agent.py`) |
+| **LineageEventWatcher** | ✅ | Event-driven agent coordination (`hrp/agents/scheduler.py`) |
 | Report Generator | ❌ | Weekly research summaries |
+| Validation Analyst | ❌ | Parameter sensitivity, regime stress tests |
+
+**Research Agent Pipeline:**
+```
+Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+     ↓                    ↓                 ↓                ↓
+  IC analysis         Review drafts     Walk-forward      Audit for
+  Create drafts       Promote/defer     validation        overfitting
+```
+
+**Event-Driven Coordination:**
+- `LineageEventWatcher` polls lineage table for events
+- Automatic triggering: Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+- Enable with `scheduler.setup_research_agent_triggers()` + `scheduler.start_with_triggers()`
 
 **Signal Scientist Features:**
 - Rolling IC calculation (60-day windows) for robust signal detection
@@ -165,6 +182,13 @@ ML capabilities, statistical rigor, and agent integration.
 - Automatic hypothesis creation for signals above IC threshold (0.03)
 - MLflow integration, email notifications, lineage tracking
 - Scheduler integration via `setup_weekly_signal_scan()`
+
+**ML Quality Sentinel Checks:**
+- Sharpe decay (train vs test) - critical if >50%
+- Target leakage - critical if correlation >0.95
+- Feature count - critical if >50 features
+- Fold stability - critical if CV >2.0 or sign flips
+- Suspiciously good - critical if IC >0.15 or Sharpe >3.0
 
 ### Remaining for Tier 2
 
@@ -291,8 +315,12 @@ Complete feature tracking with spec links.
 | F-022 | Agent Permission Enforcement | 2 | ✅ done | — |
 | F-023 | Agent Rate Limiting | 2 | ✅ done | — |
 | F-024 | Signal Scientist Agent | 2 | ✅ done | — |
-| F-025 | Alpha Researcher Agent | 2 | ❌ planned | — |
+| F-025 | Alpha Researcher Agent | 2 | ✅ done | — |
 | F-026 | Weekly Report Agent | 2 | ❌ planned | — |
+| F-045 | ML Scientist Agent | 2 | ✅ done | — |
+| F-046 | ML Quality Sentinel Agent | 2 | ✅ done | — |
+| F-047 | SDKAgent Base Class | 2 | ✅ done | — |
+| F-048 | LineageEventWatcher | 2 | ✅ done | — |
 | F-027 | Dashboard Authentication | 3 | ❌ planned | — |
 | F-028 | Security Hardening | 3 | ❌ planned | — |
 | F-029 | Health Checks & Monitoring | 3 | ❌ planned | — |
@@ -364,6 +392,19 @@ Complete feature tracking with spec links.
 
 **Last Updated:** January 26, 2026
 
+**Changes (January 26, 2026 - Research Agent Pipeline Complete):**
+- Implemented ML Scientist agent for walk-forward validation of hypotheses in testing status
+- Implemented ML Quality Sentinel for experiment auditing with overfitting detection
+- Implemented Alpha Researcher SDK agent using Claude API for hypothesis review
+- Implemented SDKAgent base class with token tracking, checkpoint/resume, and cost logging
+- Implemented LineageEventWatcher for event-driven agent coordination
+- Added `setup_research_agent_triggers()` and `start_with_triggers()` to scheduler
+- Full pipeline operational: Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+- Added `agent_token_usage` table for Claude API cost tracking
+- Added `metadata` column to hypotheses table for agent analysis storage
+- Fixed hypothesis_id lookup bug in MLScientist and MLQualitySentinel
+- Intelligence tier progress: 85% → 90%
+
 **Changes (January 26, 2026 - SignalScientist Performance Optimization):**
 - Optimized SignalScientist to pre-load all data at scan start
 - Reduced database queries from ~22,800 to 2 per scan
@@ -385,14 +426,14 @@ Complete feature tracking with spec links.
 - Updated F-024 from "Discovery Agent" to "Signal Scientist Agent" (✅ done)
 
 **Changes (January 25, 2026 - Research Agents Design):**
-- Created design brainstorm for multi-agent quant research team (`docs/plans/2025-01-25-research-agents-design.md`)
+- Created design brainstorm for multi-agent quant research team (`docs/plans/2026-01-25-research-agents-design.md`)
 - Researched real hedge fund structures (DE Shaw, Two Sigma, Citadel, Renaissance)
 - Proposed 3 options: 8, 10, or 12 agents with consolidated roles
 - Key design decisions: autonomous with shared workspace, scheduled + on-demand execution
 - Recommended Option A (8 agents): Alpha Researcher, Signal Scientist, ML Scientist, ML Quality Sentinel, Quant Developer, Risk Manager, Validation Analyst, Report Generator
 
 **Changes (January 25, 2026 - Plan Status Review):**
-- Reviewed `docs/plans/2025-01-24-remaining-features.md` against actual implementation
+- Reviewed `docs/plans/2026-01-24-remaining-features.md` against actual implementation
 - All 27 planned features implemented except `efi_13d` (Elder's Force Index)
 - Additional features beyond plan: EMA (12d, 26d, crossover), MFI, VWAP, fundamentals
 - Total feature count: 44 technical + fundamental indicators
@@ -423,7 +464,7 @@ Complete feature tracking with spec links.
 **Changes (January 25, 2026 - Feature Planning):**
 - Added 3 parked features to Future Consideration: MOM10, Fibonacci retracements, Combined Trend Strength
 - Added F-035, F-036, F-037 to Feature Registry with 🅿️ parked status
-- Plan created for 27 new technical indicators (see `docs/plans/2025-01-24-remaining-features.md`)
+- Plan created for 27 new technical indicators (see `docs/plans/2026-01-24-remaining-features.md`)
 
 **Changes (January 24, 2026 - Structure Consolidation):**
 - Consolidated from 6 versions to 4 tiers for simpler mental model

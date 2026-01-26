@@ -47,7 +47,7 @@ Agents cannot approve deployments or modify deployed strategies.
 ```python
 from hrp.api.platform import PlatformAPI
 api = PlatformAPI()
-experiment_id = api.run_backtest(config, hypothesis_id='HYP-2025-001')
+experiment_id = api.run_backtest(config, hypothesis_id='HYP-2026-001')
 ```
 
 ### Create a hypothesis
@@ -212,6 +212,42 @@ print(f"Promoted: {result['promoted_to_testing']}")
 # Research note written to docs/research/YYYY-MM-DD-alpha-researcher.md
 ```
 
+### Run ML Scientist for hypothesis validation
+```python
+from hrp.agents import MLScientist
+
+# Validates hypotheses in 'testing' status using walk-forward validation
+scientist = MLScientist(
+    n_folds=5,
+    window_type='expanding',
+    stability_threshold=1.0,  # Lower is better
+)
+result = scientist.run()
+
+print(f"Tested: {result['hypotheses_tested']}")
+print(f"Validated: {result['hypotheses_validated']}")
+print(f"Rejected: {result['hypotheses_rejected']}")
+# Research note written to docs/research/YYYY-MM-DD-ml-scientist.md
+```
+
+### Run ML Quality Sentinel for experiment auditing
+```python
+from hrp.agents import MLQualitySentinel
+
+# Audits recent experiments for overfitting signals
+sentinel = MLQualitySentinel(
+    audit_window_days=7,
+    send_alerts=True,
+)
+result = sentinel.run()
+
+print(f"Audited: {result['experiments_audited']}")
+print(f"Critical issues: {result['critical_issues']}")
+print(f"Warnings: {result['warnings']}")
+# Checks: Sharpe decay, target leakage, feature count, fold stability
+# Research note written to docs/research/YYYY-MM-DD-ml-quality-sentinel.md
+```
+
 ### Run a multi-factor strategy backtest
 ```python
 from hrp.research.strategies import generate_multifactor_signals
@@ -294,7 +330,7 @@ for fold in result.fold_results:
 from hrp.risk import TestSetGuard, validate_strategy, check_parameter_sensitivity
 
 # Test set discipline (limits to 3 evaluations per hypothesis)
-guard = TestSetGuard(hypothesis_id='HYP-2025-001')
+guard = TestSetGuard(hypothesis_id='HYP-2026-001')
 
 with guard.evaluate(metadata={"experiment": "final_validation"}):
     metrics = model.evaluate(test_data)
@@ -335,7 +371,7 @@ if not result.passed:
 # Hyperparameter trial tracking (limit HP search)
 from hrp.risk.overfitting import HyperparameterTrialCounter
 
-counter = HyperparameterTrialCounter(hypothesis_id='HYP-2025-001', max_trials=50)
+counter = HyperparameterTrialCounter(hypothesis_id='HYP-2026-001', max_trials=50)
 counter.log_trial(
     model_type='ridge',
     hyperparameters={'alpha': 1.0},
@@ -377,7 +413,7 @@ config = OptimizationConfig(
     n_folds=5,
     scoring_metric='ic',  # ic, mse, or sharpe
     max_trials=50,  # Integrates with HyperparameterTrialCounter
-    hypothesis_id='HYP-2025-001',
+    hypothesis_id='HYP-2026-001',
 )
 
 result = cross_validated_optimize(

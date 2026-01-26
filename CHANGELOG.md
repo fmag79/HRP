@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+### Added
+- **Research Agent Pipeline**: Complete event-driven agent coordination system:
+  - **ML Scientist Agent** (`hrp/agents/research_agents.py`): Validates hypotheses in testing status using walk-forward validation
+  - **ML Quality Sentinel Agent** (`hrp/agents/research_agents.py`): Audits experiments for overfitting (Sharpe decay, target leakage, feature count, fold stability)
+  - **Alpha Researcher Agent** (`hrp/agents/alpha_researcher.py`): Claude-powered hypothesis review and refinement
+  - **SDKAgent Base Class** (`hrp/agents/sdk_agent.py`): Base for Claude API agents with token tracking, checkpoint/resume, cost logging
+  - **LineageEventWatcher** (`hrp/agents/scheduler.py`): Polls lineage table for events and triggers callbacks
+  - **Event-Driven Triggers**: `setup_research_agent_triggers()` wires Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+  - **Token Usage Tracking**: New `agent_token_usage` table for Claude API cost monitoring
+  - **Hypothesis Metadata**: Added `metadata` JSON column to store agent analysis
+
+### Fixed
+- **MLScientist/MLQualitySentinel**: Fixed hypothesis_id lookup bug (`hypothesis.get("id")` → `hypothesis.get("hypothesis_id")`)
+
 ### Performance
 - **SignalScientist Query Optimization**: Pre-load all data at scan start to reduce database queries from ~22,800 to 2:
   - `_load_all_features()`: Load all features in single query
@@ -68,12 +82,12 @@
 
 ### Documentation
 - Updated CLAUDE.md with usage examples for all new features
-- Implementation plan: `docs/plans/2025-01-25-vectorbt-pro-patterns.md` (now marked ✅ Implemented)
+- Implementation plan: `docs/reports/2026-01-25-vectorbt-pro-patterns.md` (now marked ✅ Implemented)
   - Researched real hedge fund structures (DE Shaw, Two Sigma, Citadel, Renaissance)
   - Proposed 3 architecture options: 8, 10, or 12 specialized AI agents
   - Key design: autonomous agents with shared workspace (hypotheses, MLflow, lineage)
   - Recommended 8-agent structure: Alpha Researcher, Signal Scientist, ML Scientist, ML Quality Sentinel, Quant Developer, Risk Manager, Validation Analyst, Report Generator
-  - Design document: `docs/plans/2025-01-25-research-agents-design.md`
+  - Design document: `docs/plans/2026-01-25-research-agents-design.md`
 
 ### Testing
 - 38 new tests for Signal Scientist implementation:
@@ -246,7 +260,7 @@
 - **Scheduler Integration**: Updated `setup_daily_ingestion()` in `hrp/agents/scheduler.py` to include `universe_job_time` parameter
 - **Documentation Comprehensive Update**: 
   - `docs/plans/Project-Status.md`: Enhanced Version 2 section with universe scheduling details (~158 lines changed)
-  - `docs/plans/2025-01-19-hrp-spec.md`: Updated daily schedule and implementation status (~67 lines changed)
+  - `docs/plans/2026-01-19-hrp-spec.md`: Updated daily schedule and implementation status (~67 lines changed)
   - `docs/operations/cookbook.md`: Added universe recipes and updated all job examples (~247 lines changed)
   - `CLAUDE.md`: Updated common tasks with universe scheduling examples
 - **Test Suite Updates**: Updated all agent and smoke tests to expect 3 scheduled jobs instead of 2
