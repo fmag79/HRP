@@ -497,3 +497,390 @@ class TestIntegration:
         )
         assert linked["success"] is True
         assert experiment_id in linked["data"]["experiment_ids"]
+
+
+# =============================================================================
+# Additional Tool Tests for Coverage
+# =============================================================================
+
+
+class TestGetExperimentsForHypothesis:
+    """Tests for get_experiments_for_hypothesis tool."""
+
+    def test_get_experiments_for_hypothesis_success(self, mock_api):
+        """Get experiments for a hypothesis."""
+        mock_api.get_experiments_for_hypothesis.return_value = ["exp-1", "exp-2", "exp-3"]
+
+        result = call_tool(
+            research_server.get_experiments_for_hypothesis,
+            "HYP-2026-001",
+        )
+
+        assert result["success"] is True
+        assert result["data"]["hypothesis_id"] == "HYP-2026-001"
+        assert len(result["data"]["experiment_ids"]) == 3
+        mock_api.get_experiments_for_hypothesis.assert_called_once_with("HYP-2026-001")
+
+    def test_get_experiments_for_hypothesis_empty(self, mock_api):
+        """Get experiments when none exist."""
+        mock_api.get_experiments_for_hypothesis.return_value = []
+
+        result = call_tool(
+            research_server.get_experiments_for_hypothesis,
+            "HYP-2026-999",
+        )
+
+        assert result["success"] is True
+        assert len(result["data"]["experiment_ids"]) == 0
+        assert "0 experiments" in result["message"]
+
+
+class TestGetPrices:
+    """Tests for get_prices tool."""
+
+    def test_get_prices_missing_start_date(self, mock_api):
+        """Reject request with missing start_date."""
+        result = call_tool(
+            research_server.get_prices,
+            symbols=["AAPL"],
+            start_date=None,
+            end_date="2023-12-31",
+        )
+
+        assert result["success"] is False
+        assert "required" in result["message"].lower()
+
+    def test_get_prices_missing_end_date(self, mock_api):
+        """Reject request with missing end_date."""
+        result = call_tool(
+            research_server.get_prices,
+            symbols=["AAPL"],
+            start_date="2023-01-01",
+            end_date=None,
+        )
+
+        assert result["success"] is False
+        assert "required" in result["message"].lower()
+
+    def test_get_prices_small_dataset(self, mock_api):
+        """Return full data for small datasets."""
+        mock_df = pd.DataFrame({
+            "symbol": ["AAPL"] * 50,
+            "date": pd.date_range("2023-01-01", periods=50),
+            "close": [150.0] * 50,
+        })
+        mock_api.get_prices.return_value = mock_df
+
+        result = call_tool(
+            research_server.get_prices,
+            symbols=["AAPL"],
+            start_date="2023-01-01",
+            end_date="2023-03-31",
+        )
+
+        assert result["success"] is True
+        assert "50 price records" in result["message"]
+        # Small dataset returns actual data
+        assert isinstance(result["data"], list) or "total_rows" not in result["data"]
+
+    def test_get_prices_large_dataset(self, mock_api):
+        """Return summary for large datasets."""
+        mock_df = pd.DataFrame({
+            "symbol": ["AAPL"] * 200,
+            "date": pd.date_range("2023-01-01", periods=200),
+            "close": [150.0] * 200,
+        })
+        mock_api.get_prices.return_value = mock_df
+
+        result = call_tool(
+            research_server.get_prices,
+            symbols=["AAPL"],
+            start_date="2023-01-01",
+            end_date="2023-12-31",
+        )
+
+        assert result["success"] is True
+        assert "200 price records" in result["message"]
+        # Large dataset returns summary
+        assert "summary" in result["message"].lower()
+        assert result["data"]["total_rows"] == 200
+
+
+class TestAnalyzeResults:
+    """Tests for analyze_results tool."""
+
+    def test_analyze_results_not_found(self, mock_api):
+        """Handle non-existent experiment."""
+        mock_api.get_experiment.return_value = None
+
+        result = call_tool(research_server.analyze_results, "exp-999")
+
+        assert result["success"] is False
+        assert "not found" in result["message"].lower()
+
+    def test_analyze_results_excellent_sharpe(self, mock_api):
+        """Analyze experiment with excellent Sharpe."""
+        mock_api.get_experiment.return_value = {
+            "experiment_id": "exp-123",
+            "metrics": {
+                "sharpe_ratio": 2.0,
+                "total_return": 0.40,
+                "max_drawdown": -0.10,
+                "cagr": 0.20,
+            },
+            "params": {"method": "momentum"},
+        }
+
+        result = call_tool(research_server.analyze_results, "exp-123")
+
+        assert result["success"] is True
+        assert "excellent" in result["message"].lower()
+        assert result["data"]["summary"]["sharpe_ratio"] == 2.0
+        assert result["data"]["summary"]["sharpe_assessment"] == "Excellent risk-adjusted returns"
+
+    def test_analyze_results_good_sharpe(self, mock_api):
+        """Analyze experiment with good Sharpe."""
+        mock_api.get_experiment.return_value = {
+            "experiment_id": "exp-123",
+            "metrics": {
+                "sharpe_ratio": 1.2,
+                "total_return": 0.25,
+                "max_drawdown": -0.15,
+                "cagr": 0.12,
+            },
+            "params": {},
+        }
+
+        result = call_tool(research_server.analyze_results, "exp-123")
+
+        assert result["success"] is True
+        assert "good" in result["message"].lower()
+        assert result["data"]["summary"]["sharpe_assessment"] == "Good risk-adjusted returns"
+
+    def test_analyze_results_moderate_sharpe(self, mock_api):
+        """Analyze experiment with moderate Sharpe."""
+        mock_api.get_experiment.return_value = {
+            "experiment_id": "exp-123",
+            "metrics": {
+                "sharpe_ratio": 0.7,
+                "total_return": 0.10,
+                "max_drawdown": -0.20,
+                "cagr": 0.05,
+            },
+            "params": {},
+        }
+
+        result = call_tool(research_server.analyze_results, "exp-123")
+
+        assert result["success"] is True
+        assert "moderate" in result["message"].lower()
+        assert result["data"]["summary"]["sharpe_assessment"] == "Moderate risk-adjusted returns"
+
+    def test_analyze_results_poor_sharpe(self, mock_api):
+        """Analyze experiment with poor Sharpe."""
+        mock_api.get_experiment.return_value = {
+            "experiment_id": "exp-123",
+            "metrics": {
+                "sharpe_ratio": 0.2,
+                "total_return": 0.02,
+                "max_drawdown": -0.30,
+                "cagr": 0.01,
+            },
+            "params": {},
+        }
+
+        result = call_tool(research_server.analyze_results, "exp-123")
+
+        assert result["success"] is True
+        assert "poor" in result["message"].lower()
+        assert result["data"]["summary"]["sharpe_assessment"] == "Poor risk-adjusted returns"
+
+    def test_analyze_results_insufficient_data(self, mock_api):
+        """Handle experiment with missing metrics."""
+        mock_api.get_experiment.return_value = {
+            "experiment_id": "exp-123",
+            "metrics": {},
+            "params": {},
+        }
+
+        result = call_tool(research_server.analyze_results, "exp-123")
+
+        assert result["success"] is True
+        assert "insufficient" in result["data"]["interpretation"].lower()
+
+
+class TestRunWalkForwardValidation:
+    """Tests for run_walk_forward_validation tool."""
+
+    def test_walk_forward_missing_dates(self, mock_api):
+        """Reject request with missing dates."""
+        result = call_tool(
+            research_server.run_walk_forward_validation,
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            symbols=["AAPL"],
+            start_date=None,
+            end_date="2023-12-31",
+        )
+
+        assert result["success"] is False
+        assert "required" in result["message"].lower()
+
+    def test_walk_forward_success(self, mock_api):
+        """Run walk-forward validation successfully."""
+        # Mock the WalkForwardResult
+        from datetime import date as dt_date
+
+        mock_fold = MagicMock()
+        mock_fold.fold_index = 0
+        mock_fold.train_start = dt_date(2020, 1, 1)
+        mock_fold.train_end = dt_date(2021, 12, 31)
+        mock_fold.test_start = dt_date(2022, 1, 1)
+        mock_fold.test_end = dt_date(2022, 6, 30)
+        mock_fold.metrics = {"ic": 0.05, "mse": 0.001}
+
+        mock_result = MagicMock()
+        mock_result.stability_score = 0.8
+        mock_result.is_stable = True
+        mock_result.mean_ic = 0.05
+        mock_result.aggregate_metrics = {"mean_ic": 0.05}
+        mock_result.fold_results = [mock_fold]
+
+        with patch("hrp.ml.validation.walk_forward_validate", return_value=mock_result):
+            result = call_tool(
+                research_server.run_walk_forward_validation,
+                model_type="ridge",
+                target="returns_20d",
+                features=["momentum_20d"],
+                symbols=["AAPL"],
+                start_date="2020-01-01",
+                end_date="2023-12-31",
+            )
+
+        assert result["success"] is True
+        assert result["data"]["stability_score"] == 0.8
+        assert result["data"]["is_stable"] is True
+        assert "stable" in result["message"].lower()
+
+
+class TestGetSupportedModels:
+    """Tests for get_supported_models tool."""
+
+    def test_get_supported_models(self, mock_api):
+        """List supported models."""
+        result = call_tool(research_server.get_supported_models)
+
+        assert result["success"] is True
+        assert len(result["data"]) > 0
+        # Check that model types are returned
+        model_types = [m["model_type"] for m in result["data"]]
+        assert "ridge" in model_types or "lasso" in model_types
+
+
+class TestTrainMlModel:
+    """Tests for train_ml_model tool."""
+
+    def test_train_model_missing_dates(self, mock_api):
+        """Reject request with missing dates."""
+        result = call_tool(
+            research_server.train_ml_model,
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d"],
+            symbols=["AAPL"],
+            train_start="2020-01-01",
+            train_end="2021-12-31",
+            validation_start="2022-01-01",
+            validation_end=None,  # Missing
+            test_start="2023-01-01",
+            test_end="2023-12-31",
+        )
+
+        assert result["success"] is False
+        assert "required" in result["message"].lower()
+
+    def test_train_model_success(self, mock_api):
+        """Train model successfully."""
+        mock_result = MagicMock()
+        mock_result.metrics = {"test_mse": 0.001, "test_r2": 0.85}
+        mock_result.selected_features = ["momentum_20d"]
+        mock_result.feature_importance = {"momentum_20d": 1.0}
+
+        with patch("hrp.ml.training.train_model", return_value=mock_result):
+            result = call_tool(
+                research_server.train_ml_model,
+                model_type="ridge",
+                target="returns_20d",
+                features=["momentum_20d"],
+                symbols=["AAPL"],
+                train_start="2020-01-01",
+                train_end="2021-12-31",
+                validation_start="2022-01-01",
+                validation_end="2022-06-30",
+                test_start="2022-07-01",
+                test_end="2022-12-31",
+            )
+
+        assert result["success"] is True
+        assert result["data"]["model_type"] == "ridge"
+        assert result["data"]["metrics"]["test_mse"] == 0.001
+
+
+class TestGetDataCoverage:
+    """Tests for get_data_coverage tool."""
+
+    def test_data_coverage_missing_dates(self, mock_api):
+        """Reject request with missing dates."""
+        result = call_tool(
+            research_server.get_data_coverage,
+            symbols=["AAPL"],
+            start_date=None,
+            end_date="2023-12-31",
+        )
+
+        assert result["success"] is False
+        assert "required" in result["message"].lower()
+
+    def test_data_coverage_success(self, mock_api):
+        """Get data coverage successfully."""
+        mock_api.get_trading_days.return_value = pd.date_range("2023-01-01", "2023-12-31", freq="B")
+        mock_df = pd.DataFrame({
+            "symbol": ["AAPL"] * 250,
+            "date": pd.date_range("2023-01-01", periods=250),
+            "close": [150.0] * 250,
+        })
+        mock_api.get_prices.return_value = mock_df
+
+        result = call_tool(
+            research_server.get_data_coverage,
+            symbols=["AAPL"],
+            start_date="2023-01-01",
+            end_date="2023-12-31",
+        )
+
+        assert result["success"] is True
+        assert result["data"]["total_symbols"] == 1
+        coverage_by_symbol = result["data"]["coverage_by_symbol"]
+        assert len(coverage_by_symbol) == 1
+        assert coverage_by_symbol[0]["symbol"] == "AAPL"
+        assert coverage_by_symbol[0]["actual_days"] == 250
+
+    def test_data_coverage_with_error(self, mock_api):
+        """Handle coverage check error for a symbol."""
+        mock_api.get_trading_days.return_value = pd.date_range("2023-01-01", "2023-12-31", freq="B")
+        mock_api.get_prices.side_effect = Exception("Symbol not found")
+
+        result = call_tool(
+            research_server.get_data_coverage,
+            symbols=["INVALID"],
+            start_date="2023-01-01",
+            end_date="2023-12-31",
+        )
+
+        assert result["success"] is True
+        coverage_by_symbol = result["data"]["coverage_by_symbol"]
+        assert len(coverage_by_symbol) == 1
+        assert coverage_by_symbol[0]["symbol"] == "INVALID"
+        assert coverage_by_symbol[0]["actual_days"] == 0
+        assert "error" in coverage_by_symbol[0]
