@@ -322,29 +322,35 @@ show_status() {
 
     # Dashboard
     if is_running "$PID_DASHBOARD"; then
-        echo -e "  Dashboard:      ${GREEN}RUNNING${NC} (PID: $(cat $PID_DASHBOARD), Port: $DASHBOARD_PORT)"
-        ((running++))
+        local dash_pid
+        dash_pid=$(cat "$PID_DASHBOARD" 2>/dev/null || echo "unknown")
+        echo -e "  Dashboard:      ${GREEN}RUNNING${NC} (PID: $dash_pid, Port: $DASHBOARD_PORT)"
+        running=$((running + 1))
     else
         echo -e "  Dashboard:      ${RED}STOPPED${NC}"
-        ((stopped++))
+        stopped=$((stopped + 1))
     fi
 
     # MLflow
     if is_running "$PID_MLFLOW"; then
-        echo -e "  MLflow UI:      ${GREEN}RUNNING${NC} (PID: $(cat $PID_MLFLOW), Port: $MLFLOW_PORT)"
-        ((running++))
+        local mlflow_pid
+        mlflow_pid=$(cat "$PID_MLFLOW" 2>/dev/null || echo "unknown")
+        echo -e "  MLflow UI:      ${GREEN}RUNNING${NC} (PID: $mlflow_pid, Port: $MLFLOW_PORT)"
+        running=$((running + 1))
     else
         echo -e "  MLflow UI:      ${RED}STOPPED${NC}"
-        ((stopped++))
+        stopped=$((stopped + 1))
     fi
 
     # Scheduler
     if is_running "$PID_SCHEDULER"; then
-        echo -e "  Scheduler:      ${GREEN}RUNNING${NC} (PID: $(cat $PID_SCHEDULER))"
-        ((running++))
+        local sched_pid
+        sched_pid=$(cat "$PID_SCHEDULER" 2>/dev/null || echo "unknown")
+        echo -e "  Scheduler:      ${GREEN}RUNNING${NC} (PID: $sched_pid)"
+        running=$((running + 1))
     else
         echo -e "  Scheduler:      ${RED}STOPPED${NC}"
-        ((stopped++))
+        stopped=$((stopped + 1))
     fi
 
     echo ""
