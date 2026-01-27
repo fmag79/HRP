@@ -1834,6 +1834,32 @@ Enables the complete research agent pipeline:
   PID directory:  /Users/fer/Documents/GitHub/HRP/.hrp_pids
 ```
 
+**Troubleshooting Port Conflicts:**
+
+The startup script automatically detects port conflicts and provides helpful error messages:
+
+```
+[ERROR] Port 5000 is already in use (PID: 419)
+[INFO] Try: HRP_MLFLOW_PORT=5001 ./scripts/startup.sh start --mlflow-only
+```
+
+**Common Port Conflicts:**
+
+| Port | Typical Conflict | Solution |
+|------|------------------|----------|
+| 5000 | macOS ControlCenter (AirPlay Receiver) | Use port 5001: `HRP_MLFLOW_PORT=5001 ./scripts/startup.sh start` |
+| 8501 | Previous dashboard instance | Run `./scripts/startup.sh stop` first, or kill old process |
+
+**Check what's using a port:**
+
+```bash
+# See which process is using a port
+lsof -i :5000
+
+# Kill a process by PID
+kill <PID>
+```
+
 **Note:** The startup script does **not** initialize the database. The database is created automatically on first access by the services. For fresh installations, run the initial setup first (see Section 1.1).
 
 ---
