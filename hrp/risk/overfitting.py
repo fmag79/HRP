@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 
 from hrp.data.db import get_db
+from hrp.exceptions import OverfittingError
 
 
 @dataclass
@@ -206,11 +207,6 @@ class FeatureCountValidator:
             features_per_sample=features_per_sample,
             message="; ".join(messages),
         )
-
-
-class OverfittingError(Exception):
-    """Raised when test set evaluation limit is exceeded."""
-    pass
 
 
 def _load_evaluation_count(hypothesis_id: str) -> int:

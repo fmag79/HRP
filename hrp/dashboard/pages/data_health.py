@@ -575,9 +575,15 @@ def render() -> None:
     """, unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
-    # Real-time Quality Alert Banner
+    # Tab Navigation
     # -------------------------------------------------------------------------
-    render_quality_alert_banner()
+    tab1, tab2 = st.tabs(["Overview", "🔍 Data Explorer"])
+
+    with tab1:
+        # -------------------------------------------------------------------------
+        # Real-time Quality Alert Banner
+        # -------------------------------------------------------------------------
+        render_quality_alert_banner()
 
     st.markdown(
         """<div style="height: 1px; background: #374151; margin: 2rem 0;"></div>""",
@@ -864,6 +870,16 @@ def render() -> None:
                 ),
             }
         )
+
+
+    # Close tab1 (Overview)
+    with tab2:
+        # -------------------------------------------------------------------------
+        # Data Explorer
+        # -------------------------------------------------------------------------
+        from hrp.dashboard.components.data_explorer import render_data_explorer
+
+        render_data_explorer()
 
 
 # Entry point for Streamlit multi-page apps

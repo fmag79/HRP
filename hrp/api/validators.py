@@ -13,6 +13,77 @@ from loguru import logger
 from hrp.data.db import DatabaseManager, get_db
 
 
+class Validator:
+    """
+    Reusable validation utilities for Platform API.
+
+    Provides static methods for common validation operations.
+    All methods raise ValueError with descriptive messages on validation failure.
+
+    Example:
+        Validator.not_empty("test", "field_name")
+        Validator.positive(10, "limit")
+        Validator.not_future(date.today(), "date")
+        Validator.date_range(start, end)
+    """
+
+    @staticmethod
+    def not_empty(value: str, field_name: str) -> None:
+        """
+        Validate that a string is not empty or whitespace-only.
+
+        Args:
+            value: String value to validate
+            field_name: Name of the field for error messages
+
+        Raises:
+            ValueError: If value is empty or whitespace-only
+        """
+        validate_non_empty_string(value, field_name)
+
+    @staticmethod
+    def positive(value: int, field_name: str) -> None:
+        """
+        Validate that an integer is positive.
+
+        Args:
+            value: Integer value to validate
+            field_name: Name of the field for error messages
+
+        Raises:
+            ValueError: If value is not positive
+        """
+        validate_positive_int(value, field_name)
+
+    @staticmethod
+    def not_future(d: date, field_name: str) -> None:
+        """
+        Validate that a date is not in the future.
+
+        Args:
+            d: Date to validate
+            field_name: Name of the field for error messages
+
+        Raises:
+            ValueError: If date is in the future
+        """
+        validate_date(d, field_name)
+
+    @staticmethod
+    def date_range(start: date, end: date) -> None:
+        """
+        Validate that start date is not after end date.
+
+        Args:
+            start: Start date
+            end: End date
+
+        Raises:
+            ValueError: If start date is after end date
+        """
+        validate_date_range(start, end)
+
+
 def validate_symbols(
     symbols: list[str],
     as_of_date: date | None = None,

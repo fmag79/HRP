@@ -11,24 +11,10 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from hrp.data.constants import TEST_SYMBOLS
 from hrp.data.db import get_db
 from hrp.data.sources.polygon_source import PolygonSource
 from hrp.data.sources.yfinance_source import YFinanceSource
-
-
-# Default test symbols (large-cap, liquid)
-TEST_SYMBOLS = [
-    "AAPL",   # Apple
-    "MSFT",   # Microsoft
-    "GOOGL",  # Alphabet
-    "AMZN",   # Amazon
-    "NVDA",   # NVIDIA
-    "META",   # Meta
-    "TSLA",   # Tesla
-    "V",      # Visa
-    "UNH",    # UnitedHealth
-    "JNJ",    # Johnson & Johnson
-]
 
 
 def ingest_corporate_actions(

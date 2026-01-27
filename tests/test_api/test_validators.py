@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from hrp.api.validators import (
+    Validator,
     validate_date,
     validate_date_range,
     validate_non_empty_string,
@@ -477,3 +478,79 @@ class TestValidatorsIntegration:
 
         # Very large integers should pass
         validate_positive_int(999999999)
+
+
+# =============================================================================
+# Validator Class Tests
+# =============================================================================
+
+
+class TestValidatorClass:
+    """Tests for Validator class static methods."""
+
+    def test_validator_not_empty_with_valid_string(self):
+        """Test not_empty accepts non-empty strings."""
+        # Should not raise
+        Validator.not_empty("test", "field")
+        Validator.not_empty("  spaces  ", "field")
+
+    def test_validator_not_empty_with_empty_string(self):
+        """Test not_empty rejects empty strings."""
+        with pytest.raises(ValueError, match="field cannot be empty"):
+            Validator.not_empty("", "field")
+
+        with pytest.raises(ValueError, match="field cannot be empty"):
+            Validator.not_empty("   ", "field")
+
+    def test_validator_positive_with_valid_value(self):
+        """Test positive accepts positive integers."""
+        # Should not raise
+        Validator.positive(1, "field")
+        Validator.positive(100, "field")
+
+    def test_validator_positive_with_invalid_value(self):
+        """Test positive rejects non-positive integers."""
+        with pytest.raises(ValueError, match="field must be positive"):
+            Validator.positive(0, "field")
+
+        with pytest.raises(ValueError, match="field must be positive"):
+            Validator.positive(-1, "field")
+
+    def test_validator_not_future_with_valid_date(self):
+        """Test not_future accepts dates that are not in the future."""
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        # Should not raise
+        Validator.not_future(today, "date")
+        Validator.not_future(yesterday, "date")
+
+    def test_validator_not_future_with_future_date(self):
+        """Test not_future rejects future dates."""
+        tomorrow = date.today() + timedelta(days=1)
+
+        with pytest.raises(ValueError, match="date cannot be in the future"):
+            Validator.not_future(tomorrow, "date")
+
+    def test_validator_date_range_with_valid_range(self):
+        """Test date_range accepts valid date ranges."""
+        start = date(2023, 1, 1)
+        end = date(2023, 12, 31)
+
+        # Should not raise
+        Validator.date_range(start, end)
+
+    def test_validator_date_range_with_same_dates(self):
+        """Test date_range accepts same start and end dates."""
+        d = date(2023, 1, 1)
+
+        # Should not raise
+        Validator.date_range(d, d)
+
+    def test_validator_date_range_with_invalid_range(self):
+        """Test date_range rejects invalid date ranges."""
+        start = date(2023, 12, 31)
+        end = date(2023, 1, 1)
+
+        with pytest.raises(ValueError, match="start date must be <= end date"):
+            Validator.date_range(start, end)

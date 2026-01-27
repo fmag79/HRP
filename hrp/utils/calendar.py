@@ -178,11 +178,65 @@ def get_previous_trading_day(from_date: date) -> date:
     # Look back up to 10 days (should cover any holiday period)
     start_date = from_date - pd.Timedelta(days=10)
     sessions = cal.sessions_in_range(pd.Timestamp(start_date), ts)
-    
+
     if len(sessions) == 0:
         raise ValueError(f"No trading days found before {from_date}")
-    
+
     result: date = sessions[-1].date()
 
     logger.debug(f"get_previous_trading_day({from_date}): {result}")
     return result
+
+
+def filter_to_trading_days(start: date, end: date) -> tuple[date, date, pd.DatetimeIndex]:
+    """
+    Filter date range to NYSE trading days only.
+
+    This utility function filters a date range to only include NYSE trading days,
+    excluding weekends and holidays. It's useful for backtesting and feature computation
+    where you need to ensure you're only analyzing valid trading days.
+
+    Args:
+        start: Start date (inclusive)
+        end: End date (inclusive)
+
+    Returns:
+        Tuple of (filtered_start, filtered_end, trading_days)
+        - filtered_start: First trading day in range (as date)
+        - filtered_end: Last trading day in range (as date)
+        - trading_days: DatetimeIndex of all trading days in range
+
+    Raises:
+        ValueError: If no trading days found in the range
+
+    Examples:
+        >>> # Monday to Sunday (excludes weekend)
+        >>> start, end, days = filter_to_trading_days(date(2023, 1, 2), date(2023, 1, 8))
+        >>> len(days)
+        5
+        >>> # Range with holiday
+        >>> start, end, days = filter_to_trading_days(date(2023, 7, 3), date(2023, 7, 7))
+        >>> len(days)  # Skips July 4 (Independence Day)
+        4
+
+    Note:
+        This function is particularly useful when you want to ensure your analysis
+        only includes days when the market was open. It automatically adjusts the
+        start and end dates to the nearest trading days.
+    """
+    trading_days = get_trading_days(start, end)
+
+    if len(trading_days) == 0:
+        raise ValueError(f"No trading days found between {start} and {end}")
+
+    # Extract first and last trading days as date objects
+    filtered_start = trading_days[0].date()
+    filtered_end = trading_days[-1].date()
+
+    logger.debug(
+        f"filter_to_trading_days({start}, {end}): "
+        f"filtered to {len(trading_days)} trading days "
+        f"({filtered_start} to {filtered_end})"
+    )
+
+    return filtered_start, filtered_end, trading_days

@@ -55,7 +55,7 @@ class APIConfig:
 
 
 @dataclass
-class BacktestConfig:
+class DefaultBacktestConfig:
     """Default backtest configuration."""
 
     # Position sizing
@@ -79,7 +79,7 @@ class Config:
 
     data: DataConfig = field(default_factory=DataConfig)
     api: APIConfig = field(default_factory=APIConfig)
-    backtest: BacktestConfig = field(default_factory=BacktestConfig)
+    backtest: DefaultBacktestConfig = field(default_factory=DefaultBacktestConfig)
 
     # General settings
     log_level: str = "INFO"

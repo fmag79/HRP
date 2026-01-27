@@ -21,12 +21,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from hrp.api.platform import (
-    NotFoundError,
-    PermissionError,
-    PlatformAPI,
-    PlatformAPIError,
-)
+from hrp.api.platform import PlatformAPI
+from hrp.exceptions import NotFoundError, PermissionError, PlatformAPIError
 from hrp.data.db import DatabaseManager
 from hrp.data.schema import create_tables
 
@@ -1191,9 +1187,12 @@ class TestPlatformAPIExceptions:
     """Tests for custom exception classes."""
 
     def test_platform_api_error_base(self):
-        """Test PlatformAPIError is the base exception."""
-        assert issubclass(PermissionError, PlatformAPIError)
-        assert issubclass(NotFoundError, PlatformAPIError)
+        """Test API exceptions inherit from APIError base."""
+        from hrp.exceptions import APIError
+
+        assert issubclass(PermissionError, APIError)
+        assert issubclass(NotFoundError, APIError)
+        assert issubclass(PlatformAPIError, APIError)
 
     def test_permission_error_message(self):
         """Test PermissionError preserves message."""

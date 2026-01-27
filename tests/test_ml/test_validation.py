@@ -3,7 +3,6 @@ Comprehensive tests for walk-forward ML validation.
 
 Tests cover:
 - WalkForwardConfig validation
-- FeatureSelectionCache functionality
 - FoldResult and WalkForwardResult dataclasses
 - generate_folds function for expanding/rolling windows
 - compute_fold_metrics function
@@ -20,7 +19,6 @@ import pytest
 
 from hrp.ml.validation import (
     WalkForwardConfig,
-    FeatureSelectionCache,
     FoldResult,
     WalkForwardResult,
     generate_folds,
@@ -30,6 +28,7 @@ from hrp.ml.validation import (
     _process_fold,
     _process_fold_safe,
     _log_to_mlflow,
+    _feature_selection_cache,
 )
 
 
@@ -208,82 +207,6 @@ class TestWalkForwardConfig:
                 end_date=date(2023, 12, 31),
             )
             assert config.model_type == model_type
-
-
-# =============================================================================
-# FeatureSelectionCache Tests
-# =============================================================================
-
-
-class TestFeatureSelectionCache:
-    """Tests for FeatureSelectionCache dataclass."""
-
-    def test_cache_init_empty(self):
-        """FeatureSelectionCache should initialize empty."""
-        cache = FeatureSelectionCache()
-        assert cache.get("any_key") is None
-
-    def test_cache_set_and_get(self):
-        """FeatureSelectionCache should store and retrieve features."""
-        cache = FeatureSelectionCache()
-        features = ["feature_a", "feature_b"]
-
-        cache.set("key1", features)
-        result = cache.get("key1")
-
-        assert result == features
-
-    def test_cache_get_nonexistent(self):
-        """FeatureSelectionCache.get should return None for missing keys."""
-        cache = FeatureSelectionCache()
-        assert cache.get("nonexistent") is None
-
-    def test_cache_clear(self):
-        """FeatureSelectionCache.clear should remove all entries."""
-        cache = FeatureSelectionCache()
-        cache.set("key1", ["a", "b"])
-        cache.set("key2", ["c", "d"])
-
-        cache.clear()
-
-        assert cache.get("key1") is None
-        assert cache.get("key2") is None
-
-    def test_cache_get_or_compute_cached(self):
-        """get_or_compute should return cached value if exists."""
-        cache = FeatureSelectionCache()
-        cached_features = ["cached_a", "cached_b"]
-        cache.set("test_key", cached_features)
-
-        # Create dummy X and y (shouldn't be used)
-        X = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
-        y = pd.Series([0, 1])
-
-        result = cache.get_or_compute(X, y, max_features=10, cache_key="test_key")
-
-        assert result == cached_features
-
-    def test_cache_get_or_compute_computes(self):
-        """get_or_compute should compute and cache if not cached."""
-        cache = FeatureSelectionCache()
-
-        # Create test data
-        np.random.seed(42)
-        X = pd.DataFrame({
-            "feat_a": np.random.randn(100),
-            "feat_b": np.random.randn(100),
-            "feat_c": np.random.randn(100),
-        })
-        y = pd.Series(np.random.randn(100))
-
-        with patch("hrp.ml.validation.select_features") as mock_select:
-            mock_select.return_value = ["feat_a", "feat_b"]
-
-            result = cache.get_or_compute(X, y, max_features=2, cache_key="new_key")
-
-        assert result == ["feat_a", "feat_b"]
-        # Should now be cached
-        assert cache.get("new_key") == ["feat_a", "feat_b"]
 
 
 # =============================================================================

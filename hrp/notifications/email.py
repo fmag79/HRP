@@ -10,6 +10,8 @@ from typing import Any
 
 from loguru import logger
 
+from hrp.exceptions import EmailConfigurationError, EmailNotificationError
+
 # Import resend conditionally to handle missing package gracefully
 try:
     import resend
@@ -18,18 +20,6 @@ try:
 except ImportError:
     RESEND_AVAILABLE = False
     logger.warning("resend package not installed - email notifications will be disabled")
-
-
-class EmailNotificationError(Exception):
-    """Base exception for email notification errors."""
-
-    pass
-
-
-class EmailConfigurationError(EmailNotificationError):
-    """Raised when email configuration is missing or invalid."""
-
-    pass
 
 
 class EmailNotifier:

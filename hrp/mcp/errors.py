@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from loguru import logger
 
-from hrp.api.platform import NotFoundError, PermissionError, PlatformAPIError
+from hrp.exceptions import NotFoundError, PermissionError, PlatformAPIError
 from hrp.mcp.formatters import format_response
 
 

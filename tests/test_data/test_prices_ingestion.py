@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pandas as pd
 import pytest
 
+from hrp.data.constants import TEST_SYMBOLS
 from hrp.data.ingestion.prices import (
-    TEST_SYMBOLS,
     ingest_prices,
     _upsert_prices,
     get_price_stats,
