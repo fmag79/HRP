@@ -8,6 +8,9 @@ Provides access to system status, data health, hypotheses, and experiments.
 import sys
 from pathlib import Path
 
+# Version from pyproject.toml
+DASHBOARD_VERSION = "1.6.0"
+
 # Add project root to Python path so Streamlit can find the hrp module
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
@@ -33,17 +36,43 @@ def get_api() -> Any:
     Get or create the Platform API instance.
 
     Uses Streamlit session state to maintain a single API instance.
+    Handles scheduler database lock conflicts gracefully.
     """
     if "api" not in st.session_state:
         try:
             from hrp.api.platform import PlatformAPI
 
             st.session_state.api = PlatformAPI()
+            st.session_state.db_error = None
             logger.info("PlatformAPI initialized for dashboard")
         except Exception as e:
             logger.error(f"Failed to initialize PlatformAPI: {e}")
             st.session_state.api = None
+            st.session_state.db_error = e
     return st.session_state.api
+
+
+def render_db_error() -> None:
+    """
+    Render database error with scheduler conflict resolution UI.
+
+    Called when PlatformAPI initialization fails due to database lock.
+    """
+    if "db_error" not in st.session_state:
+        return
+
+    error = st.session_state.db_error
+    if error is None:
+        return
+
+    from hrp.dashboard.components import render_scheduler_conflict
+    from hrp.utils.scheduler import is_duckdb_lock_error
+
+    if is_duckdb_lock_error(error):
+        render_scheduler_conflict(error)
+    else:
+        st.error("Database Connection Error")
+        st.exception(error)
 
 
 # =============================================================================
@@ -53,54 +82,134 @@ def get_api() -> Any:
 
 def render_home() -> None:
     """Render the Home page with system status and recent activity."""
-    st.title("HRP Dashboard")
-    st.markdown("**Hedgefund Research Platform** - Systematic Trading Strategy Development")
+    # Page header with gradient text
+    st.markdown("""
+    <div style="margin-bottom: 2rem;">
+        <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin: 0;">
+            Dashboard
+        </h1>
+        <p style="color: #9ca3af; margin: 0.5rem 0 0 0;">
+            Hedgefund Research Platform — Systematic Trading Strategy Development
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     api = get_api()
 
-    # System Status Section
-    st.header("System Status")
-
+    # Show database error if API initialization failed
     if api is None:
-        st.error("Platform API not available. Check database connection.")
+        render_db_error()
         return
+
+    # System Status Section with custom cards
+    st.markdown("""
+    <p style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 1rem;">
+        System Status
+    </p>
+    """, unsafe_allow_html=True)
 
     try:
         health = api.health_check()
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             api_status = health.get("api", "unknown")
-            if api_status == "ok":
-                st.success("API: Online")
-            else:
-                st.error(f"API: {api_status}")
+            status_color = "#10b981" if api_status == "ok" else "#ef4444"
+            status_text = "ONLINE" if api_status == "ok" else api_status.upper()
+            st.markdown(f"""
+            <div class="status-card {'status-ok' if api_status == 'ok' else 'status-error'}" style="padding: 1.25rem;">
+                <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    API
+                </div>
+                <div style="color: {status_color}; font-size: 1.5rem; font-weight: 600; font-family: 'JetBrains Mono', monospace;">
+                    {status_text}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with col2:
             db_status = health.get("database", "unknown")
-            if db_status == "ok":
-                st.success("Database: Connected")
-            else:
-                st.error(f"Database: {db_status}")
+            status_color = "#10b981" if db_status == "ok" else "#ef4444"
+            status_text = "CONNECTED" if db_status == "ok" else db_status.upper()
+            st.markdown(f"""
+            <div class="status-card {'status-ok' if db_status == 'ok' else 'status-error'}" style="padding: 1.25rem;">
+                <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Database
+                </div>
+                <div style="color: {status_color}; font-size: 1.5rem; font-weight: 600; font-family: 'JetBrains Mono', monospace;">
+                    {status_text}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with col3:
             table_count = len([t for t, v in health.get("tables", {}).items() if v.get("status") == "ok"])
             total_tables = len(health.get("tables", {}))
-            if table_count == total_tables and total_tables > 0:
-                st.success(f"Tables: {table_count}/{total_tables}")
-            else:
-                st.warning(f"Tables: {table_count}/{total_tables}")
+            status_color = "#10b981" if table_count == total_tables and total_tables > 0 else "#f59e0b"
+            st.markdown(f"""
+            <div class="status-card {'status-ok' if table_count == total_tables and total_tables > 0 else ''}" style="padding: 1.25rem;">
+                <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Tables
+                </div>
+                <div style="color: {status_color}; font-size: 1.5rem; font-weight: 600; font-family: 'JetBrains Mono', monospace;">
+                    {table_count}/{total_tables}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Table Details
-        with st.expander("Table Details"):
+        with col4:
+            scheduler_info = health.get("scheduler", {})
+            if scheduler_info.get("is_running"):
+                status_text = "RUNNING"
+                status_color = "#10b981"
+                subtext = f"PID {scheduler_info.get('pid', 'N/A')}"
+            elif scheduler_info.get("is_installed"):
+                status_text = "STOPPED"
+                status_color = "#6b7280"
+                subtext = "Ready to start"
+            else:
+                status_text = "N/A"
+                status_color = "#6b7280"
+                subtext = "Not installed"
+
+            st.markdown(f"""
+            <div class="status-card {'status-ok' if scheduler_info.get('is_running') else ''}" style="padding: 1.25rem;">
+                <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Scheduler
+                </div>
+                <div style="color: {status_color}; font-size: 1.5rem; font-weight: 600; font-family: 'JetBrains Mono', monospace;">
+                    {status_text}
+                </div>
+                <div style="color: #6b7280; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; margin-top: 0.25rem;">
+                    {subtext}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Table Details with styled expander
+        with st.expander("📊 Table Details", expanded=False):
             tables = health.get("tables", {})
             if tables:
-                table_data = [
-                    {"Table": name, "Status": info.get("status", "unknown"), "Row Count": info.get("count", 0)}
-                    for name, info in tables.items()
-                ]
-                st.table(table_data)
+                for name, info in tables.items():
+                    status_color = "#10b981" if info.get("status") == "ok" else "#ef4444"
+                    count = info.get("count", 0)
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: space-between; align-items: center;
+                                padding: 0.75rem; background: #1e293b; border: 1px solid #374151; border-radius: 6px; margin-bottom: 0.5rem;">
+                        <div>
+                            <span style="color: #f1f5f9; font-weight: 500;">{name}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <span style="color: {status_color}; font-size: 0.75rem; padding: 0.125rem 0.5rem; background: rgba(16, 185, 129, 0.1); border-radius: 4px;">
+                                {info.get('status', 'unknown').upper()}
+                            </span>
+                            <span style="color: #9ca3af; font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;">
+                                {count:,} rows
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("No table information available")
 
@@ -109,13 +218,19 @@ def render_home() -> None:
         st.error(f"Failed to retrieve system status: {e}")
 
     # Recent Activity Section
-    st.header("Recent Activity")
+    st.markdown("""<div style="height: 1px; background: #374151; margin: 2.5rem 0;"></div>""", unsafe_allow_html=True)
+
+    st.markdown("""
+    <p style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 1rem;">
+        Recent Activity
+    </p>
+    """, unsafe_allow_html=True)
 
     try:
         events = api.get_lineage(limit=10)
 
         if events:
-            for event in events:
+            for idx, event in enumerate(events):
                 timestamp = event.get("timestamp", "")
                 if isinstance(timestamp, datetime):
                     timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S")
@@ -128,37 +243,131 @@ def render_home() -> None:
                 icon = _get_event_icon(event_type)
                 summary = _format_event_summary(event_type, details)
 
-                st.markdown(f"{icon} **{event_type}** by `{actor}` - {summary}")
-                st.caption(f"{timestamp}")
-                st.divider()
+                # Color coding by event type
+                event_colors = {
+                    "hypothesis_created": "#3b82f6",
+                    "hypothesis_updated": "#60a5fa",
+                    "experiment_run": "#8b5cf6",
+                    "deployment_approved": "#10b981",
+                }
+                event_color = event_colors.get(event_type, "#6b7280")
+
+                st.markdown(f"""
+                <div style="background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;
+                            border-left: 3px solid {event_color};">
+                    <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                        <span style="font-size: 1.25rem;">{icon}</span>
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                                <span style="color: {event_color}; font-weight: 600; font-size: 0.875rem;">
+                                    {event_type.replace('_', ' ').title()}
+                                </span>
+                                <span style="color: #6b7280;">•</span>
+                                <span style="color: #9ca3af; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">
+                                    {actor}
+                                </span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 0.875rem; margin-bottom: 0.5rem;">
+                                {summary}
+                            </div>
+                            <div style="color: #6b7280; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+                                {timestamp}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.info("No recent activity recorded")
+            st.markdown("""
+            <div style="text-align: center; padding: 3rem; color: #6b7280;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
+                <div>No recent activity recorded</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     except Exception as e:
         logger.error(f"Failed to retrieve recent activity: {e}")
         st.warning("Could not load recent activity")
 
     # Quick Stats
-    st.header("Quick Stats")
+    st.markdown("""<div style="height: 1px; background: #374151; margin: 2.5rem 0;"></div>""", unsafe_allow_html=True)
+
+    st.markdown("""
+    <p style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 1rem;">
+        Research Overview
+    </p>
+    """, unsafe_allow_html=True)
 
     try:
         col1, col2, col3, col4 = st.columns(4)
 
         hypotheses = api.list_hypotheses(limit=1000)
+
         with col1:
-            st.metric("Total Hypotheses", len(hypotheses))
+            st.markdown(f"""
+            <div style="background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 1.25rem; text-align: center;">
+                <div style="color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Total
+                </div>
+                <div style="color: #f1f5f9; font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                    {len(hypotheses)}
+                </div>
+                <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                    Hypotheses
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with col2:
             active = len([h for h in hypotheses if h.get("status") in ("draft", "testing")])
-            st.metric("Active Hypotheses", active)
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+                        border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 1.25rem; text-align: center;">
+                <div style="color: #60a5fa; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Active
+                </div>
+                <div style="color: #60a5fa; font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                    {active}
+                </div>
+                <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                    In Progress
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with col3:
             validated = len([h for h in hypotheses if h.get("status") == "validated"])
-            st.metric("Validated", validated)
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+                        border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; padding: 1.25rem; text-align: center;">
+                <div style="color: #10b981; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Validated
+                </div>
+                <div style="color: #10b981; font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                    {validated}
+                </div>
+                <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                    Ready for Deployment
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with col4:
             deployed = len([h for h in hypotheses if h.get("status") == "deployed"])
-            st.metric("Deployed", deployed)
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+                        border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 8px; padding: 1.25rem; text-align: center;">
+                <div style="color: #a78bfa; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                    Deployed
+                </div>
+                <div style="color: #a78bfa; font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                    {deployed}
+                </div>
+                <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                    In Production
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     except Exception as e:
         logger.error(f"Failed to retrieve quick stats: {e}")
@@ -653,53 +862,117 @@ def _get_status_color(status: str) -> str:
 def render_sidebar() -> str:
     """Render the sidebar and return the selected page."""
     with st.sidebar:
+        # Load custom CSS
+        with open("hrp/dashboard/static/style.css") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
         # HRP Branding
-        st.markdown("# HRP")
-        st.markdown("**Hedgefund Research Platform**")
-        st.divider()
+        st.markdown("""
+        <div style="margin-bottom: 2rem;">
+            <h1 style="margin: 0; font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em;">
+                HRP
+            </h1>
+            <p style="margin: 0; color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;">
+                Hedgefund Research Platform
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""<div style="height: 1px; background: #374151; margin: 1.5rem 0;"></div>""", unsafe_allow_html=True)
 
         # Navigation
-        st.markdown("### Navigation")
+        st.markdown("""
+        <p style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 0.75rem;">
+            Navigation
+        </p>
+        """, unsafe_allow_html=True)
+
         page = st.selectbox(
             "Select Page",
             options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments"],
             label_visibility="collapsed",
         )
 
-        st.divider()
+        st.markdown("""<div style="height: 1px; background: #374151; margin: 1.5rem 0;"></div>""", unsafe_allow_html=True)
 
         # Quick Links
-        st.markdown("### Quick Links")
-        # Use styled anchor tag with JavaScript fallback to open in new tab
-        # Using 127.0.0.1 instead of localhost because MLflow blocks localhost
+        st.markdown("""
+        <p style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 0.75rem;">
+            Quick Links
+        </p>
+        """, unsafe_allow_html=True)
+
+        # MLflow UI button with custom styling
         st.markdown(
             """
-            <a href="http://127.0.0.1:5000" target="_blank" rel="noopener noreferrer" 
+            <a href="http://127.0.0.1:5000" target="_blank" rel="noopener noreferrer"
                onclick="window.open('http://127.0.0.1:5000', '_blank'); return false;"
                style="
-                   display: inline-block;
-                   background-color: #FF4B4B;
+                   display: flex;
+                   align-items: center;
+                   justify-content: center;
+                   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
                    color: white;
                    text-decoration: none;
-                   padding: 0.5rem 1rem;
-                   border-radius: 0.25rem;
+                   padding: 0.625rem 1rem;
+                   border-radius: 6px;
                    font-size: 0.875rem;
+                   font-weight: 500;
                    width: 100%;
-                   text-align: center;
                    margin-bottom: 0.5rem;
-                   cursor: pointer;
-               ">MLflow UI</a>
+                   transition: all 0.15s ease;
+                   box-shadow: 0 0 15px rgba(59, 130, 246, 0.25);
+               "
+               onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 0 25px rgba(59, 130, 246, 0.4)';"
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 0 15px rgba(59, 130, 246, 0.25)';">
+                <span style="margin-right: 0.5rem;">📊</span>
+                MLflow UI
+            </a>
             """,
             unsafe_allow_html=True,
         )
-        st.markdown("- [Documentation](docs/)")
+        st.markdown("""
+        <div style="padding: 0.625rem 1rem; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 6px; margin-bottom: 0.5rem;">
+            <a href="docs/" target="_blank" style="color: #60a5fa; text-decoration: none; font-size: 0.875rem;">
+                📚 Documentation
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.divider()
+        st.markdown("""<div style="height: 1px; background: #374151; margin: 1.5rem 0;"></div>""", unsafe_allow_html=True)
+
+        # Scheduler Status
+        st.markdown("""
+        <p style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 0.75rem;">
+            Scheduler
+        </p>
+        """, unsafe_allow_html=True)
+
+        from hrp.dashboard.components import render_scheduler_status
+
+        render_scheduler_status()
+
+        st.markdown("""<div style="height: 1px; background: #374151; margin: 1.5rem 0;"></div>""", unsafe_allow_html=True)
 
         # System Info
-        st.markdown("### System Info")
-        st.caption(f"Dashboard Version: 0.1.0")
-        st.caption(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        st.markdown("""
+        <p style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 0.75rem;">
+            System
+        </p>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div style="font-size: 0.75rem; color: #9ca3af; line-height: 1.6;">
+            <div style="display: flex; justify-content: space-between;">
+                <span style="color: #6b7280;">Version</span>
+                <span style="font-family: 'JetBrains Mono', monospace;">{DASHBOARD_VERSION}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-top: 0.25rem;">
+                <span style="color: #6b7280;">Updated</span>
+                <span style="font-family: 'JetBrains Mono', monospace;">{datetime.now().strftime('%H:%M')}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         return page
 
@@ -715,6 +988,12 @@ def main() -> None:
 
     # Render sidebar and get selected page
     page = render_sidebar()
+
+    # Check if database is locked before rendering pages
+    api = get_api()
+    if api is None:
+        render_db_error()
+        return
 
     # Route to the selected page
     if page == "Home":

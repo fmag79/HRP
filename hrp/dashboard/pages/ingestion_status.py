@@ -165,34 +165,77 @@ def get_source_statistics() -> pd.DataFrame:
 
 def render() -> None:
     """Render the Data Ingestion Status page."""
-    st.title("Data Ingestion Status")
-    st.markdown("Monitor data ingestion pipelines, job status, and scheduling.")
+    # Load custom CSS
+    try:
+        with open("hrp/dashboard/static/style.css") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except FileNotFoundError:
+        pass
+
+    # Page header
+    st.markdown("""
+    <div style="margin-bottom: 2rem;">
+        <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin: 0;">
+            Data Ingestion Status
+        </h1>
+        <p style="color: #9ca3af; margin: 0.5rem 0 0 0;">
+            Monitor data ingestion pipelines, job status, and scheduling
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
     # Overview Metrics
     # -------------------------------------------------------------------------
-    st.subheader("Overview")
+    st.markdown("""
+    <p style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 1rem;">
+        Overview
+    </p>
+    """, unsafe_allow_html=True)
 
     stats = get_ingestion_statistics()
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric(
-            label="Total Runs",
-            value=f"{stats['total_runs']:,}"
-        )
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 1.25rem;">
+            <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                Total Runs
+            </div>
+            <div style="color: #f1f5f9; font-size: 1.75rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                {stats['total_runs']:,}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col2:
-        st.metric(
-            label="Success Rate",
-            value=f"{stats['success_rate']:.1f}%",
-            delta=f"{stats['success_count']} / {stats['total_runs']}"
-        )
+        success_color = "#10b981" if stats['success_rate'] >= 90 else "#f59e0b" if stats['success_rate'] >= 70 else "#ef4444"
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 1.25rem;">
+            <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                Success Rate
+            </div>
+            <div style="color: {success_color}; font-size: 1.75rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                {stats['success_rate']:.1f}%
+            </div>
+            <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                {stats['success_count']} / {stats['total_runs']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col3:
-        st.metric(
-            label="Failed Runs",
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 1.25rem;">
+            <div style="color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+                Failed Runs
+            </div>
+            <div style="color: #f1f5f9; font-size: 1.75rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">
+                {stats['failed_runs']:,}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
             value=f"{stats['failed_count']:,}"
         )
 

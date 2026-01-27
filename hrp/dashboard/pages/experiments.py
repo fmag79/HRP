@@ -1355,17 +1355,27 @@ def render_parameter_sweep_section() -> None:
 
 def render() -> None:
     """Main render function for the Experiments page."""
-    st.title("Experiments")
+    # Load custom CSS
+    try:
+        with open("hrp/dashboard/static/style.css") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except FileNotFoundError:
+        pass
 
-    st.markdown(
-        """
-        Browse, compare, and run backtests. All experiments are tracked in MLflow
-        for reproducibility and analysis.
-        """
-    )
+    # Page header
+    st.markdown("""
+    <div style="margin-bottom: 2rem;">
+        <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin: 0;">
+            Experiments
+        </h1>
+        <p style="color: #9ca3af; margin: 0.5rem 0 0 0;">
+            Browse, compare, and run backtests. All experiments are tracked in MLflow for reproducibility and analysis.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Browse", "Compare", "Run Backtest", "Validation Analysis"])
+    # Create tabs with custom styling
+    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Browse", "📊 Compare", "⚡ Run Backtest", "🔬 Validation Analysis"])
 
     with tab1:
         render_browse_tab()

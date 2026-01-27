@@ -512,8 +512,24 @@ def render_flagged_anomalies(
 
 def render() -> None:
     """Render the Data Health page."""
-    st.title("Data Health")
-    st.markdown("Monitor data completeness, quality, and ingestion status.")
+    # Load custom CSS
+    try:
+        with open("hrp/dashboard/static/style.css") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except FileNotFoundError:
+        pass
+
+    # Page header
+    st.markdown("""
+    <div style="margin-bottom: 2rem;">
+        <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin: 0;">
+            Data Health
+        </h1>
+        <p style="color: #9ca3af; margin: 0.5rem 0 0 0;">
+            Monitor data completeness, quality, and ingestion status
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
     # Health Score Hero
@@ -535,7 +551,7 @@ def render() -> None:
         st.error(f"Failed to load quality report: {e}")
         report = None
 
-    st.divider()
+    st.markdown("""<div style="height: 1px; background: #374151; margin: 2rem 0;"></div>""", unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
     # Overview Metrics

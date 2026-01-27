@@ -1202,12 +1202,13 @@ class PlatformAPI:
         Check API and database health.
 
         Returns:
-            Dictionary with health status
+            Dictionary with health status including scheduler information
         """
         status: dict[str, Any] = {
             "api": "ok",
             "database": "unknown",
             "tables": {},
+            "scheduler": {},
         }
 
         try:
@@ -1225,5 +1226,20 @@ class PlatformAPI:
 
         except Exception as e:
             status["database"] = f"error: {str(e)}"
+
+        # Check scheduler status
+        try:
+            from hrp.utils.scheduler import get_scheduler_status
+
+            scheduler_status = get_scheduler_status()
+            status["scheduler"] = {
+                "is_installed": scheduler_status.is_installed,
+                "is_running": scheduler_status.is_running,
+                "pid": scheduler_status.pid,
+                "command": scheduler_status.command,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to check scheduler status: {e}")
+            status["scheduler"] = {"error": str(e)}
 
         return status

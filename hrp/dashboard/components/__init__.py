@@ -19,6 +19,10 @@ from hrp.dashboard.components.sharpe_decay_viz import (
     render_parameter_sensitivity_chart,
     render_top_bottom_params,
 )
+from hrp.dashboard.components.scheduler_control import (
+    render_scheduler_conflict,
+    render_scheduler_status,
+)
 
 __all__ = [
     # Strategy config
@@ -35,4 +39,7 @@ __all__ = [
     "render_generalization_summary",
     "render_parameter_sensitivity_chart",
     "render_top_bottom_params",
+    # Scheduler control
+    "render_scheduler_conflict",
+    "render_scheduler_status",
 ]
