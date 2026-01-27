@@ -802,6 +802,7 @@ class IngestionScheduler:
         - Signal Scientist (hypothesis_created) → Alpha Researcher
         - Alpha Researcher (alpha_researcher_review, PROCEED) → ML Scientist
         - ML Scientist (experiment_completed) → ML Quality Sentinel
+        - ML Quality Sentinel (ml_quality_sentinel_audit, passed) → Validation Analyst
 
         Args:
             poll_interval_seconds: How often to poll lineage table (default: 60s)
@@ -810,7 +811,7 @@ class IngestionScheduler:
             The configured LineageEventWatcher instance
         """
         from hrp.agents.alpha_researcher import AlphaResearcher
-        from hrp.agents.research_agents import MLQualitySentinel, MLScientist
+        from hrp.agents.research_agents import MLQualitySentinel, MLScientist, ValidationAnalyst
 
         watcher = LineageEventWatcher(
             poll_interval_seconds=poll_interval_seconds,
@@ -885,6 +886,34 @@ class IngestionScheduler:
             callback=on_experiment_completed,
             actor_filter="agent:ml-scientist",
             name="ml_scientist_to_quality_sentinel",
+        )
+
+        # Trigger 4: ML Quality Sentinel → Validation Analyst
+        # When Quality Sentinel completes audit, Validation Analyst stress tests
+        def on_quality_audit(event: dict) -> None:
+            details = event.get("details", {})
+            hypothesis_id = event.get("hypothesis_id")
+            overall_passed = details.get("overall_passed", False)
+
+            # Only trigger if audit passed (no critical issues)
+            if overall_passed and hypothesis_id:
+                logger.info(
+                    f"Triggering Validation Analyst for hypothesis {hypothesis_id}"
+                )
+                try:
+                    analyst = ValidationAnalyst(
+                        hypothesis_ids=[hypothesis_id],
+                        send_alerts=True,
+                    )
+                    analyst.run()
+                except Exception as e:
+                    logger.error(f"Validation Analyst trigger failed: {e}")
+
+        watcher.register_trigger(
+            event_type="ml_quality_sentinel_audit",
+            callback=on_quality_audit,
+            actor_filter="agent:ml-quality-sentinel",
+            name="ml_quality_sentinel_to_validation_analyst",
         )
 
         # Store watcher reference

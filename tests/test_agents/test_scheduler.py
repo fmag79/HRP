@@ -859,3 +859,28 @@ class TestLineageEventWatcherStartStop:
         watcher.stop()  # Should not raise
 
         assert not watcher.running
+
+
+class TestResearchAgentTriggers:
+    """Tests for research agent trigger setup."""
+
+    @patch("hrp.data.db.get_db")
+    def test_setup_research_agent_triggers_includes_validation_analyst(self, mock_get_db):
+        """setup_research_agent_triggers should include ValidationAnalyst trigger."""
+        mock_db = MagicMock()
+        mock_db.fetchone.return_value = (0,)
+        mock_get_db.return_value = mock_db
+
+        scheduler = IngestionScheduler()
+        watcher = scheduler.setup_research_agent_triggers()
+
+        # Should have 4 triggers:
+        # 1. Signal Scientist → Alpha Researcher
+        # 2. Alpha Researcher → ML Scientist
+        # 3. ML Scientist → ML Quality Sentinel
+        # 4. ML Quality Sentinel → Validation Analyst
+        assert watcher.trigger_count == 4
+
+        # Verify the Validation Analyst trigger is registered
+        trigger_names = [t.name for t in watcher._triggers]
+        assert "ml_quality_sentinel_to_validation_analyst" in trigger_names

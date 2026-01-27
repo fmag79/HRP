@@ -248,6 +248,27 @@ print(f"Warnings: {result['warnings']}")
 # Research note written to docs/research/YYYY-MM-DD-ml-quality-sentinel.md
 ```
 
+### Run Validation Analyst for pre-deployment stress testing
+```python
+from hrp.agents import ValidationAnalyst
+
+# Stress tests validated hypotheses before deployment
+analyst = ValidationAnalyst(
+    hypothesis_ids=["HYP-2026-001"],  # None = all audited hypotheses
+    param_sensitivity_threshold=0.5,   # Min ratio of varied/baseline Sharpe
+    min_profitable_periods=0.67,       # 2/3 of time periods profitable
+    min_profitable_regimes=2,          # At least 2 of 3 regimes profitable
+    send_alerts=True,
+)
+result = analyst.run()
+
+print(f"Validated: {result['hypotheses_validated']}")
+print(f"Passed: {result['hypotheses_passed']}")
+print(f"Failed: {result['hypotheses_failed']}")
+# Checks: Parameter sensitivity, time stability, regime stability, execution costs
+# Research note written to docs/research/YYYY-MM-DD-validation-analyst.md
+```
+
 ### Run a multi-factor strategy backtest
 ```python
 from hrp.research.strategies import generate_multifactor_signals

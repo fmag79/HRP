@@ -23,6 +23,7 @@ from hrp.agents.research_agents import (
     AuditCheck,
     AuditSeverity,
     ExperimentAudit,
+    HypothesisValidation,
     MLQualitySentinel,
     MLScientist,
     MLScientistReport,
@@ -33,6 +34,10 @@ from hrp.agents.research_agents import (
     SignalScanReport,
     SignalScanResult,
     SignalScientist,
+    ValidationAnalyst,
+    ValidationAnalystReport,
+    ValidationCheck,
+    ValidationSeverity,
 )
 from hrp.agents.scheduler import IngestionScheduler, LineageEventWatcher, LineageTrigger
 from hrp.agents.sdk_agent import AgentCheckpoint, SDKAgent, SDKAgentConfig, TokenUsage
@@ -60,6 +65,12 @@ __all__ = [
     "ExperimentAudit",
     "MonitoringAlert",
     "QualitySentinelReport",
+    # Validation Analyst
+    "ValidationAnalyst",
+    "ValidationCheck",
+    "ValidationSeverity",
+    "HypothesisValidation",
+    "ValidationAnalystReport",
     # SDK Agents
     "SDKAgent",
     "SDKAgentConfig",

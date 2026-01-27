@@ -159,20 +159,20 @@ ML capabilities, statistical rigor, and agent integration.
 | **Alpha Researcher** | ✅ | SDK agent for hypothesis review (`hrp/agents/alpha_researcher.py`) |
 | **SDKAgent Base** | ✅ | Claude API integration base class (`hrp/agents/sdk_agent.py`) |
 | **LineageEventWatcher** | ✅ | Event-driven agent coordination (`hrp/agents/scheduler.py`) |
+| **Validation Analyst** | ✅ | Parameter sensitivity, regime stress tests (`hrp/agents/research_agents.py`) |
 | Report Generator | ❌ | Weekly research summaries |
-| Validation Analyst | ❌ | Parameter sensitivity, regime stress tests |
 
 **Research Agent Pipeline:**
 ```
-Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
-     ↓                    ↓                 ↓                ↓
-  IC analysis         Review drafts     Walk-forward      Audit for
-  Create drafts       Promote/defer     validation        overfitting
+Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Validation Analyst
+     ↓                    ↓                 ↓                ↓                   ↓
+  IC analysis         Review drafts     Walk-forward      Audit for        Stress test
+  Create drafts       Promote/defer     validation        overfitting      Pre-deployment
 ```
 
 **Event-Driven Coordination:**
 - `LineageEventWatcher` polls lineage table for events
-- Automatic triggering: Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+- Automatic triggering: Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Validation Analyst
 - Enable with `scheduler.setup_research_agent_triggers()` + `scheduler.start_with_triggers()`
 
 **Signal Scientist Features:**
@@ -426,6 +426,16 @@ Complete feature tracking with spec links.
 - MLflow now saves equity curve data as artifact for tear sheet analysis
 - Added 15 new tests (9 Empyrical metrics + 6 VaR/CVaR validation)
 - Test suite now at 2,115 tests (100% pass rate)
+
+**Changes (January 26, 2026 - Validation Analyst Implementation):**
+- Implemented Validation Analyst research agent (`hrp/agents/research_agents.py`)
+- Pre-deployment stress testing: parameter sensitivity, time stability, regime stability, execution costs
+- Leverages existing robustness module (`hrp/risk/robustness.py`) for validation checks
+- Event-driven: Triggered automatically after ML Quality Sentinel passes audit
+- Added `VALIDATION_ANALYST_REVIEW` event type to lineage system
+- Full pipeline now: Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Validation Analyst
+- 19 new tests for Validation Analyst agent
+- Updated CLAUDE.md with usage examples
 
 **Changes (January 26, 2026 - Research Agent Pipeline Complete):**
 - Implemented ML Scientist agent for walk-forward validation of hypotheses in testing status

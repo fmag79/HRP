@@ -111,6 +111,11 @@ class TestEventType:
         assert EventType.HYPOTHESIS_CREATED.value == "hypothesis_created"
         assert str(EventType.HYPOTHESIS_CREATED) == "EventType.HYPOTHESIS_CREATED"
 
+    def test_validation_analyst_event_type_exists(self):
+        """VALIDATION_ANALYST_REVIEW event type is defined."""
+        assert hasattr(EventType, "VALIDATION_ANALYST_REVIEW")
+        assert EventType.VALIDATION_ANALYST_REVIEW.value == "validation_analyst_review"
+
 
 class TestLineageEvent:
     """Tests for the LineageEvent dataclass."""
