@@ -1008,3 +1008,53 @@ class TestBackfillIntegration:
 
             assert result["symbols_success"] == 3
             assert len(call_times) == 3
+
+
+# =============================================================================
+# backfill_features_ema_vwap Tests
+# =============================================================================
+
+
+class TestBackfillFeaturesEMAVWAP:
+    """Tests for backfill_features_ema_vwap function."""
+
+    def test_backfill_ema_vwap_basic(self, populated_db):
+        """Test EMA/VWAP backfill for historical dates."""
+        from hrp.data.db import get_db
+        from hrp.data.backfill import backfill_features_ema_vwap
+
+        # Use smaller lookback since test fixture only has ~20 trading days
+        result = backfill_features_ema_vwap(
+            symbols=["AAPL", "MSFT"],
+            start=date(2023, 1, 20),
+            end=date(2023, 1, 31),
+            lookback_days=20,  # Smaller lookback for test data
+            db_path=populated_db,
+        )
+
+        assert result["symbols_success"] == 2
+        assert result["rows_inserted"] > 0
+
+        # Verify EMA/VWAP features exist
+        db = get_db(populated_db)
+        count = db.fetchone("""
+            SELECT COUNT(*) FROM features
+            WHERE feature_name IN ('ema_12d', 'ema_26d', 'vwap_20d')
+        """)[0]
+        assert count > 0
+
+    def test_backfill_ema_vwap_empty_result(self, backfill_db):
+        """Test EMA/VWAP backfill with symbols that have no price data."""
+        from hrp.data.db import get_db
+        from hrp.data.backfill import backfill_features_ema_vwap
+
+        result = backfill_features_ema_vwap(
+            symbols=["NONEXISTENT"],
+            start=date(2023, 1, 1),
+            end=date(2023, 1, 31),
+            lookback_days=20,
+            db_path=backfill_db,
+        )
+
+        assert result["symbols_failed"] == 1
+        assert "NONEXISTENT" in result["failed_symbols"]

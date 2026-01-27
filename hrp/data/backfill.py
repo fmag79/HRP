@@ -628,6 +628,141 @@ def _upsert_corporate_actions(db, df: pd.DataFrame) -> int:
     return len(records)
 
 
+def backfill_features_ema_vwap(
+    symbols: list[str],
+    start: date,
+    end: date,
+    batch_size: int = 10,
+    lookback_days: int = 60,
+    progress_file: Optional[Path] = None,
+    db_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Backfill EMA and VWAP features for historical dates.
+
+    Computes only ema_12d, ema_26d, and vwap_20d features which were
+    previously only computed from 2026-01-25.
+
+    Args:
+        symbols: List of tickers to compute features for
+        start: Start date for feature computation
+        end: End date for feature computation
+        batch_size: Number of symbols per batch
+        lookback_days: Days of price history needed for computation
+        progress_file: Path to progress tracking file
+        db_path: Optional database path
+
+    Returns:
+        Dictionary with computation statistics
+    """
+    from hrp.data.ingestion.features import _fetch_prices, _compute_all_features, _upsert_features
+
+    # Calculate price data start (need extra history for rolling windows)
+    price_start = start - timedelta(days=lookback_days)
+
+    # Initialize database connection
+    db = get_db(db_path)
+
+    # Initialize progress tracker
+    progress = None
+    if progress_file:
+        progress = BackfillProgress(progress_file)
+        symbols = progress.get_pending_symbols(symbols)
+        logger.info(f"Resuming backfill: {len(symbols)} symbols remaining")
+
+    # Track statistics
+    stats: dict[str, Any] = {
+        "symbols_requested": len(symbols),
+        "symbols_success": 0,
+        "symbols_failed": 0,
+        "symbols_skipped": 0,
+        "rows_inserted": 0,
+        "batches_processed": 0,
+        "failed_symbols": [],
+    }
+
+    # Calculate skipped count from progress
+    if progress:
+        original_count = progress.symbols and len(progress.symbols) or len(symbols)
+        stats["symbols_skipped"] = original_count - len(symbols)
+
+    # Process symbols in batches
+    num_batches = math.ceil(len(symbols) / batch_size)
+    logger.info(f"Computing EMA/VWAP features for {len(symbols)} symbols in {num_batches} batches")
+
+    for batch_idx in range(num_batches):
+        batch_start = batch_idx * batch_size
+        batch_end = min(batch_start + batch_size, len(symbols))
+        batch_symbols = symbols[batch_start:batch_end]
+
+        logger.info(f"Processing batch {batch_idx + 1}/{num_batches}")
+
+        for symbol in batch_symbols:
+            try:
+                # Fetch price data with extra history for rolling windows
+                prices_df = _fetch_prices(db, symbol, price_start, end)
+
+                if prices_df.empty or len(prices_df) < lookback_days:
+                    logger.warning(f"Insufficient price data for {symbol} (need {lookback_days}+ days)")
+                    stats["symbols_failed"] += 1
+                    stats["failed_symbols"].append(symbol)
+                    if progress:
+                        progress.mark_failed(symbol)
+                    continue
+
+                # Compute all features
+                features_df = _compute_all_features(prices_df, symbol, version="v1")
+
+                # Filter to EMA/VWAP features only
+                ema_vwap_features = ["ema_12d", "ema_26d", "vwap_20d"]
+                features_df = features_df[features_df["feature_name"].isin(ema_vwap_features)]
+
+                # Filter to requested date range (convert to pd.Timestamp for comparison)
+                start_ts = pd.Timestamp(start)
+                end_ts = pd.Timestamp(end)
+                features_df = features_df[
+                    (features_df["date"] >= start_ts) & (features_df["date"] <= end_ts)
+                ]
+
+                if features_df.empty:
+                    logger.warning(f"No EMA/VWAP features computed for {symbol} in date range")
+                    stats["symbols_failed"] += 1
+                    stats["failed_symbols"].append(symbol)
+                    if progress:
+                        progress.mark_failed(symbol)
+                    continue
+
+                # Upsert to features table
+                _upsert_features(db, features_df)
+                stats["rows_inserted"] += len(features_df)
+
+                stats["symbols_success"] += 1
+                logger.info(f"Computed {len(features_df)} EMA/VWAP features for {symbol}")
+
+                if progress:
+                    progress.mark_completed(symbol)
+
+            except Exception as e:
+                logger.error(f"Failed to compute features for {symbol}: {e}")
+                stats["symbols_failed"] += 1
+                stats["failed_symbols"].append(symbol)
+                if progress:
+                    progress.mark_failed(symbol)
+
+        stats["batches_processed"] += 1
+
+        # Save progress after each batch
+        if progress:
+            progress.save()
+
+    logger.info(
+        f"EMA/VWAP feature backfill complete: {stats['symbols_success']}/{stats['symbols_requested']} symbols, "
+        f"{stats['rows_inserted']} rows inserted"
+    )
+
+    return stats
+
+
 # =============================================================================
 # Validation
 # =============================================================================
