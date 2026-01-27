@@ -12,6 +12,44 @@ from loguru import logger
 from hrp.data.db import get_db
 
 
+def migrate_add_sector_columns(db_path: Union[str, None] = None) -> None:
+    """Add sector and industry columns to symbols table.
+
+    This migration adds:
+        - sector VARCHAR(50): GICS sector classification
+        - industry VARCHAR(100): Industry classification
+        - Index on sector column for efficient queries
+
+    The migration is idempotent - safe to run multiple times.
+    """
+    db = get_db(db_path)
+
+    # Check if columns exist
+    result = db.fetchdf("DESCRIBE symbols")
+    columns = result["column_name"].tolist()
+
+    # Add sector column if not exists
+    if "sector" not in columns:
+        db.execute("ALTER TABLE symbols ADD COLUMN sector VARCHAR(50)")
+        logger.info("Added sector column to symbols table")
+    else:
+        logger.debug("Sector column already exists in symbols table")
+
+    # Add industry column if not exists
+    if "industry" not in columns:
+        db.execute("ALTER TABLE symbols ADD COLUMN industry VARCHAR(100)")
+        logger.info("Added industry column to symbols table")
+    else:
+        logger.debug("Industry column already exists in symbols table")
+
+    # Add index on sector
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_symbols_sector ON symbols(sector)")
+        logger.info("Created index on symbols.sector")
+    except Exception as e:
+        logger.debug(f"Index may already exist: {e}")
+
+
 # SQL statements for table creation
 # IMPORTANT: Tables are ordered by FK dependencies - referenced tables come first
 TABLES = {
@@ -22,6 +60,8 @@ TABLES = {
             name VARCHAR,
             exchange VARCHAR,
             asset_type VARCHAR DEFAULT 'equity',
+            sector VARCHAR(50),
+            industry VARCHAR(100),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CHECK (asset_type IN ('equity', 'etf', 'index', 'other'))
         )

@@ -4,9 +4,12 @@ Configuration classes for backtesting and research.
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Callable, Any
+from typing import Callable, Any, Literal
 
 import pandas as pd
+
+from hrp.risk.costs import MarketImpactModel
+from hrp.risk.limits import RiskLimits
 
 
 @dataclass
@@ -78,8 +81,15 @@ class BacktestConfig:
     max_positions: int = 20
     min_position_pct: float = 0.02
 
-    # Costs
+    # Costs (legacy - kept for backward compatibility)
     costs: CostModel = field(default_factory=CostModel)
+
+    # Transaction cost model (new)
+    cost_model: MarketImpactModel = field(default_factory=MarketImpactModel)
+
+    # Risk limits (new)
+    risk_limits: RiskLimits | None = None  # None = no validation
+    validation_mode: Literal["clip", "strict", "warn"] = "clip"
 
     # Stop-loss
     stop_loss: StopLossConfig = field(default_factory=StopLossConfig)
@@ -98,6 +108,8 @@ class BacktestConfig:
     def __post_init__(self) -> None:
         if self.costs is None:
             self.costs = CostModel()
+        if self.cost_model is None:
+            self.cost_model = MarketImpactModel()
 
 
 @dataclass
@@ -109,6 +121,8 @@ class BacktestResult:
     equity_curve: pd.Series
     trades: pd.DataFrame
     benchmark_metrics: dict[str, float] | None = None
+    validation_report: Any | None = None  # ValidationReport from risk limits
+    estimated_costs: dict[str, float] | None = None
 
     @property
     def sharpe(self) -> float:

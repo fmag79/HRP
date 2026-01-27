@@ -4,6 +4,14 @@ Risk management and validation framework.
 Provides overfitting guards, statistical validation, and robustness checks.
 """
 
+from hrp.risk.costs import CostBreakdown, MarketImpactModel
+from hrp.risk.limits import (
+    RiskLimits,
+    LimitViolation,
+    PreTradeValidator,
+    RiskLimitViolationError,
+    ValidationReport as PreTradeValidationReport,
+)
 from hrp.risk.overfitting import (
     TestSetGuard,
     OverfittingError,
@@ -32,7 +40,19 @@ from hrp.risk.robustness import (
 )
 from hrp.risk.report import ValidationReport, generate_validation_report
 
+# Re-export the hypothesis validation report
+HypothesisValidationReport = ValidationReport
+
 __all__ = [
+    # Transaction cost model
+    "CostBreakdown",
+    "MarketImpactModel",
+    # Risk limits
+    "RiskLimits",
+    "LimitViolation",
+    "PreTradeValidator",
+    "RiskLimitViolationError",
+    "PreTradeValidationReport",
     # Overfitting prevention
     "TestSetGuard",
     "OverfittingError",

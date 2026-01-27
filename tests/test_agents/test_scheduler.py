@@ -861,6 +861,94 @@ class TestLineageEventWatcherStartStop:
         assert not watcher.running
 
 
+class TestSetupWeeklySectors:
+    """Tests for weekly sector ingestion setup."""
+
+    @patch("hrp.data.ingestion.sectors.SectorIngestionJob")
+    def test_setup_weekly_sectors_creates_job(self, mock_sector_job):
+        """setup_weekly_sectors should create a sector ingestion job."""
+        scheduler = IngestionScheduler()
+
+        mock_job_instance = MagicMock()
+        mock_sector_job.return_value = mock_job_instance
+
+        scheduler.setup_weekly_sectors()
+
+        jobs = scheduler.list_jobs()
+        job_ids = [j["id"] for j in jobs]
+
+        assert "sector_ingestion" in job_ids
+        assert len(jobs) == 1
+
+    @patch("hrp.data.ingestion.sectors.SectorIngestionJob")
+    def test_setup_weekly_sectors_with_custom_day(self, mock_sector_job):
+        """setup_weekly_sectors should respect custom day of week."""
+        scheduler = IngestionScheduler()
+
+        mock_job_instance = MagicMock()
+        mock_sector_job.return_value = mock_job_instance
+
+        scheduler.setup_weekly_sectors(day_of_week="sun")
+
+        jobs = scheduler.list_jobs()
+        assert len(jobs) == 1
+        assert "sun" in jobs[0]["trigger"]
+
+    @patch("hrp.data.ingestion.sectors.SectorIngestionJob")
+    def test_setup_weekly_sectors_with_custom_time(self, mock_sector_job):
+        """setup_weekly_sectors should respect custom time."""
+        scheduler = IngestionScheduler()
+
+        mock_job_instance = MagicMock()
+        mock_sector_job.return_value = mock_job_instance
+
+        scheduler.setup_weekly_sectors(sectors_time="09:30")
+
+        jobs = scheduler.list_jobs()
+        assert len(jobs) == 1
+        # Verify time is in trigger
+        assert "9" in jobs[0]["trigger"] and "30" in jobs[0]["trigger"]
+
+    @patch("hrp.data.ingestion.sectors.SectorIngestionJob")
+    def test_setup_weekly_sectors_passes_symbols(self, mock_sector_job):
+        """setup_weekly_sectors should pass symbols to SectorIngestionJob."""
+        scheduler = IngestionScheduler()
+
+        mock_job_instance = MagicMock()
+        mock_sector_job.return_value = mock_job_instance
+
+        symbols = ["AAPL", "MSFT", "GOOGL"]
+        scheduler.setup_weekly_sectors(symbols=symbols)
+
+        mock_sector_job.assert_called_once_with(symbols=symbols)
+
+    @patch("hrp.data.ingestion.sectors.SectorIngestionJob")
+    def test_setup_weekly_sectors_default_symbols_none(self, mock_sector_job):
+        """setup_weekly_sectors should pass None for symbols by default (all universe)."""
+        scheduler = IngestionScheduler()
+
+        mock_job_instance = MagicMock()
+        mock_sector_job.return_value = mock_job_instance
+
+        scheduler.setup_weekly_sectors()
+
+        mock_sector_job.assert_called_once_with(symbols=None)
+
+    def test_setup_weekly_sectors_invalid_day_raises(self):
+        """setup_weekly_sectors should raise for invalid day."""
+        scheduler = IngestionScheduler()
+
+        with pytest.raises(ValueError, match="day_of_week"):
+            scheduler.setup_weekly_sectors(day_of_week="invalid")
+
+    def test_setup_weekly_sectors_invalid_time_raises(self):
+        """setup_weekly_sectors should raise for invalid time."""
+        scheduler = IngestionScheduler()
+
+        with pytest.raises(ValueError):
+            scheduler.setup_weekly_sectors(sectors_time="25:00")
+
+
 class TestResearchAgentTriggers:
     """Tests for research agent trigger setup."""
 

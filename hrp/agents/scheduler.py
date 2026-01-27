@@ -745,6 +745,56 @@ class IngestionScheduler:
             f"(IC threshold: {ic_threshold}, create_hypotheses: {create_hypotheses})"
         )
 
+    def setup_weekly_sectors(
+        self,
+        sectors_time: str = "10:15",
+        day_of_week: str = "sat",
+        symbols: list[str] | None = None,
+    ) -> None:
+        """
+        Configure weekly sector data ingestion.
+
+        Schedules a job to fetch GICS sector classifications from Polygon.io
+        (with Yahoo Finance fallback) on the specified day of the week.
+        Default is Saturday at 10:15 AM ET.
+
+        Args:
+            sectors_time: Time to run sector ingestion (HH:MM format, default: 10:15)
+            day_of_week: Day of week to run (mon, tue, wed, thu, fri, sat, sun, default: sat)
+            symbols: List of symbols to update (None = all universe symbols)
+        """
+        from hrp.data.ingestion.sectors import SectorIngestionJob
+
+        # Parse and validate time
+        hour, minute = _parse_time(sectors_time, "sectors_time")
+
+        # Validate day of week
+        valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+        day_lower = day_of_week.lower()
+        if day_lower not in valid_days:
+            raise ValueError(
+                f"day_of_week must be one of {valid_days}, got '{day_of_week}'"
+            )
+
+        # Create job instance
+        sector_job = SectorIngestionJob(symbols=symbols)
+
+        # Schedule sector ingestion job
+        self.add_job(
+            func=sector_job.run,
+            job_id="sector_ingestion",
+            trigger=CronTrigger(
+                day_of_week=day_lower,
+                hour=hour,
+                minute=minute,
+                timezone=ET_TIMEZONE,
+            ),
+            name="Weekly Sector Ingestion",
+        )
+        logger.info(
+            f"Scheduled weekly sector ingestion at {sectors_time} ET on {day_of_week.upper()}"
+        )
+
     def setup_quality_sentinel(
         self,
         audit_time: str = "06:00",

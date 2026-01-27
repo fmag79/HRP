@@ -25,6 +25,7 @@ from hrp.data.schema import (
     get_table_counts,
     verify_schema,
     main,
+    migrate_add_sector_columns,
 )
 from hrp.data.db import DatabaseManager, get_db
 
@@ -479,3 +480,43 @@ class TestForeignKeyConstraints:
         assert counts["prices"] == 1
         assert counts["features"] == 1
         assert counts["universe"] == 1
+
+
+# =============================================================================
+# Sector Schema Migration Tests
+# =============================================================================
+
+
+class TestSymbolsSchema:
+    """Tests for symbols table schema sector columns."""
+
+    def test_symbols_has_sector_column(self, initialized_db):
+        """Symbols table has sector column after migration."""
+        from hrp.data.schema import migrate_add_sector_columns
+        db = get_db(initialized_db)
+        migrate_add_sector_columns()
+        result = db.fetchdf("DESCRIBE symbols")
+        columns = result["column_name"].tolist()
+        assert "sector" in columns
+
+    def test_symbols_has_industry_column(self, initialized_db):
+        """Symbols table has industry column after migration."""
+        from hrp.data.schema import migrate_add_sector_columns
+        db = get_db(initialized_db)
+        migrate_add_sector_columns()
+        result = db.fetchdf("DESCRIBE symbols")
+        columns = result["column_name"].tolist()
+        assert "industry" in columns
+
+    def test_sector_index_exists(self, initialized_db):
+        """Index on sector column exists after migration."""
+        from hrp.data.schema import migrate_add_sector_columns
+        db = get_db(initialized_db)
+        migrate_add_sector_columns()
+        # Check for index
+        result = db.fetchdf("""
+            SELECT index_name FROM duckdb_indexes()
+            WHERE table_name = 'symbols'
+        """)
+        index_names = result["index_name"].tolist()
+        assert any("sector" in idx.lower() for idx in index_names)
