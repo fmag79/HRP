@@ -26,7 +26,7 @@ from hrp.dashboard.components.data_explorer.styles import (
 def render_prices_explorer() -> None:
     """Render the prices data explorer interface."""
     # Get available symbols
-    all_symbols = QueryEngine.get_universe_symbols(active_only=True)
+    all_symbols = QueryEngine.get_universe_symbols(_active_only=True)
 
     # -------------------------------------------------------------------------
     # Filters Section

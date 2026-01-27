@@ -36,7 +36,7 @@ FUNDAMENTAL_METRICS = [
 def render_fundamentals_explorer() -> None:
     """Render the fundamentals data explorer interface."""
     # Get available symbols
-    all_symbols = QueryEngine.get_universe_symbols(active_only=True)
+    all_symbols = QueryEngine.get_universe_symbols(_active_only=True)
 
     # -------------------------------------------------------------------------
     # Filters Section
