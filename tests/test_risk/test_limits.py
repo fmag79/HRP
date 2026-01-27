@@ -92,3 +92,167 @@ class TestLimitViolation:
         assert violation.actual_value == 0.30
         assert violation.action == "clipped"
         assert violation.details == "Technology sector"
+
+
+class TestPreTradeValidator:
+    """Tests for PreTradeValidator."""
+
+    @pytest.fixture
+    def sample_signals(self):
+        """Sample signals DataFrame."""
+        dates = pd.date_range("2023-01-01", periods=5, freq="D")
+        return pd.DataFrame(
+            {
+                "AAPL": [0.10, 0.10, 0.10, 0.10, 0.10],
+                "MSFT": [0.08, 0.08, 0.08, 0.08, 0.08],
+                "GOOGL": [0.06, 0.06, 0.06, 0.06, 0.06],
+                "AMZN": [0.04, 0.04, 0.04, 0.04, 0.04],
+                "META": [0.02, 0.02, 0.02, 0.02, 0.02],
+            },
+            index=dates,
+        )
+
+    @pytest.fixture
+    def sample_prices(self):
+        """Sample prices DataFrame."""
+        dates = pd.date_range("2023-01-01", periods=5, freq="D")
+        return pd.DataFrame(
+            {
+                "AAPL": [150.0, 151.0, 152.0, 153.0, 154.0],
+                "MSFT": [250.0, 251.0, 252.0, 253.0, 254.0],
+                "GOOGL": [100.0, 101.0, 102.0, 103.0, 104.0],
+                "AMZN": [120.0, 121.0, 122.0, 123.0, 124.0],
+                "META": [200.0, 201.0, 202.0, 203.0, 204.0],
+            },
+            index=dates,
+        )
+
+    @pytest.fixture
+    def sample_adv(self):
+        """Sample ADV DataFrame (shares)."""
+        dates = pd.date_range("2023-01-01", periods=5, freq="D")
+        return pd.DataFrame(
+            {
+                "AAPL": [50_000_000] * 5,
+                "MSFT": [30_000_000] * 5,
+                "GOOGL": [20_000_000] * 5,
+                "AMZN": [40_000_000] * 5,
+                "META": [25_000_000] * 5,
+            },
+            index=dates,
+        )
+
+    @pytest.fixture
+    def sample_sectors(self):
+        """Sample sector mapping."""
+        return pd.Series({
+            "AAPL": "Technology",
+            "MSFT": "Technology",
+            "GOOGL": "Technology",
+            "AMZN": "Consumer Discretionary",
+            "META": "Technology",
+        })
+
+    def test_validator_default_mode_is_clip(self):
+        """Default validation mode is clip."""
+        from hrp.risk.limits import PreTradeValidator
+        from hrp.risk.costs import MarketImpactModel
+
+        validator = PreTradeValidator(
+            limits=RiskLimits(),
+            cost_model=MarketImpactModel(),
+        )
+        assert validator.mode == "clip"
+
+    def test_clip_position_above_max(self, sample_signals, sample_prices, sample_adv, sample_sectors):
+        """Positions above max_position_pct are clipped."""
+        from hrp.risk.limits import PreTradeValidator
+        from hrp.risk.costs import MarketImpactModel
+
+        limits = RiskLimits(max_position_pct=0.05)
+        validator = PreTradeValidator(limits=limits, cost_model=MarketImpactModel())
+
+        validated, report = validator.validate(
+            signals=sample_signals,
+            prices=sample_prices,
+            sectors=sample_sectors,
+            adv=sample_adv,
+        )
+
+        # AAPL was 10%, should be clipped to 5%
+        assert validated["AAPL"].iloc[0] == pytest.approx(0.05)
+        # MSFT was 8%, should be clipped to 5%
+        assert validated["MSFT"].iloc[0] == pytest.approx(0.05)
+        # GOOGL was 6%, should be clipped to 5%
+        assert validated["GOOGL"].iloc[0] == pytest.approx(0.05)
+        # AMZN was 4%, below max, unchanged
+        assert validated["AMZN"].iloc[0] == pytest.approx(0.04)
+        # META was 2%, below max, unchanged
+        assert validated["META"].iloc[0] == pytest.approx(0.02)
+
+        # Should have clips for AAPL, MSFT, GOOGL
+        assert len(report.clips) >= 3
+
+    def test_clip_position_below_min(self, sample_signals, sample_prices, sample_adv, sample_sectors):
+        """Positions below min_position_pct are zeroed out."""
+        from hrp.risk.limits import PreTradeValidator
+        from hrp.risk.costs import MarketImpactModel
+
+        limits = RiskLimits(min_position_pct=0.03)
+        validator = PreTradeValidator(limits=limits, cost_model=MarketImpactModel())
+
+        validated, report = validator.validate(
+            signals=sample_signals,
+            prices=sample_prices,
+            sectors=sample_sectors,
+            adv=sample_adv,
+        )
+
+        # META was 2%, below min 3%, should be zeroed
+        assert validated["META"].iloc[0] == 0.0
+        # AMZN was 4%, above min, unchanged
+        assert validated["AMZN"].iloc[0] == pytest.approx(0.04)
+
+    def test_strict_mode_rejects_on_violation(self, sample_signals, sample_prices, sample_adv, sample_sectors):
+        """Strict mode raises exception on violation."""
+        from hrp.risk.limits import PreTradeValidator, RiskLimitViolationError
+        from hrp.risk.costs import MarketImpactModel
+
+        limits = RiskLimits(max_position_pct=0.05)
+        validator = PreTradeValidator(
+            limits=limits,
+            cost_model=MarketImpactModel(),
+            mode="strict",
+        )
+
+        with pytest.raises(RiskLimitViolationError):
+            validator.validate(
+                signals=sample_signals,
+                prices=sample_prices,
+                sectors=sample_sectors,
+                adv=sample_adv,
+            )
+
+    def test_warn_mode_allows_violations(self, sample_signals, sample_prices, sample_adv, sample_sectors):
+        """Warn mode logs warnings but allows violations."""
+        from hrp.risk.limits import PreTradeValidator
+        from hrp.risk.costs import MarketImpactModel
+
+        limits = RiskLimits(max_position_pct=0.05)
+        validator = PreTradeValidator(
+            limits=limits,
+            cost_model=MarketImpactModel(),
+            mode="warn",
+        )
+
+        validated, report = validator.validate(
+            signals=sample_signals,
+            prices=sample_prices,
+            sectors=sample_sectors,
+            adv=sample_adv,
+        )
+
+        # Signals unchanged in warn mode
+        assert validated["AAPL"].iloc[0] == pytest.approx(0.10)
+        # But warnings recorded
+        assert len(report.warnings) >= 3

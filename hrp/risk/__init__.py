@@ -8,6 +8,8 @@ from hrp.risk.costs import CostBreakdown, MarketImpactModel
 from hrp.risk.limits import (
     RiskLimits,
     LimitViolation,
+    PreTradeValidator,
+    RiskLimitViolationError,
     ValidationReport as PreTradeValidationReport,
 )
 from hrp.risk.overfitting import (
@@ -48,6 +50,8 @@ __all__ = [
     # Risk limits
     "RiskLimits",
     "LimitViolation",
+    "PreTradeValidator",
+    "RiskLimitViolationError",
     "PreTradeValidationReport",
     # Overfitting prevention
     "TestSetGuard",
