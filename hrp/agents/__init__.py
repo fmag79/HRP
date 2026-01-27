@@ -19,6 +19,7 @@ from hrp.agents.jobs import (
     SnapshotFundamentalsJob,
     UniverseUpdateJob,
 )
+from hrp.agents.report_generator import ReportGenerator, ReportGeneratorConfig
 from hrp.agents.research_agents import (
     AuditCheck,
     AuditSeverity,
@@ -51,6 +52,9 @@ __all__ = [
     "UniverseUpdateJob",
     "FundamentalsIngestionJob",
     "SnapshotFundamentalsJob",
+    # Report Generator
+    "ReportGenerator",
+    "ReportGeneratorConfig",
     # Research Agents
     "ResearchAgent",
     "SignalScientist",

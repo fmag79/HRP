@@ -788,6 +788,75 @@ class IngestionScheduler:
             f"(window: {audit_window_days} days, monitoring: {include_monitoring})"
         )
 
+    def setup_daily_report(
+        self,
+        report_time: str = "07:00",
+    ) -> None:
+        """
+        Schedule daily research report generation.
+
+        Generates a daily research summary at the specified time, aggregating
+        data from hypotheses, experiments, signals, and agent activity.
+
+        Args:
+            report_time: Time to generate daily report (HH:MM format, default 07:00)
+        """
+        from hrp.agents.report_generator import ReportGenerator
+
+        # Parse and validate time
+        hour, minute = _parse_time(report_time, "report_time")
+
+        # Create a wrapper function that creates a fresh generator each run
+        def run_daily_report():
+            generator = ReportGenerator(report_type="daily")
+            generator.run()
+
+        # Schedule daily report job
+        self.add_job(
+            func=run_daily_report,
+            job_id="daily_report",
+            trigger=CronTrigger(hour=hour, minute=minute, timezone=ET_TIMEZONE),
+            name="Daily Research Report",
+        )
+        logger.info(f"Scheduled daily research report at {report_time} ET")
+
+    def setup_weekly_report(
+        self,
+        report_time: str = "20:00",
+    ) -> None:
+        """
+        Schedule weekly research report generation.
+
+        Generates a comprehensive weekly research summary at the specified time,
+        including pipeline velocity, top hypotheses, and extended analysis.
+
+        Args:
+            report_time: Time to generate weekly report (HH:MM format, default 20:00)
+        """
+        from hrp.agents.report_generator import ReportGenerator
+
+        # Parse and validate time
+        hour, minute = _parse_time(report_time, "report_time")
+
+        # Create a wrapper function that creates a fresh generator each run
+        def run_weekly_report():
+            generator = ReportGenerator(report_type="weekly")
+            generator.run()
+
+        # Schedule weekly report job (Sunday evening)
+        self.add_job(
+            func=run_weekly_report,
+            job_id="weekly_report",
+            trigger=CronTrigger(
+                day_of_week="sun",
+                hour=hour,
+                minute=minute,
+                timezone=ET_TIMEZONE,
+            ),
+            name="Weekly Research Report",
+        )
+        logger.info(f"Scheduled weekly research report on Sunday at {report_time} ET")
+
     def setup_research_agent_triggers(
         self,
         poll_interval_seconds: int = 60,

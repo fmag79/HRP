@@ -9,12 +9,17 @@ This script starts the background scheduler that runs:
 - Daily backup at 2:00 AM ET
 - Weekly fundamentals ingestion (Saturday 10 AM ET)
 - Weekly signal scan (Monday 7 PM ET) [optional]
+- Daily ML Quality Sentinel audit (6 AM ET) [optional]
+- Daily research report generation (7 AM ET) [optional]
+- Weekly research report generation (Sunday 8 PM ET) [optional]
 - Event-driven research agent pipeline [optional]
 
 Usage:
     python -m hrp.agents.run_scheduler
     python -m hrp.agents.run_scheduler --with-research-triggers
     python -m hrp.agents.run_scheduler --with-signal-scan --with-research-triggers
+    python -m hrp.agents.run_scheduler --with-daily-report --with-weekly-report
+    python -m hrp.agents.run_scheduler --with-quality-sentinel --with-research-triggers
 """
 
 import argparse
@@ -101,7 +106,7 @@ def main():
     parser.add_argument(
         "--with-research-triggers",
         action="store_true",
-        help="Enable event-driven research agent pipeline (Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel)",
+        help="Enable event-driven research agent pipeline (Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Report Generator)",
     )
     parser.add_argument(
         "--trigger-poll-interval",
@@ -142,6 +147,28 @@ def main():
         type=str,
         default="06:00",
         help="Time to run ML Quality Sentinel (HH:MM format, default: 06:00)",
+    )
+    parser.add_argument(
+        "--with-daily-report",
+        action="store_true",
+        help="Enable daily research report generation (7 AM ET by default)",
+    )
+    parser.add_argument(
+        "--daily-report-time",
+        type=str,
+        default="07:00",
+        help="Time to generate daily report (HH:MM format, default: 07:00)",
+    )
+    parser.add_argument(
+        "--with-weekly-report",
+        action="store_true",
+        help="Enable weekly research report generation (Sunday 8 PM ET by default)",
+    )
+    parser.add_argument(
+        "--weekly-report-time",
+        type=str,
+        default="20:00",
+        help="Time to generate weekly report (HH:MM format, default: 20:00)",
     )
 
     args = parser.parse_args()
@@ -194,6 +221,16 @@ def main():
             audit_window_days=1,
             send_alerts=True,
         )
+
+    # Setup daily report
+    if args.with_daily_report:
+        logger.info("Setting up daily research report generation...")
+        scheduler.setup_daily_report(report_time=args.daily_report_time)
+
+    # Setup weekly report
+    if args.with_weekly_report:
+        logger.info("Setting up weekly research report generation...")
+        scheduler.setup_weekly_report(report_time=args.weekly_report_time)
 
     # Setup research agent triggers (event-driven pipeline)
     if args.with_research_triggers:

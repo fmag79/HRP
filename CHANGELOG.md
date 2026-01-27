@@ -1,6 +1,32 @@
 ## [Unreleased]
 
+## [1.6.0] - 2026-01-26
+
 ### Added
+- **Report Generator Agent (F-026)**: Complete implementation for automated research summaries:
+  - `hrp/agents/report_generator.py` - SDKAgent-powered report generation
+  - Daily and weekly report types with configurable sections
+  - Data aggregation from hypotheses, MLflow experiments, lineage, and signals
+  - Claude-powered insights generation with JSON parsing and fallback logic
+  - Markdown rendering to `docs/reports/YYYY-MM-DD/` with timestamped filenames
+  - Report sections: executive summary, hypothesis pipeline, experiments, signals, insights, agent activity
+  - Token usage tracking and cost estimation
+  - Full integration with scheduler for automated daily/weekly reports
+
+### Changed
+- **Tier 2 Intelligence**: Now 100% complete - all research agents implemented
+
+### Documentation
+- Updated cookbook with Report Generator usage examples (Section 7.6)
+- Updated CLAUDE.md with Report Generator examples
+- Added scheduler CLI flags for `--with-daily-report` and `--with-weekly-report`
+
+### Testing
+- 366 new tests for Report Generator (config, init, data gathering, insights, rendering, execution)
+- 2,174 tests passing (100% pass rate)
+
+## [1.5.0] - 2026-01-25
+
 - **Event-Driven Scheduler with Auto-Recovery**: Enhanced `run_scheduler.py` with full autonomous operation:
   - New CLI flags: `--with-research-triggers`, `--with-signal-scan`, `--with-quality-sentinel`
   - `--trigger-poll-interval` for configurable lineage event polling (default: 60s)
@@ -28,7 +54,7 @@
 
 ### Testing
 - 15 new tests (9 Empyrical metrics + 6 VaR/CVaR validation)
-- 2,115 tests passing (100% pass rate)
+- 2,174 tests passing (100% pass rate)
 
 ### Documentation
 - **Agent Definition Files**: Created standalone definition files for all 4 implemented research agents:

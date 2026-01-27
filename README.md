@@ -167,29 +167,36 @@ print(f"Model is stable: {result.is_stable}")
 
 ## Documentation
 
-- [Full Specification](docs/plans/2025-01-19-hrp-spec.md)
-- [Implementation Roadmap](docs/plans/Roadmap.md)
-- [ML Framework MVP](docs/plans/2025-01-22-ml-framework-mvp.md)
-- [Walk-Forward Validation Design](docs/plans/2025-01-22-walk-forward-validation-design.md)
+- [Full Specification](docs/plans/2026-01-19-hrp-spec.md)
+- [Project Status & Roadmap](docs/plans/Project-Status-Rodmap.md)
+- [Cookbook](docs/operations/cookbook.md) - Practical guide with examples
+- [ML Framework MVP](docs/reports/2026-01-22-ml-framework-mvp.md)
+- [Walk-Forward Validation Design](docs/reports/2026-01-22-walk-forward-validation-design.md)
 
 ## Development Status
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 0: Foundation | ✅ Complete | Repository, schema, data ingestion |
-| Phase 1: Core Research | ✅ Complete | Backtesting, MLflow, metrics |
-| Phase 2: Hypothesis | ✅ Complete | Hypothesis registry, lineage |
-| Phase 3: Dashboard | ✅ Complete | Streamlit UI |
-| Phase 4: Data Pipeline | ✅ Complete | Multi-source ingestion, quality checks |
-| Phase 5: ML Framework | ✅ Complete | Walk-forward validation, overfitting guards, robustness testing |
+| Tier | Status | Description |
+|------|--------|-------------|
+| Tier 1: Foundation | ✅ Complete | Data + Research Core (100%) |
+| Tier 2: Intelligence | ✅ Complete | ML + Agents (100%) |
+| Tier 3: Production | ⏳ Planned | Security + Ops (0%) |
+| Tier 4: Trading | 🔮 Future | Live Execution (0%) |
+
+### Research Agents (All Implemented)
+- ✅ Signal Scientist - Automated IC analysis and hypothesis creation
+- ✅ Alpha Researcher - Claude-powered hypothesis review
+- ✅ ML Scientist - Walk-forward validation and model training
+- ✅ ML Quality Sentinel - Experiment auditing and overfitting detection
+- ✅ Validation Analyst - Pre-deployment stress testing
+- ✅ Report Generator - Automated daily/weekly research summaries
 
 ### Test Suite Status
-- **Pass Rate**: 100% (1,233 passed / 1,234 total tests, 1 skipped)
+- **Pass Rate**: 100% (2,174 passed, 1 skipped)
 - **Coverage**: Comprehensive test coverage across all major components
 
 ### Current Data
 - **10 symbols loaded**: AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, V, UNH, JNJ
-- **17,720 price records** (2019-2025)
+- **17,720 price records** (2019-2026)
 - **Database**: ~/hrp-data/hrp.duckdb
 
 ## License

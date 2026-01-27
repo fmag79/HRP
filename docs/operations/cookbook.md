@@ -1412,12 +1412,16 @@ python run_scheduler.py --symbols AAPL MSFT GOOGL
 python -m hrp.agents.run_scheduler \
     --with-research-triggers \
     --with-signal-scan \
-    --with-quality-sentinel
+    --with-quality-sentinel \
+    --with-daily-report \
+    --with-weekly-report
 
 # This enables:
 # - Lineage event polling (every 60s by default)
 # - Weekly signal scan (Monday 7 PM ET)
 # - Daily ML Quality Sentinel audit (6 AM ET)
+# - Daily research report (7 AM ET)
+# - Weekly research report (Sunday 8 PM ET)
 # - Automatic agent chaining:
 #   Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
 ```
@@ -1434,6 +1438,10 @@ python -m hrp.agents.run_scheduler \
 | `--ic-threshold` | 0.03 | Minimum IC to create hypothesis |
 | `--with-quality-sentinel` | off | Enable daily ML Quality Sentinel |
 | `--sentinel-time` | 06:00 | Time for quality sentinel |
+| `--with-daily-report` | off | Enable daily research report (7 AM ET) |
+| `--daily-report-time` | 07:00 | Time for daily report (HH:MM) |
+| `--with-weekly-report` | off | Enable weekly research report (Sunday 8 PM ET) |
+| `--weekly-report-time` | 20:00 | Time for weekly report (HH:MM) |
 
 **Advanced Options:**
 
@@ -1608,6 +1616,105 @@ python -m hrp.agents.cli clear-history --job-id price_ingestion --confirm
 
 # Clear only failed jobs
 python -m hrp.agents.cli clear-history --status FAILED --confirm
+```
+
+### 7.6 Generate Research Reports
+
+The Report Generator agent synthesizes research findings into human-readable daily and weekly summaries.
+
+**Generate a Daily Report:**
+
+```python
+from hrp.agents.report_generator import ReportGenerator
+
+# Generate a daily research report
+daily_generator = ReportGenerator(report_type="daily")
+result = daily_generator.execute()
+
+print(f"Report: {result['report_path']}")
+print(f"Tokens: {result['token_usage']['total']}")
+print(f"Cost: ${result['token_usage']['estimated_cost_usd']:.4f}")
+
+# Report includes:
+# - Executive summary (hypotheses created, experiments completed, best model)
+# - Hypothesis pipeline (draft, testing, validated, deployed)
+# - Experiment results (top 3 with Sharpe ratios)
+# - Signal analysis (best validated signals with IC)
+# - Actionable insights (Claude-powered or fallback)
+# - Agent activity summary (all 5 research agents)
+```
+
+**Generate a Weekly Report:**
+
+```python
+from hrp.agents.report_generator import ReportGenerator, ReportGeneratorConfig
+
+# Generate a weekly research report with custom config
+weekly_config = ReportGeneratorConfig(
+    report_type="weekly",
+    report_dir="docs/reports",
+    lookback_days=7,
+)
+weekly_generator = ReportGenerator(
+    report_type="weekly",
+    config=weekly_config,
+)
+result = weekly_generator.execute()
+
+# Weekly report includes additional sections:
+# - Week at a Glance overview
+# - Pipeline Velocity visualization
+# - Top Hypotheses This Week
+# - Model Performance comparison
+# - Signal Discoveries summary
+```
+
+**Report Output Location:**
+
+```
+docs/reports/
+└── 2026-01-26/
+    ├── 2026-01-26-07-00-daily.md
+    └── 2026-01-26-20-00-weekly.md
+```
+
+**Schedule Automated Reports:**
+
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+
+# Daily report at 7 AM ET (before market open)
+scheduler.setup_daily_report(
+    report_time='07:00',
+    report_type='daily',
+)
+
+# Weekly report on Friday 6 PM ET (end of trading week)
+scheduler.setup_weekly_report(
+    report_time='18:00',
+    day_of_week='fri',
+)
+
+scheduler.start()
+```
+
+**Report Generator Features:**
+- **Data Aggregation**: Gathers data from hypotheses, MLflow experiments, lineage table, and signal discoveries
+- **Claude-Powered Insights**: AI-generated action items with fallback to rule-based logic
+- **Agent Tracking**: Monitors status of all research agents (Signal Scientist, Alpha Researcher, ML Scientist, ML Quality Sentinel, Validation Analyst)
+- **Token Tracking**: Cost estimation for Claude API usage
+- **Flexible Rendering**: Markdown output with timestamped files in dated folders
+
+**Run Report Generator Manually:**
+
+```bash
+# Generate daily report
+python -m hrp.agents.cli run-now --job report_generator --report-type daily
+
+# Generate weekly report
+python -m hrp.agents.cli run-now --job report_generator --report-type weekly
 ```
 
 ---

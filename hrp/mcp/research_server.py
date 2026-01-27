@@ -1154,6 +1154,53 @@ def run_alpha_researcher(
 
 
 # =============================================================================
+# Report Generator Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_report_generator(
+    report_type: str = "daily",
+) -> dict[str, Any]:
+    """
+    Generate a research report (daily or weekly) synthesizing platform activity.
+
+    The Report Generator aggregates data from:
+    - Hypothesis pipeline (draft, testing, validated, deployed counts)
+    - MLflow experiments (top performers, model statistics)
+    - Signal discoveries (recent findings from Signal Scientist)
+    - Agent activity (recent runs of all research agents)
+    - AI-powered insights (actionable recommendations)
+
+    Reports are written to docs/reports/YYYY-MM-DD/HH-MM-{daily,weekly}.md
+
+    Args:
+        report_type: Type of report to generate ("daily" or "weekly", default "daily")
+
+    Returns:
+        Summary with report path, token usage, and key metrics
+    """
+    from hrp.agents.report_generator import ReportGenerator
+
+    generator = ReportGenerator(report_type=report_type)
+    result = generator.run()
+
+    return format_response(
+        success=True,
+        data={
+            "report_path": result.get("report_path"),
+            "report_type": result.get("report_type"),
+            "token_usage": result.get("token_usage", {}),
+        },
+        message=(
+            f"Generated {result.get('report_type')} report: {result.get('report_path')}, "
+            f"{result['token_usage']['total']} tokens (${result['token_usage']['estimated_cost_usd']:.4f})"
+        ),
+    )
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 

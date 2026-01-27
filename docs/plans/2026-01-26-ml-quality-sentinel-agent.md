@@ -4,7 +4,7 @@
 
 Build the ML Quality Sentinel - responsible for automated quality auditing of ML experiments, detecting overfitting, data leakage, and model degradation. Acts as an independent safety net that prevents flawed models from propagating through the pipeline.
 
-**Updated:** 2025-01-26 - Fully aligned with Alpha Researcher infrastructure decisions
+**Updated:** 2026-01-26 - Fully aligned with Alpha Researcher infrastructure decisions
 
 ---
 
@@ -1521,7 +1521,7 @@ def run_ml_quality_sentinel(
         run_ml_quality_sentinel(experiment_id="exp_abc123")
 
         # Audit all experiments for a hypothesis
-        run_ml_quality_sentinel(hypothesis_id="HYP-2025-042")
+        run_ml_quality_sentinel(hypothesis_id="HYP-2026-042")
 
         # Run full audit with model monitoring
         run_ml_quality_sentinel(include_monitoring=True)

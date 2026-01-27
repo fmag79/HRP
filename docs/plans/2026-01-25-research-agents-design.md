@@ -1,7 +1,7 @@
 # Research Agents Design
 
-**Date:** January 25, 2025
-**Status:** Design Complete - Ready for Implementation
+**Date:** January 25, 2026
+**Status:** Implementation In Progress (8/12 steps complete)
 **Related:** Tier 2 Intelligence (85% complete) - Research Agents feature
 
 ---
@@ -18,7 +18,7 @@ Build a multi-agent quant research team that runs autonomously and coordinates t
 |----------|--------|
 | Agent count | 8 agents (Option A - lean) |
 | Implementation | Case-by-case: 3 SDK, 3 Custom, 1 Hybrid, 2 Already Built |
-| Build order | Alpha Researcher → ML Quality Sentinel → Validation Analyst |
+| Build order | ~~Alpha Researcher~~ ✅ → ML Quality Sentinel → Validation Analyst |
 | Communication | Shared registries only (no direct agent-to-agent) |
 | Scheduling | APScheduler (extend existing infrastructure) |
 | SDK infrastructure | Shared `SDKAgent` base class |
@@ -29,7 +29,7 @@ Build a multi-agent quant research team that runs autonomously and coordinates t
 |-------|------|--------|-----------|
 | Signal Scientist | Custom | ✅ Built | Deterministic: calculate IC, threshold check |
 | ML Scientist | Custom | ✅ Built | Deterministic: walk-forward validation pipeline |
-| Alpha Researcher | SDK | To build (1st) | Needs reasoning: "is this pattern meaningful?" |
+| Alpha Researcher | SDK | ✅ Built | Needs reasoning: "is this pattern meaningful?" |
 | ML Quality Sentinel | Custom | To build (2nd) | Deterministic: run checklist of validations |
 | Validation Analyst | Hybrid | To build (3rd) | Mix: deterministic tests + reasoning for edge cases |
 | Risk Manager | Custom | To build | Deterministic: check limits, flag violations |
@@ -319,6 +319,8 @@ You (CIO/Research Director)
 
 ## Shared Workspace: How Agents Coordinate
 
+> **Architecture Diagram:** See [Data Pipeline Architecture](../architecture/data-pipeline-diagram.md) for visual diagrams of agent coordination flows.
+
 ### Registry Points (existing HRP infrastructure)
 1. **Hypothesis Registry** - Agents create/update hypotheses with status
 2. **MLflow Experiments** - All training/backtest results logged
@@ -328,9 +330,9 @@ You (CIO/Research Director)
 ### Workflow Example
 ```
 1. Signal Scientist discovers promising momentum signal
-   → Creates draft hypothesis HYP-2025-042
+   → Creates draft hypothesis HYP-2026-042
 
-2. Alpha Researcher picks up HYP-2025-042
+2. Alpha Researcher picks up HYP-2026-042
    → Refines thesis, adds falsification criteria
    → Updates status to "testing"
 
@@ -351,7 +353,7 @@ You (CIO/Research Director)
    → Approves or flags concerns
 
 7. Report Generator summarizes for CIO review
-   → Weekly report includes HYP-2025-042 findings
+   → Weekly report includes HYP-2026-042 findings
    → CIO decides whether to deploy
 ```
 
@@ -397,11 +399,11 @@ You (CIO/Research Director)
 4. [x] Decide scheduling → **APScheduler**
 5. [x] Write Alpha Researcher specification → **See spec below**
 6. [ ] Design `SDKAgent` base class
-7. [ ] Build lineage event watcher
-8. [ ] Implement Alpha Researcher (SDK)
+7. [x] Build lineage event watcher → **See [Data Pipeline Diagram](../architecture/data-pipeline-diagram.md#event-driven-agent-coordination)**
+8. [x] Implement Alpha Researcher (SDK) → Uses Claude API for economic rationale analysis
 9. [ ] Implement ML Quality Sentinel (Custom)
 10. [ ] Implement Validation Analyst (Hybrid)
-11. [ ] Test coordination through shared workspace
+11. [x] Test coordination through shared workspace → Event-driven triggers working
 12. [ ] Expand to remaining agents
 
 ---
@@ -558,14 +560,14 @@ Workflow:
 ### Example Research Note
 
 ```markdown
-# Alpha Researcher Report - 2025-01-26
+# Alpha Researcher Report - 2026-01-26
 
 ## Summary
 - Hypotheses reviewed: 3
 - Promoted to testing: 2
 - Needs more data: 1
 
-## HYP-2025-042: momentum_20d predicts monthly returns
+## HYP-2026-042: momentum_20d predicts monthly returns
 
 **Economic Rationale:**
 Momentum effect is well-documented (Jegadeesh & Titman 1993).
@@ -579,14 +581,14 @@ information diffusion.
 Signal is regime-dependent; works best in trending markets.
 
 **Related Hypotheses:**
-- HYP-2025-031: momentum_60d (similar, longer lookback)
-- HYP-2025-018: returns_252d (annual momentum, correlated)
+- HYP-2026-031: momentum_60d (similar, longer lookback)
+- HYP-2026-018: returns_252d (annual momentum, correlated)
 
 **Recommendation:** Proceed to ML testing with regime-aware model.
 Status updated: draft → testing
 
 ---
-## HYP-2025-043: ...
+## HYP-2026-043: ...
 ```
 
 ### New Infrastructure Required
@@ -610,6 +612,8 @@ Status updated: draft → testing
 
 ## Document History
 
-- **2025-01-25:** Initial brainstorm captured from conversation
-- **2025-01-26:** Design decisions finalized (8 agents, hybrid SDK/Custom, build order)
-- **2025-01-26:** Added Alpha Researcher detailed specification
+- **2026-01-25:** Initial brainstorm captured from conversation
+- **2026-01-26:** Design decisions finalized (8 agents, hybrid SDK/Custom, build order)
+- **2026-01-26:** Added Alpha Researcher detailed specification
+- **2026-01-26:** Lineage event watcher implemented; Alpha Researcher implemented; event-driven coordination tested
+- **2026-01-26:** Added reference to [Data Pipeline Architecture](../architecture/data-pipeline-diagram.md)

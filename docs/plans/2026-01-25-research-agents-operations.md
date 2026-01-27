@@ -1,8 +1,8 @@
 # Research Agents: Day-to-Day Operations Projection
 
-**Date:** January 25, 2025
+**Date:** January 25, 2026
 **Status:** Draft - Brainstorm Documentation
-**Related:** [Research Agents Design](2025-01-25-research-agents-design.md)
+**Related:** [Research Agents Design](2026-01-25-research-agents-design.md)
 
 ---
 
@@ -99,7 +99,7 @@ IngestionScheduler triggers:
 
 **Report Generator produces:**
 ```
-Weekly Research Report - Week of Jan 20, 2025
+Weekly Research Report - Week of Jan 20, 2026
 
 HYPOTHESES SUMMARY
 - 3 new hypotheses created (Signal Scientist)
@@ -110,7 +110,7 @@ HYPOTHESES SUMMARY
 
 AWAITING CIO DECISION
 ┌─────────────────────────────────────────────────────┐
-│ HYP-2025-042: Momentum + Low Vol Factor            │
+│ HYP-2026-042: Momentum + Low Vol Factor            │
 │ Status: Validated ✓                                 │
 │ Sharpe: 1.2 | Max DD: 12% | Stability: 0.7         │
 │ Risk Manager: No concerns                          │
@@ -153,7 +153,7 @@ Signal Scientist                    ML Scientist
      ▼                                   │
 Alpha Researcher                         │
      │                                   │
-     │ Creates HYP-2025-001              │
+     │ Creates HYP-2026-001              │
      │ status='testing'                  │
      │                                   │
      └──────────────────────────────────►│
@@ -246,9 +246,9 @@ Output: 8-12 promising signals identified
 ```
 Alpha Researcher reviews signals, creates hypotheses:
 
-HYP-2025-001: "Momentum + Low Volatility"
-HYP-2025-002: "RSI Mean Reversion"
-HYP-2025-003: "Multi-factor Composite"
+HYP-2026-001: "Momentum + Low Volatility"
+HYP-2026-002: "RSI Mean Reversion"
+HYP-2026-003: "Multi-factor Composite"
 
 Status: 'testing' → triggers ML Scientist
 ```
@@ -430,7 +430,7 @@ Throughput: 1-3 new validated strategies per week
 
 **3. Ad-hoc Queries via MCP**
 ```
-CIO: "Why did HYP-2025-042 fail in 2022?"
+CIO: "Why did HYP-2026-042 fail in 2022?"
 
 → Quant Developer pulls the backtest
 → Alpha Researcher adds regime context
@@ -519,7 +519,7 @@ Pipeline: Discovery → Modeling → Validation → Risk Review
 
 ## Document History
 
-- **2025-01-25:** Initial brainstorm documentation from conversation
+- **2026-01-25:** Initial brainstorm documentation from conversation
 
 My recommendation for first 2-3 agents:                                                                                                                                           
   ┌──────────┬─────────────────────┬───────────────────────────────────────────────────────────────────┐                                                                            

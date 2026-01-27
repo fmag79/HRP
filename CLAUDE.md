@@ -269,6 +269,40 @@ print(f"Failed: {result['hypotheses_failed']}")
 # Research note written to docs/research/YYYY-MM-DD-validation-analyst.md
 ```
 
+### Run Report Generator for automated research summaries
+```python
+from hrp.agents import ReportGenerator
+
+# Generate daily research report
+daily = ReportGenerator(report_type="daily")
+result = daily.run()
+
+print(f"Report type: {result['report_type']}")
+print(f"Report saved: {result['report_path']}")
+print(f"Token usage: {result['token_usage']}")
+# Report saved to docs/reports/YYYY-MM-DD/HH-MM-daily.md
+
+# Generate weekly research report
+weekly = ReportGenerator(report_type="weekly")
+result = weekly.run()
+# Report saved to docs/reports/YYYY-MM-DD/HH-MM-weekly.md
+```
+
+### Schedule daily/weekly research reports
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+
+# Daily report at 7 AM ET
+scheduler.setup_daily_report(report_time='07:00')
+
+# Weekly report on Sunday at 8 PM ET
+scheduler.setup_weekly_report(report_time='20:00')
+
+scheduler.start()
+```
+
 ### Run a multi-factor strategy backtest
 ```python
 from hrp.research.strategies import generate_multifactor_signals
@@ -586,7 +620,7 @@ print(format_metrics(metrics))
 | Dashboard | `streamlit run hrp/dashboard/app.py` | 8501 |
 | MLflow UI | `mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db` | 5000 |
 | Scheduler | `python -m hrp.agents.run_scheduler` | - |
-| Scheduler (full) | `python -m hrp.agents.run_scheduler --with-research-triggers --with-signal-scan --with-quality-sentinel` | - |
+| Scheduler (full) | `python -m hrp.agents.run_scheduler --with-research-triggers --with-signal-scan --with-quality-sentinel --with-daily-report --with-weekly-report` | - |
 
 ### Scheduler CLI Flags
 
@@ -600,6 +634,10 @@ print(format_metrics(metrics))
 | `--ic-threshold` | 0.03 | Minimum IC to create hypothesis |
 | `--with-quality-sentinel` | off | Enable daily ML Quality Sentinel (6 AM ET) |
 | `--sentinel-time` | 06:00 | Time for quality sentinel |
+| `--with-daily-report` | off | Enable daily research report (7 AM ET) |
+| `--daily-report-time` | 07:00 | Time for daily report (HH:MM) |
+| `--with-weekly-report` | off | Enable weekly research report (Sunday 8 PM ET) |
+| `--weekly-report-time` | 20:00 | Time for weekly report (HH:MM) |
 
 ### Scheduler Management (launchd)
 
