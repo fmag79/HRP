@@ -236,8 +236,6 @@ def render() -> None:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            value=f"{stats['failed_count']:,}"
-        )
 
     with col4:
         st.metric(
