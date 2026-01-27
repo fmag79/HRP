@@ -2727,15 +2727,16 @@ class ValidationAnalyst(ResearchAgent):
         # Get hypotheses that passed quality audit
         # Look for recent ML_QUALITY_SENTINEL_AUDIT events with overall_passed=True
         db = get_db()
+        cutoff = datetime.now() - timedelta(days=7)
         result = db.fetchall(
             """
             SELECT DISTINCT l.hypothesis_id
             FROM lineage l
             WHERE l.event_type = ?
-              AND l.timestamp > datetime('now', '-7 days')
-              AND json_extract(l.details, '$.overall_passed') = true
+              AND l.timestamp > ?
+              AND json_extract_string(l.details, '$.overall_passed') = 'true'
             """,
-            (EventType.ML_QUALITY_SENTINEL_AUDIT.value,),
+            (EventType.ML_QUALITY_SENTINEL_AUDIT.value, cutoff),
         )
 
         hypothesis_ids = [row[0] for row in result if row[0]]
