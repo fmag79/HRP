@@ -116,6 +116,21 @@ wait_for_service() {
     return 1
 }
 
+# Check if a port is available
+is_port_available() {
+    local port="$1"
+    if lsof -i ":$port" > /dev/null 2>&1; then
+        return 1  # Port is in use
+    fi
+    return 0  # Port is available
+}
+
+# Get process using a port
+get_port_user() {
+    local port="$1"
+    lsof -i ":$port" -t 2>/dev/null | head -1
+}
+
 ###############################################################################
 # Service Management Functions
 ###############################################################################
@@ -124,6 +139,14 @@ start_dashboard() {
     if is_running "$PID_DASHBOARD"; then
         log_warning "Dashboard is already running (PID: $(cat $PID_DASHBOARD))"
         return 0
+    fi
+
+    # Check if port is available
+    if ! is_port_available "$DASHBOARD_PORT"; then
+        local port_user=$(get_port_user "$DASHBOARD_PORT")
+        log_error "Port $DASHBOARD_PORT is already in use (PID: $port_user)"
+        log_info "Try: HRP_DASHBOARD_PORT=8502 ./scripts/startup.sh start --dashboard-only"
+        return 1
     fi
 
     log_info "Starting HRP Dashboard on port $DASHBOARD_PORT..."
@@ -163,6 +186,14 @@ start_mlflow() {
     if is_running "$PID_MLFLOW"; then
         log_warning "MLflow UI is already running (PID: $(cat $PID_MLFLOW))"
         return 0
+    fi
+
+    # Check if port is available
+    if ! is_port_available "$MLFLOW_PORT"; then
+        local port_user=$(get_port_user "$MLFLOW_PORT")
+        log_error "Port $MLFLOW_PORT is already in use (PID: $port_user)"
+        log_info "Try: HRP_MLFLOW_PORT=5001 ./scripts/startup.sh start --mlflow-only"
+        return 1
     fi
 
     log_info "Starting MLflow UI on port $MLFLOW_PORT..."
