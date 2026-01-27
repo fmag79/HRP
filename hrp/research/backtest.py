@@ -4,7 +4,7 @@ VectorBT backtesting wrapper for HRP.
 
 import argparse
 from datetime import date
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
 import numpy as np
 import pandas as pd
@@ -16,6 +16,79 @@ from hrp.research.config import BacktestConfig, BacktestResult, CostModel, StopL
 from hrp.research.metrics import calculate_metrics
 from hrp.research.benchmark import get_benchmark_returns
 from hrp.research.stops import apply_trailing_stops
+from hrp.risk.limits import PreTradeValidator, ValidationReport
+
+
+def _load_sector_mapping(symbols: list[str]) -> pd.Series:
+    """Load sector mapping from database.
+
+    Args:
+        symbols: List of ticker symbols
+
+    Returns:
+        Series mapping symbol -> sector
+    """
+    db = get_db()
+    symbols_str = ",".join(f"'{s}'" for s in symbols)
+
+    try:
+        result = db.fetchdf(
+            f"SELECT symbol, sector FROM symbols WHERE symbol IN ({symbols_str})"
+        )
+        if result.empty:
+            return pd.Series({s: "Unknown" for s in symbols})
+        return result.set_index("symbol")["sector"]
+    except Exception:
+        return pd.Series({s: "Unknown" for s in symbols})
+
+
+def _compute_adv(prices: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    """Compute average daily volume from price data.
+
+    Args:
+        prices: Price DataFrame with volume level
+        window: Rolling window period
+
+    Returns:
+        DataFrame with ADV per symbol
+    """
+    if "volume" in prices.columns.get_level_values(0):
+        return prices["volume"].rolling(window).mean()
+    return pd.DataFrame()
+
+
+def _load_volatility(symbols: list[str], start: date, end: date) -> pd.Series:
+    """Load volatility data for cost estimation.
+
+    Args:
+        symbols: List of ticker symbols
+        start: Start date
+        end: End date
+
+    Returns:
+        Series with average volatility per symbol
+    """
+    db = get_db()
+    symbols_str = ",".join(f"'{s}'" for s in symbols)
+
+    try:
+        result = db.fetchdf(f"""
+            SELECT symbol, AVG(volatility_20d) as avg_vol
+            FROM features
+            WHERE symbol IN ({symbols_str})
+              AND feature_name = 'volatility_20d'
+              AND date >= ?
+              AND date <= ?
+            GROUP BY symbol
+        """, (start, end))
+
+        if result.empty:
+            # Return default volatility if no data
+            return pd.Series({s: 0.02 for s in symbols})
+        return result.set_index("symbol")["avg_vol"]
+    except Exception:
+        return pd.Series({s: 0.02 for s in symbols})
+from hrp.risk.limits import PreTradeValidator, ValidationReport
 
 
 def get_price_data(
@@ -109,7 +182,7 @@ def run_backtest(
         prices: Optional price data (loaded if not provided)
 
     Returns:
-        BacktestResult with metrics, equity curve, and trades
+        BacktestResult with metrics, equity curve, trades, and validation report
     """
     # Load prices if not provided
     if prices is None:
@@ -120,6 +193,37 @@ def run_backtest(
 
     # Align signals with prices
     signals = signals.reindex(close.index).fillna(0)
+
+    # PRE-TRADE VALIDATION
+    validation_report = None
+    if config.risk_limits is not None:
+        logger.info(f"Applying risk limits (mode: {config.validation_mode})")
+
+        # Load sector data
+        sectors = _load_sector_mapping(config.symbols)
+
+        # Compute ADV
+        adv = _compute_adv(prices)
+
+        # Load volatility for cost estimation
+        volatility = _load_volatility(config.symbols, config.start_date, config.end_date)
+
+        # Run validation
+        validator = PreTradeValidator(
+            limits=config.risk_limits,
+            cost_model=config.cost_model,
+            mode=config.validation_mode,
+        )
+        signals, validation_report = validator.validate(
+            signals=signals,
+            prices=close,
+            sectors=sectors,
+            adv=adv if not adv.empty else None,
+        )
+
+        logger.info(f"Validation complete: {len(validation_report.clips)} clips, "
+                   f"{len(validation_report.warnings)} warnings, "
+                   f"{len(validation_report.violations)} violations")
 
     # Apply trailing stops if configured
     stop_events = None
@@ -192,6 +296,7 @@ def run_backtest(
         equity_curve=equity,
         trades=trades if isinstance(trades, pd.DataFrame) else pd.DataFrame(),
         benchmark_metrics=benchmark_metrics,
+        validation_report=validation_report,
     )
 
 

@@ -119,3 +119,84 @@ class TestBacktestWithRiskLimits:
         )
 
         assert config.risk_limits is None
+
+
+class TestBacktestPreTradeValidation:
+    """Tests for pre-trade validation in backtest flow."""
+
+    @pytest.fixture
+    def oversized_signals(self):
+        """Signals with positions exceeding limits."""
+        dates = pd.date_range("2023-01-01", periods=5, freq="D")
+        return pd.DataFrame(
+            {
+                "AAPL": [0.30] * 5,
+                "MSFT": [0.30] * 5,
+                "GOOGL": [0.25] * 5,
+                "AMZN": [0.15] * 5,
+            },
+            index=dates,
+        )
+
+    @pytest.fixture
+    def mock_prices(self):
+        """Mock price data."""
+        dates = pd.date_range("2023-01-01", periods=5, freq="D")
+        symbols = ["AAPL", "MSFT", "GOOGL", "AMZN"]
+        data = {}
+        for sym in symbols:
+            data[("close", sym)] = [100.0] * 5
+            data[("volume", sym)] = [10_000_000] * 5
+        return pd.DataFrame(data, index=dates)
+
+    @patch("hrp.research.backtest.get_price_data")
+    @patch("hrp.research.backtest.get_benchmark_returns")
+    @patch("hrp.research.backtest._load_sector_mapping")
+    def test_validation_clips_signals(
+        self, mock_sectors, mock_benchmark, mock_prices_fn, oversized_signals, mock_prices
+    ):
+        """PreTradeValidator clips oversized positions."""
+        mock_prices_fn.return_value = mock_prices
+        mock_benchmark.return_value = None
+        mock_sectors.return_value = pd.Series({
+            "AAPL": "Technology",
+            "MSFT": "Technology",
+            "GOOGL": "Technology",
+            "AMZN": "Consumer Discretionary",
+        })
+
+        limits = RiskLimits(max_position_pct=0.10)
+        config = BacktestConfig(
+            symbols=["AAPL", "MSFT", "GOOGL", "AMZN"],
+            start_date=date(2023, 1, 1),
+            end_date=date(2023, 1, 5),
+            risk_limits=limits,
+        )
+
+        result = run_backtest(oversized_signals, config, mock_prices)
+
+        # Validation report should be attached
+        assert hasattr(result, "validation_report")
+        assert result.validation_report is not None
+        assert len(result.validation_report.clips) > 0
+
+    @patch("hrp.research.backtest.get_price_data")
+    @patch("hrp.research.backtest.get_benchmark_returns")
+    def test_no_validation_without_limits(
+        self, mock_benchmark, mock_prices_fn, oversized_signals, mock_prices
+    ):
+        """No validation when risk_limits is None."""
+        mock_prices_fn.return_value = mock_prices
+        mock_benchmark.return_value = None
+
+        config = BacktestConfig(
+            symbols=["AAPL", "MSFT", "GOOGL", "AMZN"],
+            start_date=date(2023, 1, 1),
+            end_date=date(2023, 1, 5),
+            risk_limits=None,  # No limits
+        )
+
+        result = run_backtest(oversized_signals, config, mock_prices)
+
+        # No validation report when limits disabled
+        assert result.validation_report is None
