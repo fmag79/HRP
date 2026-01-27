@@ -49,6 +49,9 @@ htmlcov/
 *.log
 logs/
 
+# PID files (startup script)
+.hrp_pids/
+
 # Temporary files
 tmp/
 temp/
