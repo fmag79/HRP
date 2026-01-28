@@ -665,3 +665,151 @@ Criteria:
             cost=cost,
             critical_failure=critical_failure,
         )
+
+    # Portfolio constants
+    PORTFOLIO_CAPITAL = 1_000_000  # $1M hypothetical
+    MAX_POSITIONS = 20
+    MAX_WEIGHT_PER_POSITION = 0.05  # 5%
+    MIN_WEIGHT_THRESHOLD = 0.01  # 1%
+
+    # Portfolio constraints
+    MAX_GROSS_EXPOSURE = 1.0  # 100% long-only
+    MAX_SECTOR_CONCENTRATION = 0.30  # 30%
+    MAX_TURNOVER = 0.50  # 50% annual
+    MAX_DRAWDOWN_LIMIT = 0.15  # 15%
+
+    def _calculate_position_weights(
+        self,
+        strategies: list[dict],
+        target_risk_contribution: float,
+        max_weight_cap: float,
+    ) -> dict[str, float]:
+        """
+        Calculate equal-risk position weights.
+
+        weight = target_risk_contribution / volatility, then scaled if needed.
+
+        Args:
+            strategies: List of dicts with hypothesis_id and volatility
+            target_risk_contribution: Target risk per position (e.g., 0.03 for 3%)
+            max_weight_cap: Maximum weight per position (e.g., 0.05 for 5%)
+
+        Returns:
+            Dict mapping hypothesis_id to weight (0-1)
+        """
+        weights = {}
+        for strategy in strategies:
+            hypothesis_id = strategy["hypothesis_id"]
+            volatility = strategy.get("volatility", 0.15)  # Default 15%
+
+            # Equal-risk: weight = target_risk / vol
+            weight = target_risk_contribution / volatility
+            weights[hypothesis_id] = weight
+
+        # Check if any weights exceed cap
+        max_weight = max(weights.values()) if weights else 0
+        if max_weight > max_weight_cap:
+            # Scale all weights proportionally to fit under cap
+            scale_factor = max_weight_cap / max_weight
+            weights = {k: v * scale_factor for k, v in weights.items()}
+
+        return weights
+
+    def _check_portfolio_constraints(self, portfolio_state: dict) -> list[str]:
+        """
+        Check portfolio state against constraints.
+
+        Args:
+            portfolio_state: Dict with total_weight, max_sector_weight, turnover, max_drawdown
+
+        Returns:
+            List of constraint violation messages (empty if all pass)
+        """
+        violations = []
+
+        if portfolio_state.get("total_weight", 0) > self.MAX_GROSS_EXPOSURE:
+            violations.append(
+                f"total_weight {portfolio_state['total_weight']:.1%} > {self.MAX_GROSS_EXPOSURE:.0%}"
+            )
+
+        if portfolio_state.get("max_sector_weight", 0) > self.MAX_SECTOR_CONCENTRATION:
+            violations.append(
+                f"sector concentration {portfolio_state['max_sector_weight']:.1%} "
+                f"> {self.MAX_SECTOR_CONCENTRATION:.0%}"
+            )
+
+        if portfolio_state.get("turnover", 0) > self.MAX_TURNOVER:
+            violations.append(
+                f"turnover {portfolio_state['turnover']:.1%} > {self.MAX_TURNOVER:.0%}"
+            )
+
+        if portfolio_state.get("max_drawdown", 0) > self.MAX_DRAWDOWN_LIMIT:
+            violations.append(
+                f"drawdown {portfolio_state['max_drawdown']:.1%} > {self.MAX_DRAWDOWN_LIMIT:.0%}"
+            )
+
+        return violations
+
+    def _add_paper_position(
+        self,
+        hypothesis_id: str,
+        weight: float,
+        entry_price: float,
+    ):
+        """
+        Add a position to the paper portfolio.
+
+        Args:
+            hypothesis_id: The hypothesis being added
+            weight: Position weight (0-1)
+            entry_price: Entry price per share
+        """
+        from datetime import date
+
+        self.api.db.execute(
+            """
+            INSERT INTO paper_portfolio
+            (hypothesis_id, weight, entry_price, entry_date, current_price, unrealized_pnl)
+            VALUES (?, ?, ?, ?, ?, 0)
+            """,
+            (hypothesis_id, weight, entry_price, date.today(), entry_price),
+        )
+
+    def _remove_paper_position(self, hypothesis_id: str):
+        """
+        Remove a position from the paper portfolio.
+
+        Args:
+            hypothesis_id: The hypothesis being removed
+        """
+        self.api.db.execute(
+            "DELETE FROM paper_portfolio WHERE hypothesis_id = ?",
+            (hypothesis_id,),
+        )
+
+    def _log_paper_trade(
+        self,
+        hypothesis_id: str,
+        action: str,
+        weight_before: float,
+        weight_after: float,
+        price: float,
+    ):
+        """
+        Log a simulated paper trade.
+
+        Args:
+            hypothesis_id: The hypothesis being traded
+            action: One of 'ADD', 'REMOVE', 'REBALANCE'
+            weight_before: Weight before trade
+            weight_after: Weight after trade
+            price: Execution price
+        """
+        self.api.db.execute(
+            """
+            INSERT INTO paper_portfolio_trades
+            (hypothesis_id, action, weight_before, weight_after, price)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (hypothesis_id, action, weight_before, weight_after, price),
+        )
