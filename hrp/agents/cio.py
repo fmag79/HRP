@@ -5,6 +5,7 @@ Makes strategic decisions about research lines and manages paper portfolio.
 Advisory mode: presents recommendations, awaits user approval.
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal, Optional
@@ -473,3 +474,154 @@ class CIOAgent(SDKAgent):
         )
 
         return (slippage_score + turnover_score + capacity_score + complexity_score) / 4
+
+    def _score_thesis_strength(self, strength: str) -> float:
+        """
+        Score thesis strength (ordinal).
+
+        Args:
+            strength: One of "weak", "moderate", "strong"
+
+        Returns:
+            Score 0-1
+        """
+        scores = {"weak": 0.0, "moderate": 0.5, "strong": 1.0}
+        return scores.get(strength.lower(), 0.5)
+
+    def _score_regime_alignment(self, alignment: str) -> float:
+        """
+        Score regime alignment (ordinal).
+
+        Args:
+            alignment: One of "mismatch", "neutral", "aligned"
+
+        Returns:
+            Score 0-1
+        """
+        scores = {"mismatch": 0.0, "neutral": 0.5, "aligned": 1.0}
+        return scores.get(alignment.lower(), 0.5)
+
+    def _score_feature_interpretability(self, black_box_count: int) -> float:
+        """
+        Score feature interpretability: >5->0, 3-5->0.5, <3->1.0.
+
+        Fewer black-box features = more interpretable = better score.
+
+        Args:
+            black_box_count: Number of black-box features (e.g., neural net outputs)
+
+        Returns:
+            Score 0-1
+        """
+        if black_box_count > 5:
+            return 0.0
+        if black_box_count < 3:
+            return 1.0
+        return 0.5  # 3-5 features
+
+    def _score_uniqueness(self, uniqueness: str) -> float:
+        """
+        Score uniqueness (ordinal).
+
+        Args:
+            uniqueness: One of "duplicate", "related", "novel"
+
+        Returns:
+            Score 0-1
+        """
+        scores = {"duplicate": 0.0, "related": 0.5, "novel": 1.0}
+        return scores.get(uniqueness.lower(), 0.5)
+
+    def _assess_thesis_with_claude(
+        self,
+        hypothesis_id: str,
+        thesis: str,
+        agent_reports: dict,
+        current_regime: str,
+    ) -> dict:
+        """
+        Use Claude API to assess thesis strength and regime alignment.
+
+        Args:
+            hypothesis_id: The hypothesis being assessed
+            thesis: The thesis statement
+            agent_reports: Dict of agent report content
+            current_regime: Current market regime (e.g., "Bull Market")
+
+        Returns:
+            Dict with thesis_strength and regime_alignment
+        """
+        if self.anthropic_client is None:
+            # Fallback to moderate scores if no Claude client
+            return {"thesis_strength": "moderate", "regime_alignment": "neutral"}
+
+        # Build prompt for Claude
+        prompt = f"""Assess this trading hypothesis for economic rationale:
+
+Hypothesis: {thesis}
+
+Current Market Regime: {current_regime}
+
+Agent Reports:
+{chr(10).join(f'- {k}: {v[:200]}...' for k, v in agent_reports.items())}
+
+Respond ONLY with valid JSON:
+{{
+    "thesis_strength": "weak" | "moderate" | "strong",
+    "regime_alignment": "mismatch" | "neutral" | "aligned"
+}}
+
+Criteria:
+- thesis_strength: Is the economic logic sound? Does it have a clear edge?
+- regime_alignment: Does this strategy suit the current market regime?
+"""
+
+        try:
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=200,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            content = response.content[0].text
+            return json.loads(content)
+
+        except Exception:
+            # Fallback on any error
+            return {"thesis_strength": "moderate", "regime_alignment": "neutral"}
+
+    def _score_economic_dimension(
+        self,
+        hypothesis_id: str,
+        economic_data: dict,
+    ) -> float:
+        """
+        Score economic rationale dimension.
+
+        Averages scores for: Thesis strength, regime alignment, interpretability, uniqueness.
+
+        Args:
+            hypothesis_id: The hypothesis being scored
+            economic_data: Dict with thesis, regime, black_box_count, uniqueness, agent_reports
+
+        Returns:
+            Score 0-1
+        """
+        # Use Claude to assess thesis and regime if not provided
+        if "thesis_strength" not in economic_data or "regime_alignment" not in economic_data:
+            claude_assessment = self._assess_thesis_with_claude(
+                hypothesis_id=hypothesis_id,
+                thesis=economic_data.get("thesis", ""),
+                agent_reports=economic_data.get("agent_reports", {}),
+                current_regime=economic_data.get("current_regime", "Unknown"),
+            )
+            economic_data = {**economic_data, **claude_assessment}
+
+        thesis_score = self._score_thesis_strength(economic_data.get("thesis_strength", "moderate"))
+        regime_score = self._score_regime_alignment(economic_data.get("regime_alignment", "neutral"))
+        interpretability_score = self._score_feature_interpretability(
+            economic_data.get("black_box_count", 4)
+        )
+        uniqueness_score = self._score_uniqueness(economic_data.get("uniqueness", "related"))
+
+        return (thesis_score + regime_score + interpretability_score + uniqueness_score) / 4

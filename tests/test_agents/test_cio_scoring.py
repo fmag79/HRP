@@ -246,3 +246,78 @@ class TestCostScoring:
 
         # Should be middle score
         assert 0.4 <= score <= 0.7
+
+
+class TestEconomicScoring:
+    """Test economic rationale dimension scoring."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a CIOAgent for testing."""
+        with patch("hrp.agents.cio.PlatformAPI"):
+            return CIOAgent(job_id="test-job", actor="agent:cio-test")
+
+    def test_score_economic_dimension(self, agent):
+        """Test economic dimension with mocked Claude API."""
+        economic_data = {
+            "thesis_strength": "strong",
+            "regime_alignment": "aligned",
+            "feature_interpretability": 2,  # < 3 black-box features
+            "uniqueness": "novel",
+        }
+
+        with patch.object(agent, "_assess_thesis_with_claude") as mock_claude:
+            mock_claude.return_value = {
+                "thesis_strength": "strong",
+                "regime_alignment": "aligned",
+            }
+
+            score = agent._score_economic_dimension("HYP-2026-001", economic_data)
+
+            # All strong should give high score
+            assert score >= 0.8
+
+    def test_score_economic_ordinal_thesis(self, agent):
+        """Test thesis strength scoring is ordinal."""
+        assert agent._score_thesis_strength("weak") == pytest.approx(0.0, abs=0.01)
+        assert agent._score_thesis_strength("moderate") == pytest.approx(0.5, abs=0.01)
+        assert agent._score_thesis_strength("strong") == pytest.approx(1.0, abs=0.01)
+
+    def test_score_economic_ordinal_regime(self, agent):
+        """Test regime alignment scoring is ordinal."""
+        assert agent._score_regime_alignment("mismatch") == pytest.approx(0.0, abs=0.01)
+        assert agent._score_regime_alignment("neutral") == pytest.approx(0.5, abs=0.01)
+        assert agent._score_regime_alignment("aligned") == pytest.approx(1.0, abs=0.01)
+
+    def test_score_economic_linear_interpretability(self, agent):
+        """Test feature interpretability: >5->0, 3-5->0.5, <3->1.0."""
+        assert agent._score_feature_interpretability(7) == pytest.approx(0.0, abs=0.01)
+        assert agent._score_feature_interpretability(4) == pytest.approx(0.5, abs=0.01)
+        assert agent._score_feature_interpretability(2) == pytest.approx(1.0, abs=0.01)
+
+    def test_score_economic_ordinal_uniqueness(self, agent):
+        """Test uniqueness scoring is ordinal."""
+        assert agent._score_uniqueness("duplicate") == pytest.approx(0.0, abs=0.01)
+        assert agent._score_uniqueness("related") == pytest.approx(0.5, abs=0.01)
+        assert agent._score_uniqueness("novel") == pytest.approx(1.0, abs=0.01)
+
+    def test_assess_thesis_with_claude(self, agent):
+        """Test Claude API assessment of thesis strength and regime."""
+        # Mock the Claude client
+        mock_client = Mock()
+        agent.anthropic_client = mock_client
+
+        # Mock API response
+        mock_response = Mock()
+        mock_response.content = [Mock(text='{"thesis_strength": "strong", "regime_alignment": "aligned"}')]
+        mock_client.messages.create.return_value = mock_response
+
+        result = agent._assess_thesis_with_claude(
+            hypothesis_id="HYP-2026-001",
+            thesis="Momentum predicts returns",
+            agent_reports={"alpha_researcher": "Strong thesis..."},
+            current_regime="Bull Market",
+        )
+
+        assert result["thesis_strength"] == "strong"
+        assert result["regime_alignment"] == "aligned"
