@@ -166,3 +166,104 @@ class CIOAgent(SDKAgent):
             Empty dict for now
         """
         return {}
+
+    def _score_sharpe(self, sharpe: float) -> float:
+        """
+        Score Sharpe ratio: 0.5->0, 1.0->0.5, 1.5->1.0.
+
+        Args:
+            sharpe: Walk-forward Sharpe ratio
+
+        Returns:
+            Score 0-1, clamped
+        """
+        bad, target, good = 0.5, 1.0, 1.5
+        if sharpe <= bad:
+            return 0.0
+        if sharpe >= good:
+            return 1.0
+        return (sharpe - bad) / (good - bad)
+
+    def _score_stability(self, stability: float) -> float:
+        """
+        Score stability score: 2.0->0, 1.0->0.5, 0.5->1.0.
+
+        Lower is better for stability.
+
+        Args:
+            stability: Stability score from walk-forward validation
+
+        Returns:
+            Score 0-1, clamped
+        """
+        bad, target, good = 2.0, 1.0, 0.5
+        if stability >= bad:
+            return 0.0
+        if stability <= good:
+            return 1.0
+        if stability >= target:
+            # Between bad and target: scale 0 to 0.5
+            return 0.5 * (bad - stability) / (bad - target)
+        else:
+            # Between target and good: scale 0.5 to 1.0
+            return 0.5 + 0.5 * (target - stability) / (target - good)
+
+    def _score_ic(self, ic: float) -> float:
+        """
+        Score Information Coefficient: 0.01->0, 0.03->0.5, 0.05->1.0.
+
+        Args:
+            ic: Mean Information Coefficient
+
+        Returns:
+            Score 0-1, clamped
+        """
+        bad, target, good = 0.01, 0.03, 0.05
+        if ic <= bad:
+            return 0.0
+        if ic >= good:
+            return 1.0
+        return (ic - bad) / (good - bad)
+
+    def _score_fold_cv(self, cv: float) -> float:
+        """
+        Score fold coefficient of variation: 3.0->0, 2.0->0.5, 1.0->1.0.
+
+        Lower is better for CV (less variability across folds).
+
+        Args:
+            cv: Coefficient of variation across folds
+
+        Returns:
+            Score 0-1, clamped
+        """
+        bad, target, good = 3.0, 2.0, 1.0
+        if cv >= bad:
+            return 0.0
+        if cv <= good:
+            return 1.0
+        return (bad - cv) / (bad - good)
+
+    def _score_statistical_dimension(
+        self,
+        hypothesis_id: str,
+        experiment_data: dict,
+    ) -> float:
+        """
+        Score statistical quality dimension.
+
+        Averages scores for: Sharpe, stability, IC, fold CV.
+
+        Args:
+            hypothesis_id: The hypothesis being scored
+            experiment_data: Dict with sharpe, stability_score, mean_ic, fold_cv
+
+        Returns:
+            Score 0-1
+        """
+        sharpe_score = self._score_sharpe(experiment_data.get("sharpe", 0))
+        stability_score = self._score_stability(experiment_data.get("stability_score", 2.0))
+        ic_score = self._score_ic(experiment_data.get("mean_ic", 0))
+        fold_cv_score = self._score_fold_cv(experiment_data.get("fold_cv", 3.0))
+
+        return (sharpe_score + stability_score + ic_score + fold_cv_score) / 4
