@@ -4,7 +4,7 @@
 #
 # Starts/stops all HRP services:
 # - Dashboard (Streamlit) on port 8501
-# - MLflow UI on port 5000
+# - MLflow UI on port 5010
 # - Scheduler (with optional research agents)
 #
 # Usage:
@@ -43,7 +43,7 @@ PID_SCHEDULER="$PID_DIR/scheduler.pid"
 
 # Service ports
 DASHBOARD_PORT="${HRP_DASHBOARD_PORT:-8501}"
-MLFLOW_PORT="${HRP_MLFLOW_PORT:-5000}"
+MLFLOW_PORT="${HRP_MLFLOW_PORT:-5010}"
 
 # MLflow backend
 MLFLOW_BACKEND="${HRP_MLFLOW_BACKEND:-sqlite:///~/hrp-data/mlflow/mlflow.db}"
@@ -171,13 +171,35 @@ start_dashboard() {
 }
 
 stop_dashboard() {
+    local stopped=false
+
+    # Stop tracked process
     if is_running "$PID_DASHBOARD"; then
         local pid=$(cat "$PID_DASHBOARD")
         log_info "Stopping Dashboard (PID: $pid)..."
         kill "$pid" 2>/dev/null || true
         rm -f "$PID_DASHBOARD"
         log_success "Dashboard stopped"
-    else
+        stopped=true
+    fi
+
+    # Also kill any process using the dashboard port
+    local port_user=$(get_port_user "$DASHBOARD_PORT")
+    if [[ -n "$port_user" ]]; then
+        if [[ "$stopped" == false ]]; then
+            log_info "Stopping Dashboard (PID: $port_user using port $DASHBOARD_PORT)..."
+        fi
+        kill "$port_user" 2>/dev/null || true
+        # Force kill if still running after 1 second
+        sleep 1
+        if ps -p "$port_user" > /dev/null 2>&1; then
+            kill -9 "$port_user" 2>/dev/null || true
+        fi
+        rm -f "$PID_DASHBOARD"
+        log_success "Dashboard stopped"
+    fi
+
+    if [[ "$stopped" == false ]] && [[ -z "$port_user" ]]; then
         log_warning "Dashboard is not running"
     fi
 }
@@ -192,7 +214,7 @@ start_mlflow() {
     if ! is_port_available "$MLFLOW_PORT"; then
         local port_user=$(get_port_user "$MLFLOW_PORT")
         log_error "Port $MLFLOW_PORT is already in use (PID: $port_user)"
-        log_info "Try: HRP_MLFLOW_PORT=5001 ./scripts/startup.sh start --mlflow-only"
+        log_info "Try: HRP_MLFLOW_PORT=5011 ./scripts/startup.sh start --mlflow-only"
         return 1
     fi
 
@@ -218,13 +240,35 @@ start_mlflow() {
 }
 
 stop_mlflow() {
+    local stopped=false
+
+    # Stop tracked process
     if is_running "$PID_MLFLOW"; then
         local pid=$(cat "$PID_MLFLOW")
         log_info "Stopping MLflow UI (PID: $pid)..."
         kill "$pid" 2>/dev/null || true
         rm -f "$PID_MLFLOW"
         log_success "MLflow UI stopped"
-    else
+        stopped=true
+    fi
+
+    # Also kill any process using the MLflow port
+    local port_user=$(get_port_user "$MLFLOW_PORT")
+    if [[ -n "$port_user" ]]; then
+        if [[ "$stopped" == false ]]; then
+            log_info "Stopping MLflow UI (PID: $port_user using port $MLFLOW_PORT)..."
+        fi
+        kill "$port_user" 2>/dev/null || true
+        # Force kill if still running after 1 second
+        sleep 1
+        if ps -p "$port_user" > /dev/null 2>&1; then
+            kill -9 "$port_user" 2>/dev/null || true
+        fi
+        rm -f "$PID_MLFLOW"
+        log_success "MLflow UI stopped"
+    fi
+
+    if [[ "$stopped" == false ]] && [[ -z "$port_user" ]]; then
         log_warning "MLflow UI is not running"
     fi
 }
@@ -405,6 +449,15 @@ stop_all() {
 restart_all() {
     stop_all
     sleep 2
+    # Additional wait for ports to be fully released
+    local count=0
+    while [[ $count -lt 5 ]]; do
+        if is_port_available "$DASHBOARD_PORT" && is_port_available "$MLFLOW_PORT"; then
+            break
+        fi
+        sleep 1
+        ((count++))
+    done
     start_all
 }
 
@@ -431,7 +484,7 @@ Start Options:
 
 Environment Variables:
   HRP_DASHBOARD_PORT  Dashboard port (default: 8501)
-  HRP_MLFLOW_PORT     MLflow UI port (default: 5000)
+  HRP_MLFLOW_PORT     MLflow UI port (default: 5010)
   HRP_PRICE_TIME      Price ingestion time (default: 18:00)
   HRP_UNIVERSE_TIME   Universe update time (default: 18:05)
   HRP_FEATURE_TIME    Feature computation time (default: 18:10)
