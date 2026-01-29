@@ -627,17 +627,16 @@ Pipeline: Discovery → Modeling → Validation → Risk Review
 | ML Quality Sentinel | ✅ Implemented | Overfitting detection, leakage checks |
 | Quant Developer | 🟡 Partial | Backtesting infrastructure exists |
 | Validation Analyst | ✅ Implemented | Parameter sensitivity, stress testing |
-| Risk Manager | 🟡 Partial | Risk checks exist, independent review pending |
+| Risk Manager | ✅ Implemented | Independent portfolio-level risk oversight |
 | Report Generator | ✅ Implemented | Daily/weekly research reports |
 | **CIO Agent** | ✅ Implemented | Autonomous scoring across 4 dimensions |
 
 ### Remaining Work
 
 1. [ ] Complete Quant Developer agent (automate backtest generation)
-2. [ ] Complete Risk Manager agent (independent portfolio-level review)
-3. [ ] Implement event-driven agent coordination (lineage triggers)
-4. [ ] Add deployment pipeline (paper trading integration)
-5. [ ] Human-in-the-loop approval workflow for CIO decisions
+2. [ ] Implement event-driven agent coordination (lineage triggers)
+3. [ ] Add deployment pipeline (paper trading integration)
+4. [ ] Human-in-the-loop approval workflow for CIO decisions
 
 ---
 
@@ -645,6 +644,7 @@ Pipeline: Discovery → Modeling → Validation → Risk Review
 
 - **2026-01-25:** Initial brainstorm documentation from conversation
 - **2026-01-28:** Updated to include CIO Agent (9th agent), autonomous scoring, and updated implementation status
+- **2026-01-28:** Updated to reflect Risk Manager implementation (✅ Implemented - independent portfolio-level risk oversight)
 
 My recommendation for first 2-3 agents:                                                                                                                                           
   ┌──────────┬─────────────────────┬───────────────────────────────────────────────────────────────────┐                                                                            

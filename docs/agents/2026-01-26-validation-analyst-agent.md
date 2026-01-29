@@ -24,7 +24,7 @@
 | **Role** | Stress testing, parameter sensitivity, regime analysis, execution realism |
 | **Trigger** | Lineage event (after ML Quality Sentinel) + MCP on-demand |
 | **Upstream** | ML Quality Sentinel (produces audited experiments) |
-| **Downstream** | User/CIO (final deployment decision) |
+| **Downstream** | Risk Manager (portfolio-level risk review before CIO decision) |
 
 ### Purpose
 
