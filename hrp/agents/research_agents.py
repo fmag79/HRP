@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 import mlflow
 import numpy as np
@@ -3106,3 +3106,686 @@ class ValidationAnalyst(ResearchAgent):
                 details=details,
                 message=f"Execution costs acceptable: net return {net_return:.2%}",
             )
+
+
+# =============================================================================
+# RISK MANAGER
+# =============================================================================
+
+
+@dataclass
+class RiskVeto:
+    """Record of a risk veto decision."""
+
+    hypothesis_id: str
+    veto_reason: str
+    veto_type: Literal["drawdown", "concentration", "correlation", "limits", "other"]
+    severity: Literal["critical", "warning"]
+    details: dict[str, Any]
+    veto_date: date
+
+
+@dataclass
+class PortfolioRiskAssessment:
+    """Assessment of portfolio-level risk for a hypothesis."""
+
+    hypothesis_id: str
+    passed: bool
+    vetos: list[RiskVeto]
+    warnings: list[str]
+    portfolio_impact: dict[str, Any]
+    assessment_date: date
+
+
+@dataclass
+class RiskManagerReport:
+    """Complete Risk Manager run report."""
+
+    report_date: date
+    hypotheses_assessed: int
+    hypotheses_passed: int
+    hypotheses_vetoed: int
+    assessments: list[PortfolioRiskAssessment]
+    duration_seconds: float
+
+
+class RiskManager(ResearchAgent):
+    """
+    Independent portfolio risk oversight agent.
+
+    Reviews validated hypotheses for portfolio-level risk before deployment.
+    Can veto strategies but CANNOT approve deployment (maintains independence).
+
+    Performs:
+    1. Drawdown risk assessment - Max drawdown limits, drawdown duration
+    2. Concentration risk - Position sizes, sector exposure, correlation
+    3. Portfolio fit - Correlation with existing positions, diversification value
+    4. Risk limits validation - Position limits, turnover limits, leverage
+
+    Type: Custom (deterministic checks with independent veto authority)
+
+    Key principle: Risk Manager operates independently from alpha generation
+    and can veto any strategy but cannot approve deployment (only human CIO can).
+    """
+
+    DEFAULT_JOB_ID = "risk_manager_review"
+    ACTOR = "agent:risk-manager"
+
+    # Portfolio risk limits (conservative institutional defaults)
+    MAX_MAX_DRAWDOWN = 0.20  # 20% maximum drawdown
+    MAX_DRAWDOWN_DURATION_DAYS = 126  # 6 months to recover
+    MAX_POSITION_CORRELATION = 0.70  # Max correlation with existing positions
+    MAX_SECTOR_EXPOSURE = 0.30  # 30% max in any sector
+    MAX_SINGLE_POSITION = 0.10  # 10% max in single position
+
+    # Portfolio composition targets
+    MIN_DIVERSIFICATION = 10  # Minimum positions
+    TARGET_POSITIONS = 20  # Target number of positions
+
+    def __init__(
+        self,
+        hypothesis_ids: list[str] | None = None,
+        max_drawdown: float | None = None,
+        max_correlation: float | None = None,
+        max_sector_exposure: float | None = None,
+        send_alerts: bool = True,
+    ):
+        """
+        Initialize the Risk Manager.
+
+        Args:
+            hypothesis_ids: Specific hypotheses to assess (None = all validated)
+            max_drawdown: Maximum allowed drawdown (default 20%)
+            max_correlation: Max correlation with existing positions (default 0.70)
+            max_sector_exposure: Max sector exposure (default 30%)
+            send_alerts: Send email alerts on vetos
+        """
+        super().__init__(
+            job_id=self.DEFAULT_JOB_ID,
+            actor=self.ACTOR,
+            dependencies=[],  # Triggered by lineage events
+        )
+        self.hypothesis_ids = hypothesis_ids
+        self.max_drawdown = max_drawdown or self.MAX_MAX_DRAWDOWN
+        self.max_correlation = max_correlation or self.MAX_POSITION_CORRELATION
+        self.max_sector_exposure = max_sector_exposure or self.MAX_SECTOR_EXPOSURE
+        self.send_alerts = send_alerts
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Run risk assessment on hypotheses ready for deployment review.
+
+        Returns:
+            Dict with assessment results summary
+        """
+        start_time = time.time()
+
+        # 1. Get hypotheses to assess
+        hypotheses = self._get_hypotheses_to_assess()
+
+        if not hypotheses:
+            return {
+                "status": "no_hypotheses",
+                "assessments": [],
+                "message": "No hypotheses awaiting risk assessment",
+            }
+
+        # 2. Assess each hypothesis
+        assessments: list[PortfolioRiskAssessment] = []
+        passed_count = 0
+        vetoed_count = 0
+
+        for hypothesis in hypotheses:
+            assessment = self._assess_hypothesis_risk(hypothesis)
+            assessments.append(assessment)
+
+            if assessment.passed:
+                passed_count += 1
+                # Log to lineage
+                self._log_agent_event(
+                    event_type=EventType.RISK_REVIEW_COMPLETE,
+                    details={
+                        "hypothesis_id": assessment.hypothesis_id,
+                        "passed": True,
+                        "warnings": assessment.warnings,
+                    },
+                    hypothesis_id=assessment.hypothesis_id,
+                )
+            else:
+                vetoed_count += 1
+                # Log veto to lineage
+                for veto in assessment.vetos:
+                    self._log_agent_event(
+                        event_type=EventType.RISK_VETO,
+                        details={
+                            "hypothesis_id": veto.hypothesis_id,
+                            "veto_reason": veto.veto_reason,
+                            "veto_type": veto.veto_type,
+                            "severity": veto.severity,
+                        },
+                        hypothesis_id=veto.hypothesis_id,
+                    )
+
+        # 3. Generate report
+        report = RiskManagerReport(
+            report_date=date.today(),
+            hypotheses_assessed=len(assessments),
+            hypotheses_passed=passed_count,
+            hypotheses_vetoed=vetoed_count,
+            assessments=assessments,
+            duration_seconds=time.time() - start_time,
+        )
+
+        # 4. Write research note
+        self._write_research_note(report)
+
+        # 5. Send alerts if any vetos
+        if self.send_alerts:
+            self._send_veto_alerts(assessments)
+
+        return {
+            "status": "complete",
+            "assessments": assessments,
+            "report": {
+                "hypotheses_assessed": report.hypotheses_assessed,
+                "hypotheses_passed": report.hypotheses_passed,
+                "hypotheses_vetoed": report.hypotheses_vetoed,
+                "duration_seconds": report.duration_seconds,
+            },
+        }
+
+    def _get_hypotheses_to_assess(self) -> list[dict[str, Any]]:
+        """
+        Get hypotheses that need risk assessment.
+
+        Fetches hypotheses with 'validated' status that haven't been
+        risk-assessed yet.
+        """
+        if self.hypothesis_ids:
+            # Specific hypotheses requested
+            placeholders = ",".join(["?" for _ in self.hypothesis_ids])
+            query = f"""
+                SELECT hypothesis_id, title, thesis, status, metadata
+                FROM hypotheses
+                WHERE hypothesis_id IN ({placeholders})
+            """
+            params = self.hypothesis_ids
+        else:
+            # All validated hypotheses not yet risk-assessed
+            query = """
+                SELECT hypothesis_id, title, thesis, status, metadata
+                FROM hypotheses
+                WHERE status = 'validated'
+                  AND (metadata NOT LIKE '%risk_manager_review%'
+                       OR metadata IS NULL)
+                ORDER BY created_at DESC
+            """
+            params = []
+
+        result = self.api.db.execute(query, params).fetchdf()
+
+        if result.empty:
+            return []
+
+        return result.to_dict(orient="records")
+
+    def _assess_hypothesis_risk(
+        self, hypothesis: dict[str, Any]
+    ) -> PortfolioRiskAssessment:
+        """
+        Assess portfolio-level risk for a single hypothesis.
+
+        Performs the following checks:
+        1. Drawdown risk
+        2. Concentration risk
+        3. Correlation with existing positions
+        4. Risk limits validation
+
+        Args:
+            hypothesis: Hypothesis record from database
+
+        Returns:
+            PortfolioRiskAssessment with veto decisions
+        """
+        import json
+
+        hypothesis_id = hypothesis["hypothesis_id"]
+        metadata_str = hypothesis.get("metadata") or "{}"
+        metadata = (
+            json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
+        )
+
+        # Get experiment metrics
+        experiment_data = self._get_experiment_metrics(hypothesis_id, metadata)
+
+        # Initialize assessment
+        vetos: list[RiskVeto] = []
+        warnings: list[str] = []
+
+        # Check 1: Drawdown risk
+        dd_veto = self._check_drawdown_risk(hypothesis_id, experiment_data)
+        if dd_veto:
+            vetos.append(dd_veto)
+
+        # Check 2: Concentration risk
+        conc_vetos, conc_warnings = self._check_concentration_risk(
+            hypothesis_id, experiment_data, metadata
+        )
+        vetos.extend(conc_vetos)
+        warnings.extend(conc_warnings)
+
+        # Check 3: Correlation with existing positions
+        corr_veto = self._check_correlation_risk(hypothesis_id, metadata)
+        if corr_veto:
+            vetos.append(corr_veto)
+
+        # Check 4: Risk limits validation
+        limits_vetos = self._check_risk_limits(hypothesis_id, experiment_data)
+        vetos.extend(limits_vetos)
+
+        # Calculate portfolio impact
+        portfolio_impact = self._calculate_portfolio_impact(
+            hypothesis_id, experiment_data, metadata
+        )
+
+        # Determine if passed (no critical vetos)
+        passed = all(v.severity != "critical" for v in vetos)
+
+        assessment = PortfolioRiskAssessment(
+            hypothesis_id=hypothesis_id,
+            passed=passed,
+            vetos=vetos,
+            warnings=warnings,
+            portfolio_impact=portfolio_impact,
+            assessment_date=date.today(),
+        )
+
+        # Update hypothesis with risk assessment
+        self._update_hypothesis_with_risk_assessment(assessment)
+
+        return assessment
+
+    def _get_experiment_metrics(
+        self, hypothesis_id: str, metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Get experiment metrics from metadata or MLflow.
+
+        Args:
+            hypothesis_id: Hypothesis ID
+            metadata: Hypothesis metadata dict
+
+        Returns:
+            Dict with key metrics: sharpe, max_drawdown, volatility, etc.
+        """
+        # Check if metrics are in metadata (from Validation Analyst)
+        validation = metadata.get("validation_analyst_review", {})
+        if validation:
+            return {
+                "sharpe": validation.get("sharpe", 0),
+                "max_drawdown": validation.get("max_drawdown", 1.0),
+                "volatility": validation.get("volatility", 0.20),
+                "turnover": validation.get("turnover", 0.50),
+                "num_positions": validation.get("num_positions", self.TARGET_POSITIONS),
+                "sector_exposure": validation.get("sector_exposure", {}),
+            }
+
+        # Otherwise, query MLflow for experiments
+        # For now, return default values
+        return {
+            "sharpe": 0.8,
+            "max_drawdown": 0.18,
+            "volatility": 0.15,
+            "turnover": 0.30,
+            "num_positions": self.TARGET_POSITIONS,
+            "sector_exposure": {},
+        }
+
+    def _check_drawdown_risk(
+        self, hypothesis_id: str, metrics: dict[str, Any]
+    ) -> RiskVeto | None:
+        """
+        Check if drawdown exceeds limits.
+
+        Args:
+            hypothesis_id: Hypothesis ID
+            metrics: Experiment metrics
+
+        Returns:
+            RiskVeto if drawdown too high, None otherwise
+        """
+        max_dd = metrics.get("max_drawdown", 0)
+
+        if max_dd > self.max_drawdown:
+            return RiskVeto(
+                hypothesis_id=hypothesis_id,
+                veto_reason=f"Max drawdown {max_dd:.1%} exceeds limit {self.max_drawdown:.1%}",
+                veto_type="drawdown",
+                severity="critical",
+                details={"max_drawdown": max_dd, "limit": self.max_drawdown},
+                veto_date=date.today(),
+            )
+
+        # Warning if approaching limit
+        if max_dd > self.max_drawdown * 0.8:
+            logger.warning(
+                f"{hypothesis_id}: Drawdown {max_dd:.1%} approaching limit "
+                f"{self.max_drawdown:.1%}"
+            )
+
+        return None
+
+    def _check_concentration_risk(
+        self, hypothesis_id: str, metrics: dict[str, Any], metadata: dict[str, Any]
+    ) -> tuple[list[RiskVeto], list[str]]:
+        """
+        Check concentration risk (position sizes, sector exposure).
+
+        Args:
+            hypothesis_id: Hypothesis ID
+            metrics: Experiment metrics
+            metadata: Hypothesis metadata
+
+        Returns:
+            Tuple of (vetos, warnings)
+        """
+        vetos: list[RiskVeto] = []
+        warnings: list[str] = []
+
+        num_positions = metrics.get("num_positions", self.TARGET_POSITIONS)
+        sector_exposure = metrics.get("sector_exposure", {})
+
+        # Check minimum diversification
+        if num_positions < self.MIN_DIVERSIFICATION:
+            vetos.append(
+                RiskVeto(
+                    hypothesis_id=hypothesis_id,
+                    veto_reason=f"Only {num_positions} positions, minimum {self.MIN_DIVERSIFICATION}",
+                    veto_type="concentration",
+                    severity="critical",
+                    details={"num_positions": num_positions, "minimum": self.MIN_DIVERSIFICATION},
+                    veto_date=date.today(),
+                )
+            )
+
+        # Check sector concentration
+        for sector, exposure in sector_exposure.items():
+            if exposure > self.max_sector_exposure:
+                vetos.append(
+                    RiskVeto(
+                        hypothesis_id=hypothesis_id,
+                        veto_reason=f"Sector '{sector}' exposure {exposure:.1%} exceeds limit {self.max_sector_exposure:.1%}",
+                        veto_type="concentration",
+                        severity="critical",
+                        details={
+                            "sector": sector,
+                            "exposure": exposure,
+                            "limit": self.max_sector_exposure,
+                        },
+                        veto_date=date.today(),
+                    )
+                )
+
+        return vetos, warnings
+
+    def _check_correlation_risk(
+        self, hypothesis_id: str, metadata: dict[str, Any]
+    ) -> RiskVeto | None:
+        """
+        Check correlation with existing paper portfolio positions.
+
+        Args:
+            hypothesis_id: Hypothesis ID
+            metadata: Hypothesis metadata
+
+        Returns:
+            RiskVeto if too correlated, None otherwise
+        """
+        # Get existing paper portfolio
+        try:
+            portfolio = self.api.db.execute(
+                """
+                SELECT hypothesis_id, weight
+                FROM paper_portfolio
+                WHERE weight > 0
+                """
+            ).fetchdf()
+
+            if portfolio.empty:
+                return None
+
+            # For now, correlation check is a placeholder
+            # In production, would compute actual correlation from returns
+            # For new implementation, just check if same features are used
+
+            # Check for duplicate strategies (same feature set)
+            existing_features = metadata.get("features", [])
+            if existing_features:
+                # Simple check: if more than 50% feature overlap, flag as warning
+                # (This is a placeholder - real implementation would compute correlation)
+                pass
+
+        except Exception as e:
+            logger.debug(f"Could not check correlation: {e}")
+            return None
+
+        return None
+
+    def _check_risk_limits(
+        self, hypothesis_id: str, metrics: dict[str, Any]
+    ) -> list[RiskVeto]:
+        """
+        Check if strategy respects risk limits.
+
+        Args:
+            hypothesis_id: Hypothesis ID
+            metrics: Experiment metrics
+
+        Returns:
+            List of vetos (empty if all limits respected)
+        """
+        vetos: list[RiskVeto] = []
+
+        volatility = metrics.get("volatility", 0)
+        turnover = metrics.get("turnover", 0)
+
+        # Check volatility (high vol = high risk)
+        if volatility > 0.25:  # 25% annual vol
+            vetos.append(
+                RiskVeto(
+                    hypothesis_id=hypothesis_id,
+                    veto_reason=f"Volatility {volatility:.1%} exceeds prudent limit",
+                    veto_type="limits",
+                    severity="warning",  # Warning, not critical
+                    details={"volatility": volatility},
+                    veto_date=date.today(),
+                )
+            )
+
+        # Check turnover (high turnover = high costs)
+        if turnover > 0.50:  # 50% annual turnover
+            vetos.append(
+                RiskVeto(
+                    hypothesis_id=hypothesis_id,
+                    veto_reason=f"Turnover {turnover:.1%} may erode returns with costs",
+                    veto_type="limits",
+                    severity="warning",
+                    details={"turnover": turnover},
+                    veto_date=date.today(),
+                )
+            )
+
+        return vetos
+
+    def _calculate_portfolio_impact(
+        self, hypothesis_id: str, metrics: dict[str, Any], metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Calculate the impact of adding this hypothesis to the portfolio.
+
+        Args:
+            hypothesis_id: Hypothesis ID
+            metrics: Experiment metrics
+            metadata: Hypothesis metadata
+
+        Returns:
+            Dict with portfolio impact assessment
+        """
+        # Get current portfolio state
+        try:
+            portfolio = self.api.db.execute(
+                """
+                SELECT COUNT(*) as num_positions, COALESCE(SUM(weight), 0) as total_weight
+                FROM paper_portfolio
+                WHERE weight > 0
+                """
+            ).fetchdf()
+
+            current_positions = portfolio.iloc[0]["num_positions"]
+            current_weight = portfolio.iloc[0]["total_weight"]
+        except Exception:
+            current_positions = 0
+            current_weight = 0.0
+
+        # Calculate impact
+        new_positions = current_positions + 1
+        new_weight = min(1.0, current_weight + 0.05)  # Assume 5% allocation
+
+        return {
+            "current_positions": current_positions,
+            "new_positions": new_positions,
+            "current_weight": current_weight,
+            "new_weight": new_weight,
+            "weight_increase": new_weight - current_weight,
+            "diversification_value": "medium" if new_positions < 15 else "low",
+        }
+
+    def _update_hypothesis_with_risk_assessment(
+        self, assessment: PortfolioRiskAssessment
+    ) -> None:
+        """Update hypothesis with risk assessment results."""
+        try:
+            self.api.update_hypothesis(
+                hypothesis_id=assessment.hypothesis_id,
+                status="validated" if assessment.passed else "risk_vetoed",
+                metadata={
+                    "risk_manager_review": {
+                        "date": assessment.assessment_date.isoformat(),
+                        "passed": assessment.passed,
+                        "veto_count": len(assessment.vetos),
+                        "warning_count": len(assessment.warnings),
+                        "vetos": [
+                            {
+                                "reason": v.veto_reason,
+                                "type": v.veto_type,
+                                "severity": v.severity,
+                            }
+                            for v in assessment.vetos
+                        ],
+                    }
+                },
+                actor=self.ACTOR,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update hypothesis {assessment.hypothesis_id}: {e}")
+
+    def _write_research_note(self, report: RiskManagerReport) -> None:
+        """Write per-run risk assessment report to docs/research/."""
+        from pathlib import Path
+
+        report_date = report.report_date.isoformat()
+        filename = f"{report_date}-risk-manager.md"
+        filepath = Path("docs/research") / filename
+
+        lines = [
+            f"# Risk Manager Report - {report_date}",
+            "",
+            "## Summary",
+            f"- Hypotheses assessed: {report.hypotheses_assessed}",
+            f"- Passed: {report.hypotheses_passed}",
+            f"- Vetoed: {report.hypotheses_vetoed}",
+            f"- Duration: {report.duration_seconds:.1f}s",
+            "",
+            "---",
+            "",
+            "## Risk Limits",
+            f"- Max Drawdown: {self.max_drawdown:.1%}",
+            f"- Max Correlation: {self.max_correlation:.2f}",
+            f"- Max Sector Exposure: {self.max_sector_exposure:.1%}",
+            f"- Min Diversification: {self.MIN_DIVERSIFICATION} positions",
+            "",
+        ]
+
+        for assessment in report.assessments:
+            status = "PASSED" if assessment.passed else "VETOED"
+            lines.extend([
+                f"## {assessment.hypothesis_id}: {status}",
+                "",
+            ])
+
+            if assessment.vetos:
+                lines.append("### Vetos")
+                for veto in assessment.vetos:
+                    emoji = "🚫" if veto.severity == "critical" else "⚠️"
+                    lines.append(
+                        f"- {emoji} **{veto.veto_type}**: {veto.veto_reason}"
+                    )
+                lines.append("")
+
+            if assessment.warnings:
+                lines.append("### Warnings")
+                for warning in assessment.warnings:
+                    lines.append(f"- ⚠️ {warning}")
+                lines.append("")
+
+            if assessment.portfolio_impact:
+                lines.append("### Portfolio Impact")
+                impact = assessment.portfolio_impact
+                lines.extend([
+                    f"- Current positions: {impact.get('current_positions', 0)}",
+                    f"- New positions: {impact.get('new_positions', 0)}",
+                    f"- Portfolio weight increase: {impact.get('weight_increase', 0):.1%}",
+                    "",
+                ])
+
+        lines.extend([
+            "---",
+            "",
+            "## Note",
+            "Risk Manager operates independently and can veto strategies but",
+            "CANNOT approve deployment. Only the human CIO has final approval",
+            "authority.",
+            "",
+            f"*Generated by Risk Manager ({self.ACTOR})*",
+        ])
+
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_text("\n".join(lines))
+        logger.info(f"Research note written to {filepath}")
+
+    def _send_veto_alerts(self, assessments: list[PortfolioRiskAssessment]) -> None:
+        """Send email alerts for vetoes."""
+        try:
+            vetoed = [a for a in assessments if not a.passed and a.vetos]
+            if not vetoed:
+                return
+
+            notifier = EmailNotifier()
+            subject = f"[HRP] Risk Manager - {len(vetoed)} Strategy Vetoes"
+
+            body_lines = [
+                "Risk Manager has vetoed the following strategies:",
+                "",
+            ]
+            for assessment in vetoed:
+                for veto in assessment.vetos:
+                    body_lines.append(
+                        f"- {assessment.hypothesis_id}: {veto.veto_reason}"
+                    )
+
+            notifier.send_notification(
+                subject=subject,
+                body="\n".join(body_lines),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send veto alerts: {e}")

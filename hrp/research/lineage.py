@@ -35,6 +35,8 @@ class EventType(str, Enum):
     ML_QUALITY_SENTINEL_AUDIT = "ml_quality_sentinel_audit"
     ALPHA_RESEARCHER_REVIEW = "alpha_researcher_review"
     VALIDATION_ANALYST_REVIEW = "validation_analyst_review"
+    RISK_REVIEW_COMPLETE = "risk_review_complete"
+    RISK_VETO = "risk_veto"
     DATA_INGESTION = "data_ingestion"
     SYSTEM_ERROR = "system_error"
 

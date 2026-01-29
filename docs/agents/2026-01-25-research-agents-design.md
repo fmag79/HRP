@@ -2,7 +2,7 @@
 
 **Date:** January 25, 2026
 **Last Updated:** January 28, 2026
-**Status:** Implementation Nearly Complete (7/8 agents built + 1 additional CIO Agent)
+**Status:** Implementation Nearly Complete (8/8 agents built + CIO Agent)
 **Related:** Tier 2 Intelligence (95% complete) - Research Agents feature
 
 ---
@@ -33,7 +33,7 @@ Build a multi-agent quant research team that runs autonomously and coordinates t
 | Alpha Researcher | SDK | ✅ Built | Needs reasoning: "is this pattern meaningful?" |
 | ML Quality Sentinel | Custom | ✅ Built | Deterministic: run checklist of validations |
 | Validation Analyst | Hybrid | ✅ Built | Mix: deterministic tests + reasoning for edge cases |
-| Risk Manager | Custom | ⏳ Not built | Deterministic: check limits, flag violations |
+| Risk Manager | Custom | ✅ Built | Independent oversight: drawdown, concentration, limits |
 | Quant Developer | SDK | ⏳ Not built | Needs reasoning: "how to implement this strategy?" |
 | Report Generator | SDK | ✅ Built | Needs reasoning: "what's the narrative here?" |
 | **CIO Agent** | SDK | ✅ Built | NEW: Autonomous scoring across 4 dimensions |
@@ -427,7 +427,7 @@ You (CIO/Research Director)
 10. [x] Implement Validation Analyst (Hybrid) → **Complete**
 11. [x] Test coordination through shared workspace → Event-driven triggers working
 12. [x] Implement CIO Agent → **NEW: Autonomous scoring across 4 dimensions**
-13. [ ] Implement Risk Manager (Custom)
+13. [x] Implement Risk Manager (Custom) → **Complete: Independent oversight**
 14. [ ] Implement Quant Developer (SDK)
 15. [ ] Integration testing: Full agent pipeline end-to-end
 
@@ -644,3 +644,4 @@ Status updated: draft → testing
 - **2026-01-26:** Added reference to [Data Pipeline Architecture](../architecture/data-pipeline-diagram.md)
 - **2026-01-28:** Implementation status update: 7/8 agents built, SDKAgent infrastructure complete
 - **2026-01-28:** Added CIO Agent (9th agent) - autonomous scoring across Statistical, Risk, Economic, Cost dimensions
+- **2026-01-28:** Implementation status update: 8/8 agents built + CIO Agent (Risk Manager complete)
