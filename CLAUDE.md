@@ -576,6 +576,28 @@ print(f"Economic: {score.economic:.2f}")
 print(f"Cost: {score.cost:.2f}")
 ```
 
+### Run weekly CIO Agent review (scheduled)
+```python
+from hrp.agents.scheduler import IngestionScheduler
+
+scheduler = IngestionScheduler()
+
+# Schedule weekly CIO review (Friday 5 PM ET)
+scheduler.setup_weekly_cio_review(
+    review_time='17:00',  # 5 PM ET
+    day_of_week='fri',
+)
+
+scheduler.start()
+
+# The CIO Agent will:
+# 1. Fetch all validated hypotheses from database
+# 2. Score each across 4 dimensions (Statistical, Risk, Economic, Cost)
+# 3. Generate decision (CONTINUE/CONDITIONAL/KILL/PIVOT)
+# 4. Save to cio_decisions table with rationale
+# 5. Generate markdown report in docs/reports/YYYY-MM-DD/
+```
+
 
 ### Run a multi-factor strategy backtest
 ```python
@@ -999,7 +1021,7 @@ print(f"Regime stability: {'PASS' if stability.passed else 'FAIL'}")
 
 ```bash
 pytest tests/ -v
-# Pass rate: 99.85% (2,642 passed, 4 failed, 1 skipped)
+# Pass rate: 99.7% (2,639 passed, 7 failed, 1 skipped)
 ```
 
 ## Performance Metrics (Empyrical-powered)

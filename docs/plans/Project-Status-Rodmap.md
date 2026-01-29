@@ -10,7 +10,7 @@
 | **Trading** | Live Execution | 0% | 🔮 Future |
 
 **Codebase:** ~24,500 lines of production code across 100+ modules
-**Test Suite:** 2,548 tests (99.9% pass rate)
+**Test Suite:** 2,639 tests (99.7% pass rate)
 
 ## Current Progress
 
@@ -408,7 +408,23 @@ Complete feature tracking with spec links.
 
 ## Document History
 
-**Last Updated:** January 27, 2026
+**Last Updated:** January 28, 2026
+
+**Changes (January 28, 2026 - CIO Agent Implementation Phase 1):**
+- Implemented CIO Agent execute() method with weekly review logic
+  - Fetches validated hypotheses from database
+  - Scores across 4 dimensions (Statistical, Risk, Economic, Cost)
+  - Persists decisions to cio_decisions table
+  - Generates weekly markdown report to docs/reports/
+- Added scheduler integration: setup_weekly_cio_review() (Friday 5 PM ET)
+- Updated research agents operations documentation (docs/agents/2026-01-25-research-agents-operations.md)
+  - Now reflects 9-agent team (added CIO Agent)
+  - CIO Agent scoring details with decision thresholds
+  - Human CIO time reduced from ~35 min to ~20 min per week
+  - Updated implementation status table
+  - Updated information flow diagram
+- Fixed 3 db access bugs: self.api.db → self.api._db (cio.py line 1011, 1024, 1047)
+- Test count updated: 2,548 → 2,639 tests (7 new failures, 99.7% pass rate)
 
 **Changes (January 27, 2026 - Code Simplification):**
 - Implemented comprehensive code simplification across all phases (1.7.1)

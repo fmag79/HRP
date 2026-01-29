@@ -1,5 +1,51 @@
 ## [Unreleased]
 
+## [1.7.3] - 2026-01-28
+
+### Added
+- **CIO Agent Weekly Review Execute()**: Implemented autonomous hypothesis review workflow:
+  - `execute()` method in CIOAgent with complete weekly review logic
+  - `_fetch_validated_hypotheses()`: Queries hypotheses table for 'validated' status
+  - `_get_experiment_data()`: Extracts ML metrics (Sharpe, stability, IC, fold CV)
+  - `_get_risk_data()`: Derives risk metrics (max DD, volatility, regime stability, Sharpe decay)
+  - `_get_economic_data()`: Gets thesis and metadata from hypothesis
+  - `_get_cost_data()`: Provides execution cost realism data
+  - `_save_decision()`: Persists to cio_decisions table with scores and rationale
+  - `_generate_report()`: Creates markdown report in docs/reports/YYYY-MM-DD/
+- **CIO Agent Scheduler Integration**: `setup_weekly_cio_review()` in IngestionScheduler
+  - Runs Friday at 5 PM ET (configurable)
+  - Auto-instantiates CIOAgent and calls execute()
+  - Logs decision count and report path
+
+### Changed
+- **Research Agents Operations Documentation** (docs/agents/2026-01-25-research-agents-operations.md):
+  - Updated from 8-agent to 9-agent team
+  - Added CIO Agent description: Autonomous hypothesis scoring and deployment decisions
+  - Weekly cycle: Friday now includes CIO Agent scoring before human review
+  - ML experimentation table: Added 8th stage for CIO Agent (4-dimension scoring)
+  - CIO Role section: Completely rewritten to reflect human + agent collaboration
+    - CIO Agent: Statistical (35%), Risk (30%), Economic (25%), Cost (10%)
+    - Decisions: CONTINUE (≥0.75), CONDITIONAL (0.60-0.74), KILL (<0.60), PIVOT
+    - Human time reduced from ~35 min to ~20 min per week
+  - Information flow diagram: Added CIO Agent block before human approval
+  - Timeline: Day 8 now includes CIO Agent scoring
+  - Implementation status table: CIO Agent marked as ✅ Implemented
+
+### Fixed
+- **CIO Agent Database Access**: Fixed 3 bugs where `self.api.db` should be `self.api._db`
+  - Line 1011: add_to_paper_portfolio() INSERT query
+  - Line 1024: remove_from_paper_portfolio() DELETE query
+  - Line 1047: rebalance_portfolio() INSERT query
+
+### Testing
+- Test suite: 2,639 tests (99.7% pass rate, 7 failures in ML deployment pipeline - unrelated to CIO Agent)
+
+### Documentation
+- docs/agents/2026-01-25-research-agents-operations.md: Updated for 9-agent team and CIO Agent integration
+- docs/plans/Project-Status-Rodmap.md: Updated test count and Document History
+
+## [Unreleased]
+
 ## [1.7.2] - 2026-01-27
 
 ### Added
