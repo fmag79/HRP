@@ -6,12 +6,16 @@ Advisory mode: presents recommendations, awaits user approval.
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from hrp.agents.sdk_agent import SDKAgent
 from hrp.api.platform import PlatformAPI
+
+if TYPE_CHECKING:
+    from anthropic import Anthropic
 
 
 @dataclass
@@ -137,6 +141,7 @@ class CIOAgent(SDKAgent):
         api: PlatformAPI | None = None,
         thresholds: dict | None = None,
         dependencies: list[str] | None = None,
+        anthropic_api_key: str | None = None,
     ):
         """
         Initialize CIO Agent.
@@ -147,6 +152,7 @@ class CIOAgent(SDKAgent):
             api: PlatformAPI instance (created if None)
             thresholds: Custom decision thresholds
             dependencies: List of data requirements
+            anthropic_api_key: Optional Anthropic API key (reads from env if None)
         """
         super().__init__(
             job_id=job_id,
@@ -155,6 +161,26 @@ class CIOAgent(SDKAgent):
         )
         self.api = api or PlatformAPI()
         self.thresholds = {**self.DEFAULT_THRESHOLDS, **(thresholds or {})}
+        self.anthropic_client = self._init_anthropic_client(anthropic_api_key)
+
+    def _init_anthropic_client(self, api_key: str | None) -> "Anthropic | None":
+        """
+        Initialize Anthropic client for economic rationale assessment.
+
+        Args:
+            api_key: Optional API key (reads from ANTHROPIC_API_KEY env if None)
+
+        Returns:
+            Anthropic client instance or None if no API key available
+        """
+        import os
+
+        from anthropic import Anthropic
+
+        key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            return None
+        return Anthropic(api_key=key)
 
     def execute(self) -> dict[str, any]:
         """
@@ -168,9 +194,6 @@ class CIOAgent(SDKAgent):
         """
         from datetime import date
         import json
-
-        # Initialize attribute for Claude assessment fallback
-        self.anthropic_client = None
 
         # Fetch validated hypotheses awaiting CIO review
         hypotheses = self._fetch_validated_hypotheses()
@@ -804,7 +827,7 @@ class CIOAgent(SDKAgent):
             # Fallback to moderate scores if no Claude client
             return {"thesis_strength": "moderate", "regime_alignment": "neutral"}
 
-        # Build prompt for Claude
+        # Build prompt for Claude with more specific guidance
         prompt = f"""Assess this trading hypothesis for economic rationale:
 
 Hypothesis: {thesis}
@@ -812,7 +835,7 @@ Hypothesis: {thesis}
 Current Market Regime: {current_regime}
 
 Agent Reports:
-{chr(10).join(f'- {k}: {v[:200]}...' for k, v in agent_reports.items())}
+{chr(10).join(f'- {k}: {v[:200]}...' for k, v in agent_reports.items()) if agent_reports else 'No agent reports yet'}
 
 Respond ONLY with valid JSON:
 {{
@@ -820,9 +843,18 @@ Respond ONLY with valid JSON:
     "regime_alignment": "mismatch" | "neutral" | "aligned"
 }}
 
-Criteria:
-- thesis_strength: Is the economic logic sound? Does it have a clear edge?
-- regime_alignment: Does this strategy suit the current market regime?
+Scoring Guide:
+- thesis_strength:
+  - "strong": Well-documented market anomaly (e.g., momentum, value, low volatility), clear economic rationale, academic support
+  - "moderate": Plausible but less established effect, or mixed evidence
+  - "weak": No clear economic logic, contradicts established research
+
+- regime_alignment:
+  - "aligned": Strategy performs well in current regime (e.g., momentum works in bull markets)
+  - "neutral": Regime-independent or unclear relationship
+  - "mismatch": Strategy historically underperforms in current regime
+
+Be generous - most quant strategies have at least "moderate" strength if they have any backtesting evidence.
 """
 
         try:
@@ -832,11 +864,36 @@ Criteria:
                 messages=[{"role": "user", "content": prompt}],
             )
 
-            content = response.content[0].text
-            return json.loads(content)
+            content = response.content[0].text.strip()
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Claude raw response for {hypothesis_id}: {repr(content)}")
 
-        except Exception:
-            # Fallback on any error
+            # Extract JSON from markdown code blocks if present
+            # Handle: ```json\n{...}\n``` or ```\n{...}\n```
+            import re
+            # First try to find content between triple backticks
+            code_block_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', content, re.DOTALL)
+            if code_block_match:
+                content = code_block_match.group(1).strip()
+            # Otherwise, look for JSON-like content
+            else:
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content)
+                if json_match:
+                    content = json_match.group(0)
+
+            result = json.loads(content)
+
+            # Validate result has expected keys
+            if "thesis_strength" not in result or "regime_alignment" not in result:
+                raise ValueError(f"Invalid Claude response: {result}")
+
+            logger.info(f"Claude assessment for {hypothesis_id}: thesis={result['thesis_strength']}, regime={result['regime_alignment']}")
+            return result
+
+        except Exception as e:
+            # Log error and fallback
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Claude API call failed for {hypothesis_id}: {e}. Using fallback scores.")
             return {"thesis_strength": "moderate", "regime_alignment": "neutral"}
 
     def _score_economic_dimension(

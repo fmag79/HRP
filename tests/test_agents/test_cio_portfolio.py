@@ -106,7 +106,7 @@ class TestPortfolioOperations:
 
     def test_add_position_to_portfolio(self, agent):
         """Test adding a position to paper portfolio."""
-        with patch.object(agent.api.db, "execute") as mock_execute:
+        with patch.object(agent.api._db, "execute") as mock_execute:
             agent._add_paper_position(
                 hypothesis_id="HYP-001",
                 weight=0.042,
@@ -117,14 +117,14 @@ class TestPortfolioOperations:
 
     def test_remove_position_from_portfolio(self, agent):
         """Test removing a position from paper portfolio."""
-        with patch.object(agent.api.db, "execute") as mock_execute:
+        with patch.object(agent.api._db, "execute") as mock_execute:
             agent._remove_paper_position(hypothesis_id="HYP-001")
 
             mock_execute.assert_called_once()
 
     def test_log_paper_trade(self, agent):
         """Test logging a simulated trade."""
-        with patch.object(agent.api.db, "execute") as mock_execute:
+        with patch.object(agent.api._db, "execute") as mock_execute:
             agent._log_paper_trade(
                 hypothesis_id="HYP-001",
                 action="ADD",
