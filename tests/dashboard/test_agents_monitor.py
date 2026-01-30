@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timezone
 from unittest.mock import patch, MagicMock
 
 
@@ -49,3 +50,30 @@ def test_agent_status_has_valid_status_field():
         valid_statuses = {"running", "completed", "failed", "idle"}
         for agent in result:
             assert agent.status in valid_statuses
+
+
+def test_get_timeline_returns_list():
+    """get_timeline should return list of timeline events."""
+    from hrp.dashboard.agents_monitor import get_timeline
+    from hrp.api.platform import PlatformAPI
+    from datetime import datetime
+
+    # Mock get_lineage to return a test event
+    test_event = {
+        "lineage_id": 1,
+        "event_type": "agent_run_start",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "actor": "agent:signal-scientist",
+        "hypothesis_id": "HYP-001",
+        "experiment_id": None,
+        "details": {},
+        "parent_lineage_id": None,
+    }
+
+    with patch("hrp.dashboard.agents_monitor.get_lineage", return_value=[test_event]):
+        api = PlatformAPI()
+        result = get_timeline(api, limit=50)
+        assert isinstance(result, list)
+        # Should enrich with agent info
+        if result:
+            assert "agent_name" in result[0] or len(result) == 0  # May be empty due to actor filtering

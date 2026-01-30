@@ -172,5 +172,36 @@ def get_timeline(
     limit: int = 100,
 ) -> list[dict]:
     """Get historical timeline of agent events."""
-    # Placeholder implementation
-    return []
+    # Build actor filter from agent IDs
+    actors = None
+    if agents:
+        actors = [AGENT_REGISTRY[a]["actor"] for a in agents if a in AGENT_REGISTRY]
+
+    # Get lineage events for specified actors (or all if None)
+    events = []
+    for agent_id, agent_info in AGENT_REGISTRY.items():
+        if actors and agent_info["actor"] not in actors:
+            continue
+
+        agent_events = get_lineage(actor=agent_info["actor"], limit=limit)
+
+        # Enrich events with agent display name
+        for event in agent_events:
+            event["agent_name"] = agent_info["name"]
+            event["agent_id"] = agent_id
+
+        events.extend(agent_events)
+
+    # Sort by timestamp descending
+    events.sort(key=lambda e: e["timestamp"], reverse=True)
+
+    # Apply date range filter if specified
+    if date_range:
+        start_date, end_date = date_range
+        events = [
+            e for e in events
+            if start_date <= datetime.fromisoformat(e["timestamp"]).date() <= end_date
+        ]
+
+    # Apply limit
+    return events[:limit]
