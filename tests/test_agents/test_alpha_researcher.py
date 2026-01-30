@@ -322,8 +322,10 @@ class TestAlphaResearcherAnalysis:
         result = researcher.run()
 
         assert result["hypotheses_promoted"] == 1
-        mock_api.update_hypothesis.assert_called_once()
-        call_kwargs = mock_api.update_hypothesis.call_args[1]
+        # First update_hypothesis call is the PROCEED promotion;
+        # subsequent calls are from strategy generation adding metadata
+        promote_call = mock_api.update_hypothesis.call_args_list[0]
+        call_kwargs = promote_call[1]
         assert call_kwargs["status"] == "testing"
         assert call_kwargs["actor"] == "agent:alpha-researcher"
 
@@ -366,7 +368,10 @@ class TestAlphaResearcherAnalysis:
 
         assert result["hypotheses_deferred"] == 1
         assert result["hypotheses_promoted"] == 0
-        mock_api.update_hypothesis.assert_not_called()
+        # No call should promote to 'testing' — any update_hypothesis calls
+        # are from strategy generation (status='draft'), not promotion
+        for call in mock_api.update_hypothesis.call_args_list:
+            assert call[1].get("status") != "testing"
 
     def test_logs_lineage_event(self, mock_all_log_events):
         """Should log ALPHA_RESEARCHER_REVIEW event to lineage - verified by fixture."""

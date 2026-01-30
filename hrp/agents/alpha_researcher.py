@@ -1122,7 +1122,7 @@ This strategy may fail if:
                 metadata={
                     "strategy_spec": strategy.to_dict(),
                     "strategy_source": strategy.source,
-                    "strategy_doc": f"docs/strategies/{strategy.name}.md",
+                    "strategy_doc": str(Path(self.config.strategy_docs_dir) / f"{strategy.name}.md"),
                 },
             )
 
