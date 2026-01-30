@@ -6,7 +6,7 @@ Personal, professional-grade quantitative research platform for systematic tradi
 
 - **Research-First Workflow** - Formal hypothesis → experiment → validation pipeline
 - **Institutional Rigor** - Walk-forward validation, statistical significance testing, audit trails
-- **ML-Ready** - LightGBM, XGBoost, sklearn integration with MLflow tracking
+- **ML-Ready** - Ridge, Lasso, ElasticNet, RandomForest, LightGBM with MLflow tracking
 - **Agent-Native** - Claude integration via MCP for AI-assisted research
 - **Local-First** - Runs entirely on your Mac, data stays private
 
@@ -101,7 +101,7 @@ launchctl load ~/Library/LaunchAgents/com.hrp.scheduler.plist
 | Direction | Long-only | Short selling |
 | Timeframe | Daily | Intraday |
 | Universe | S&P 500 (ex-financials, REITs) | International |
-| Deployment | Paper trading | Live trading (future) |
+| Deployment | Research only | Paper/live trading (future) |
 
 ## Usage Examples
 
@@ -167,11 +167,11 @@ print(f"Model is stable: {result.is_stable}")
 
 ## Documentation
 
-- [Full Specification](docs/plans/2026-01-19-hrp-spec.md)
-- [Project Status & Roadmap](docs/plans/Project-Status-Rodmap.md)
+- [Project Status](docs/plans/Project-Status.md)
 - [Cookbook](docs/operations/cookbook.md) - Practical guide with examples
-- [ML Framework MVP](docs/reports/2026-01-22-ml-framework-mvp.md)
-- [Walk-Forward Validation Design](docs/reports/2026-01-22-walk-forward-validation-design.md)
+- [Agent Pipeline](docs/agents/agent-interaction-diagram.md) - Research agent architecture
+- [Decision Pipeline](docs/agents/decision-pipeline.md) - Signal-to-deployment flow
+- [Deployment Guide](docs/operations/deployment.md) - Scheduler & service setup
 
 ## Development Status
 
@@ -182,22 +182,18 @@ print(f"Model is stable: {result.is_stable}")
 | Tier 3: Production | ⏳ Planned | Security + Ops (0%) |
 | Tier 4: Trading | 🔮 Future | Live Execution (0%) |
 
-### Research Agents (All Implemented)
-- ✅ Signal Scientist - Automated IC analysis and hypothesis creation
-- ✅ Alpha Researcher - Claude-powered hypothesis review
-- ✅ ML Scientist - Walk-forward validation and model training
-- ✅ ML Quality Sentinel - Experiment auditing and overfitting detection
-- ✅ Validation Analyst - Pre-deployment stress testing
-- ✅ Report Generator - Automated daily/weekly research summaries
-
-### Test Suite Status
-- **Pass Rate**: 100% (2,174 passed, 1 skipped)
-- **Coverage**: Comprehensive test coverage across all major components
-
-### Current Data
-- **10 symbols loaded**: AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, V, UNH, JNJ
-- **17,720 price records** (2019-2026)
-- **Database**: ~/hrp-data/hrp.duckdb
+### Research Agents (11 Implemented)
+- Signal Scientist - Automated IC analysis and hypothesis creation
+- Alpha Researcher - Claude-powered hypothesis review
+- Code Materializer - Strategy code generation
+- ML Scientist - Walk-forward validation and model training
+- ML Quality Sentinel - Experiment auditing and overfitting detection
+- Validation Analyst - Pre-deployment stress testing
+- Risk Manager - Independent portfolio risk oversight with veto authority
+- Quant Developer - Hyperparameter sweep and optimization
+- Pipeline Orchestrator - End-to-end pipeline coordination with kill gates
+- CIO Agent - Strategic 4-dimension hypothesis scoring
+- Report Generator - Automated daily/weekly research summaries
 
 ## License
 
