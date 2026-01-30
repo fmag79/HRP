@@ -2,7 +2,7 @@
 
 ## Overview
 
-The HRP (Hedge Fund Research Platform) uses a sophisticated 10-agent research pipeline that automates the end-to-end strategy development process, from signal discovery to human CIO approval. The pipeline is event-driven, using lineage events to trigger downstream agents automatically.
+The HRP (Hedge Fund Research Platform) uses a sophisticated 11-agent research pipeline that automates the end-to-end strategy development process, from signal discovery to human CIO approval. The pipeline is event-driven, using lineage events to trigger downstream agents automatically.
 
 ### Key Features
 
@@ -24,7 +24,8 @@ graph TB
     SS -->|hypothesis_created| AR[Alpha Researcher<br/>SDK Agent]
 
     %% Research Phase
-    AR -->|PROCEED| MLS[ML Scientist<br/>SDK Agent]
+    AR -->|strategy_spec| CM[Code Materializer<br/>Custom Agent]
+    CM -->|code_generated| MLS[ML Scientist<br/>SDK Agent]
     AR -->|DEFER| HLD[Hold for Research]
     AR -->|REJECT| Reject1[Reject Hypothesis]
 
@@ -69,7 +70,7 @@ graph TB
     classDef hold fill:#edf2f7,stroke:#718096,color:#1a202c
 
     class SS,AR,MLS,MQS,PO,VA sdkAgent
-    class QD,RM,CIO customAgent
+    class CM,QD,RM,CIO customAgent
     class Human decision
     class Reject1,Reject2,Reject3,Reject4,Reject5,Reject6,Reject7 reject
     class Deploy decision
@@ -83,7 +84,9 @@ graph TB
 | Source Agent | Lineage Event | Target Agent | Trigger Condition |
 |--------------|---------------|--------------|-------------------|
 | Signal Scientist | `hypothesis_created` | Alpha Researcher | New hypothesis in 'draft' status |
-| Alpha Researcher | `alpha_researcher_complete` | ML Scientist | Hypothesis promoted to 'testing' |
+| Alpha Researcher | `alpha_researcher_complete` | Code Materializer | Strategy spec ready for materialization |
+| Code Materializer | `code_materializer_complete` | ML Scientist | Code generated, syntax valid |
+| ML Scientist | `experiment_completed` | ML Quality Sentinel | Walk-forward validation finished |
 | ML Scientist | `experiment_completed` | ML Quality Sentinel | Walk-forward validation finished |
 | ML Quality Sentinel | `ml_quality_sentinel_audit` | Quant Developer | Overall quality check passed |
 | Quant Developer | `quant_developer_backtest_complete` | Pipeline Orchestrator | Strategy spec and backtest ready |
@@ -99,7 +102,8 @@ graph TB
 | Agent | Type | Creates | Consumes | Outputs |
 |-------|------|---------|----------|---------|
 | **Signal Scientist** | SDK | Hypotheses (draft) | Features, prices | MLflow runs with IC scores |
-| **Alpha Researcher** | SDK | Economic rationale | Draft hypotheses | Research notes, promotes to 'testing' |
+| **Alpha Researcher** | SDK | Economic rationale, strategy specs | Draft hypotheses | Research notes, strategy specs (NO CODE) |
+| **Code Materializer** | Custom | Executable code | Strategy specs | Generated strategy code |
 | **ML Scientist** | SDK | Experiments | Testing hypotheses | Walk-forward validation results |
 | **ML Quality Sentinel** | SDK | Audit reports | Completed experiments | Quality flags (passed/failed) |
 | **Quant Developer** | Custom | Strategy specs | Audited experiments | Strategy YAML, code templates |
@@ -126,6 +130,7 @@ graph LR
     subgraph Agents
         SS[Signal Scientist]
         AR[Alpha Researcher]
+        CM[Code Materializer]
         MLS[ML Scientist]
         MQS[ML Quality Sentinel]
         QD[Quant Developer]
@@ -141,7 +146,12 @@ graph LR
     HR -->|reads| AR
     AR -->|updates| HR
     AR -->|logs| LN
+    AR -->|creates| ST
 
+    ST -->|reads| CM
+    CM -->|creates| GC[Generated Code]
+
+    GC -->|reads| MLS
     HR -->|reads| MLS
     MLS -->|logs| ML
     MLS -->|logs| LN
@@ -170,8 +180,8 @@ graph LR
     classDef data fill:#e2e8f0,stroke:#4a5568,color:#1a202c
     classDef agent fill:#4299e1,stroke:#2b6cb0,color:#fff
 
-    class HR,ML,LN,ST,KG data
-    class SS,AR,MLS,MQS,QD,PO,VA,RM,CA agent
+    class HR,ML,LN,ST,KG,GC data
+    class SS,AR,CM,MLS,MQS,QD,PO,VA,RM,CA agent
 ```
 
 ---
@@ -275,6 +285,7 @@ graph LR
 |-----|----------|
 | **Day 1** | Signal Scientist runs (creates 5-10 hypotheses) |
 | **Day 1-2** | Alpha Researcher reviews and promotes 2-3 to testing |
+| **Day 2** | Code Materializer generates executable code from strategy specs |
 | **Day 2-4** | ML Scientist runs walk-forward validation (2-3 hypotheses) |
 | **Day 4-5** | ML Quality Sentinel audits experiments |
 | **Day 5-6** | Quant Developer creates strategy specs and backtests |
@@ -295,7 +306,8 @@ graph LR
 **Agent Trigger Frequency:**
 - Signal Scientist: Weekly (Monday 7 PM)
 - Alpha Researcher: Event-driven (after hypothesis_created)
-- ML Scientist: Event-driven (after alpha_researcher_complete)
+- Code Materializer: Event-driven (after alpha_researcher_complete)
+- ML Scientist: Event-driven (after code_materializer_complete)
 - ML Quality Sentinel: Daily (6 AM) + event-driven
 - Quant Developer: Event-driven (after ml_quality_sentinel_audit)
 - Pipeline Orchestrator: Event-driven (after quant_developer_complete)
@@ -393,8 +405,9 @@ Built on standardized agent framework with common patterns:
 - MLflow integration
 - Email alert support
 
-### Custom Agents (2)
+### Custom Agents (3)
 Domain-specific implementations:
+- **Code Materializer**: Translates strategy specs to executable code
 - **Quant Developer**: Generates strategy code and specs
 - **Risk Manager**: Portfolio-level risk assessment
 
@@ -414,6 +427,7 @@ Domain-specific implementations:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-29 | Initial agent interaction diagram |
+| 1.1 | 2026-01-29 | Added Code Materializer agent between Alpha Researcher and ML Scientist |
 
 ---
 
