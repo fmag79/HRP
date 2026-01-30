@@ -123,7 +123,7 @@ class TestBacktestCalendarIntegration:
             symbols=["AAPL", "MSFT"],
             start=date(2022, 7, 1),
             end=date(2022, 7, 8),
-            adjust_splits=False,
+
         )
         
         # Should have 5 trading days (July 1, 5, 6, 7, 8)
@@ -143,7 +143,7 @@ class TestBacktestCalendarIntegration:
             symbols=["AAPL"],
             start=date(2022, 7, 1),
             end=date(2022, 7, 8),
-            adjust_splits=False,
+
         )
         
         dates = prices.index.date
@@ -159,7 +159,7 @@ class TestBacktestCalendarIntegration:
             symbols=["AAPL"],
             start=date(2022, 11, 21),
             end=date(2022, 11, 25),
-            adjust_splits=False,
+
         )
         
         dates = prices.index.date
@@ -182,7 +182,7 @@ class TestBacktestCalendarIntegration:
             symbols=["AAPL", "MSFT"],
             start=date(2022, 7, 1),
             end=date(2022, 7, 8),
-            adjust_splits=False,
+
         )
         
         # Check that no dates are Saturday or Sunday
@@ -197,7 +197,7 @@ class TestBacktestCalendarIntegration:
                 symbols=["AAPL"],
                 start=date(2022, 7, 2),  # Saturday
                 end=date(2022, 7, 3),    # Sunday
-                adjust_splits=False,
+    
             )
 
     def test_get_price_data_chronological_order(self, test_db):
@@ -206,7 +206,7 @@ class TestBacktestCalendarIntegration:
             symbols=["AAPL"],
             start=date(2022, 7, 1),
             end=date(2022, 7, 8),
-            adjust_splits=False,
+
         )
         
         dates = prices.index.date
@@ -228,7 +228,7 @@ class TestBacktestConfigCalendar:
             symbols=config.symbols,
             start=config.start_date,
             end=config.end_date,
-            adjust_splits=False,
+
         )
 
         # Should only have trading days
@@ -687,75 +687,12 @@ class TestMainCLI:
 
 
 # =============================================================================
-# get_price_data adjustment tests
+# get_price_data tests
 # =============================================================================
 
 
-class TestGetPriceDataAdjustments:
-    """Tests for price adjustments in get_price_data."""
-
-    def test_get_price_data_with_split_adjustment(self, test_db):
-        """Test that split adjustments are applied when requested."""
-        from hrp.research.backtest import get_price_data
-        from unittest.mock import patch, MagicMock
-
-        # Mock the API to track if adjust_prices_for_splits is called
-        mock_api = MagicMock()
-        mock_api.adjust_prices_for_splits.side_effect = lambda df: df  # Pass through
-
-        with patch("hrp.api.platform.PlatformAPI", return_value=mock_api):
-            prices = get_price_data(
-                ["AAPL", "MSFT"],
-                date(2022, 7, 1),
-                date(2022, 7, 8),
-                adjust_splits=True,
-            )
-
-        # Verify the adjustment method was called
-        mock_api.adjust_prices_for_splits.assert_called_once()
-
-    def test_get_price_data_with_dividend_adjustment(self, test_db):
-        """Test that dividend adjustments are applied when requested."""
-        from hrp.research.backtest import get_price_data
-        from unittest.mock import patch, MagicMock
-
-        # Mock the API to track if adjust_prices_for_dividends is called
-        mock_api = MagicMock()
-        mock_api.adjust_prices_for_splits.side_effect = lambda df: df
-        mock_api.adjust_prices_for_dividends.side_effect = lambda df, reinvest: df
-
-        with patch("hrp.api.platform.PlatformAPI", return_value=mock_api):
-            prices = get_price_data(
-                ["AAPL", "MSFT"],
-                date(2022, 7, 1),
-                date(2022, 7, 8),
-                adjust_splits=True,
-                adjust_dividends=True,
-            )
-
-        # Verify both adjustment methods were called
-        mock_api.adjust_prices_for_splits.assert_called_once()
-        mock_api.adjust_prices_for_dividends.assert_called_once()
-
-    def test_get_price_data_no_adjustments(self, test_db):
-        """Test that no adjustments are applied when not requested."""
-        from hrp.research.backtest import get_price_data
-        from unittest.mock import patch, MagicMock
-
-        # Mock the API - won't be instantiated since adjust_splits=False
-        mock_api = MagicMock()
-
-        # With adjust_splits=False, the API is never created so we just verify the function works
-        prices = get_price_data(
-            ["AAPL", "MSFT"],
-            date(2022, 7, 1),
-            date(2022, 7, 8),
-            adjust_splits=False,
-            adjust_dividends=False,
-        )
-
-        # Verify prices are returned
-        assert not prices.empty
+class TestGetPriceDataEdgeCases:
+    """Tests for edge cases in get_price_data."""
 
     def test_get_price_data_empty_raises(self, test_db):
         """Test that empty price data raises an error."""

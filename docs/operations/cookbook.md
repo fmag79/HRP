@@ -2287,7 +2287,7 @@ python -c "from hrp.mcp import mcp; mcp.run()"
 | `api.run_quality_checks(date)` | Run data quality checks |
 | `api.health_check()` | System health status |
 | `api.get_fundamentals_as_of(symbols, metrics, as_of_date)` | Get point-in-time fundamentals |
-| `api.adjust_prices_for_dividends(prices, reinvest)` | Adjust prices for dividend reinvestment |
+
 
 ### Strategy Signal Generators
 
