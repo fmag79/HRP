@@ -20,12 +20,10 @@ def test_agents_monitor_module_exists():
 def test_get_all_agent_status_returns_list():
     """get_all_agent_status should return list of AgentStatus."""
     from hrp.dashboard.agents_monitor import get_all_agent_status
-    from hrp.api.platform import PlatformAPI
 
-    # Mock get_lineage to return empty events (all agents will be idle)
-    with patch("hrp.dashboard.agents_monitor.get_lineage", return_value=[]):
-        api = PlatformAPI()
-        result = get_all_agent_status(api)
+    # Mock _get_lineage_read_only to return empty events (all agents will be idle)
+    with patch("hrp.dashboard.agents_monitor._get_lineage_read_only", return_value=[]):
+        result = get_all_agent_status()
         assert isinstance(result, list)
         # All agents should be present
         agent_ids = {a.agent_id for a in result}
@@ -41,12 +39,10 @@ def test_get_all_agent_status_returns_list():
 def test_agent_status_has_valid_status_field():
     """Each AgentStatus should have valid status field."""
     from hrp.dashboard.agents_monitor import get_all_agent_status
-    from hrp.api.platform import PlatformAPI
 
-    # Mock get_lineage to return empty events (all agents will be idle)
-    with patch("hrp.dashboard.agents_monitor.get_lineage", return_value=[]):
-        api = PlatformAPI()
-        result = get_all_agent_status(api)
+    # Mock _get_lineage_read_only to return empty events (all agents will be idle)
+    with patch("hrp.dashboard.agents_monitor._get_lineage_read_only", return_value=[]):
+        result = get_all_agent_status()
         valid_statuses = {"running", "completed", "failed", "idle"}
         for agent in result:
             assert agent.status in valid_statuses
@@ -55,10 +51,9 @@ def test_agent_status_has_valid_status_field():
 def test_get_timeline_returns_list():
     """get_timeline should return list of timeline events."""
     from hrp.dashboard.agents_monitor import get_timeline
-    from hrp.api.platform import PlatformAPI
     from datetime import datetime
 
-    # Mock get_lineage to return a test event
+    # Mock _get_lineage_read_only to return a test event
     test_event = {
         "lineage_id": 1,
         "event_type": "agent_run_start",
@@ -70,9 +65,8 @@ def test_get_timeline_returns_list():
         "parent_lineage_id": None,
     }
 
-    with patch("hrp.dashboard.agents_monitor.get_lineage", return_value=[test_event]):
-        api = PlatformAPI()
-        result = get_timeline(api, limit=50)
+    with patch("hrp.dashboard.agents_monitor._get_lineage_read_only", return_value=[test_event]):
+        result = get_timeline(limit=50)
         assert isinstance(result, list)
         # Should enrich with agent info
         if result:
@@ -107,12 +101,13 @@ def test_status_inference_completed():
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
-    # Use recent events (within 1 hour) to avoid idle detection
+    # Use very recent events (within seconds) to ensure they're not stale
+    # NOTE: Events must be sorted DESC by timestamp (newest first)
     events = [
         {
-            "lineage_id": 1,
-            "event_type": "agent_run_start",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            "lineage_id": 2,
+            "event_type": "agent_run_complete",
+            "timestamp": (now - timedelta(seconds=2)).isoformat(),
             "actor": "agent:test",
             "hypothesis_id": None,
             "experiment_id": None,
@@ -120,9 +115,9 @@ def test_status_inference_completed():
             "parent_lineage_id": None,
         },
         {
-            "lineage_id": 2,
-            "event_type": "agent_run_complete",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            "lineage_id": 1,
+            "event_type": "agent_run_start",
+            "timestamp": (now - timedelta(seconds=5)).isoformat(),
             "actor": "agent:test",
             "hypothesis_id": None,
             "experiment_id": None,
@@ -130,14 +125,9 @@ def test_status_inference_completed():
             "parent_lineage_id": None,
         },
     ]
-    # Mock the datetime.now to be within the event window
-    with patch("hrp.dashboard.agents_monitor.datetime") as mock_dt:
-        # Return a time that's within 1 hour of the latest event
-        mock_dt.now.return_value = now
-        mock_dt.fromisoformat.side_effect = datetime.fromisoformat
-        status = _infer_agent_status(events)
-    # Check status - might be idle if stale, completed if recent
-    assert status in {"completed", "idle"}  # Either is acceptable for completed events
+    status = _infer_agent_status(events)
+    # Latest event is agent_run_complete, should be completed
+    assert status == "completed"
 
 
 def test_status_inference_idle():

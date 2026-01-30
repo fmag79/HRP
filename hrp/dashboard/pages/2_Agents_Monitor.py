@@ -7,8 +7,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from hrp.dashboard.agents_monitor import get_all_agent_status, get_timeline, AgentStatus
-from hrp.api.platform import PlatformAPI
+from hrp.dashboard.agents_monitor import get_all_agent_status, get_timeline
 
 
 st.title("🤖 Agents Monitor")
@@ -27,7 +26,7 @@ st.subheader("Real-Time Monitor")
 
 # Get agent status with error handling
 try:
-    agents = get_all_agent_status(PlatformAPI())
+    agents = get_all_agent_status()
 except Exception as e:
     st.error(f"Failed to load agent status: {e}")
     st.info("Make sure the database is accessible (scheduler might be holding a lock)")
@@ -105,7 +104,7 @@ if agents:
 
     # Get and display timeline
     try:
-        timeline = get_timeline(PlatformAPI(), limit=limit)
+        timeline = get_timeline(limit=limit)
     except Exception as e:
         st.error(f"Failed to load timeline: {e}")
         timeline = []
