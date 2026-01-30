@@ -180,6 +180,16 @@ hrp/
 | New scheduled job | `hrp/agents/jobs.py` |
 | Expose via API | `hrp/api/platform.py` |
 
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| `docs/architecture/data-pipeline-diagram.md` | Data pipeline: sources → jobs → DuckDB → agents → outputs |
+| `docs/agents/decision-pipeline.md` | Agent decision workflow: 11 stages, kill gates, scoring, human approval |
+| `docs/agents/01-*.md` through `docs/agents/11-*.md` | Individual agent specifications (numbered by pipeline order) |
+| `docs/plans/Project-Status.md` | Development roadmap and tier status |
+| `docs/setup/Scheduler-Configuration-Guide.md` | launchd job configuration |
+
 ## Testing
 
 ```bash

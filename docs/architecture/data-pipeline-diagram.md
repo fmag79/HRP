@@ -423,7 +423,7 @@ For terminal display and code comments:
 
 ## Event-Driven Agent Coordination
 
-The `LineageEventWatcher` enables automatic agent chaining by monitoring lineage events:
+Individual launchd jobs handle scheduling. The `agent-pipeline` job polls every 15 minutes, checking lineage events to trigger downstream agents automatically:
 
 ```
 ┌─────────────────┐     hypothesis_created      ┌─────────────────┐
@@ -450,13 +450,15 @@ The `LineageEventWatcher` enables automatic agent chaining by monitoring lineage
 ```
 
 **Setup:**
-```python
-from hrp.agents.scheduler import IngestionScheduler
+```bash
+# Install all launchd jobs (including agent-pipeline)
+scripts/manage_launchd.sh install
 
-scheduler = IngestionScheduler()
-scheduler.setup_research_agent_triggers(poll_interval_seconds=60)
-scheduler.start_with_triggers()
+# Or run a single job manually
+python -m hrp.agents.run_job --job agent-pipeline
 ```
+
+For the full 11-agent decision pipeline with kill gates and scoring, see [Decision Pipeline](../agents/decision-pipeline.md).
 
 ---
 
@@ -475,4 +477,5 @@ scheduler.start_with_triggers()
 
 - [CLAUDE.md](/CLAUDE.md) - Main project instructions
 - [Project Status](/docs/plans/Project-Status.md) - Development roadmap
-- [Operations Guide](/docs/operations/) - Scheduler setup and monitoring
+- [Decision Pipeline](../agents/decision-pipeline.md) - Full agent decision workflow with kill gates
+- [Scheduler Configuration](../setup/Scheduler-Configuration-Guide.md) - launchd job setup
