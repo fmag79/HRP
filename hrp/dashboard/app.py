@@ -854,6 +854,20 @@ def _get_status_color(status: str) -> str:
     return colors.get(status, "gray")
 
 
+def render_agents_monitor() -> None:
+    """Render the Agents Monitor page."""
+    from hrp.dashboard.pages import agents_monitor_page
+
+    agents_monitor_page.render()
+
+
+def render_job_health() -> None:
+    """Render the Job Health page."""
+    from hrp.dashboard.pages import job_health
+
+    job_health.render()
+
+
 # =============================================================================
 # Sidebar and Navigation
 # =============================================================================
@@ -889,7 +903,7 @@ def render_sidebar() -> str:
 
         page = st.selectbox(
             "Select Page",
-            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments"],
+            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Agents Monitor", "Job Health"],
             label_visibility="collapsed",
         )
 
@@ -1006,6 +1020,10 @@ def main() -> None:
         render_hypotheses()
     elif page == "Experiments":
         render_experiments()
+    elif page == "Agents Monitor":
+        render_agents_monitor()
+    elif page == "Job Health":
+        render_job_health()
     else:
         st.error(f"Unknown page: {page}")
 
