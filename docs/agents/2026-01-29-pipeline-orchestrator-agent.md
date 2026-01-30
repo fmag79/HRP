@@ -248,6 +248,27 @@ class PipelineOrchestratorConfig:
 
 ---
 
+## Structural Regime Scenarios
+
+**Updated:** Pipeline Orchestrator uses HMM-based structural regimes.
+
+### Regime Matrix
+
+| Vol \ Trend | Bull | Bear |
+|-------------|------|------|
+| **Low** | Low Vol Bull | Low Vol Bear |
+| **High** | High Vol Bull | High Vol Bear (Crisis) |
+
+### Requirements
+
+| Requirement | Specification |
+|-------------|---------------|
+| Minimum scenarios | 4 (one per regime type) |
+| Sharpe CV threshold | ≤ 0.30 across all regimes |
+| Regime coverage | Must test in all 4 regime types |
+
+---
+
 ## Trigger Model
 
 ### Primary: Lineage Event Trigger

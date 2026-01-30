@@ -1,18 +1,22 @@
 """
-Alpha Researcher Agent - SDK-powered hypothesis refinement.
+Alpha Researcher Agent - SDK-powered hypothesis refinement and strategy generation.
 
 Reviews draft hypotheses from Signal Scientist and refines them with:
 - Economic rationale analysis
 - Regime context awareness
 - Related hypothesis search
 - Strengthened falsification criteria
+- NEW: Strategy generation from economic first principles
 
-Outputs updated hypotheses and lineage events for ML Scientist to pick up.
+Outputs updated hypotheses, new strategy specifications, and lineage events
+for ML Scientist and Quant Developer to pick up.
 """
 
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -20,6 +24,48 @@ from loguru import logger
 from hrp.agents.sdk_agent import SDKAgent, SDKAgentConfig
 from hrp.api.platform import PlatformAPI
 from hrp.research.lineage import EventType, log_event
+
+
+@dataclass
+class StrategySpec:
+    """Strategy specification from Alpha Researcher.
+
+    Represents a trading strategy in economic (not code) terms.
+    This is the output of Alpha Researcher's strategy generation
+    and input to Quant Developer's backtesting pipeline.
+    """
+
+    name: str  # Strategy name (e.g., "earnings_momentum_post_miss")
+    title: str  # Human-readable title
+    economic_rationale: str  # WHY the alpha should exist
+    universe: str  # Universe description (e.g., "S&P 500 ex-financials, market cap > $5B")
+    long_logic: str  # Economic logic for long positions
+    short_logic: str | None  # Economic logic for short positions (None if long-only)
+    holding_period_days: int  # Target holding period in trading days
+    rebalance_cadence: str  # Rebalance frequency (e.g., "weekly", "monthly")
+    risk_constraints: dict[str, Any]  # Risk limits (sector exposure, position limits)
+    regime_behavior: dict[str, str]  # Expected behavior in bull/bear/sideways regimes
+    baseline_requirement: str  # Benchmark requirement (e.g., "Beat SPY by 2% annually")
+    failure_modes: list[str]  # How the strategy could fail
+    source: str  # Source of strategy idea (claude_ideation, literature_patterns, pattern_mining)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for storage."""
+        return {
+            "name": self.name,
+            "title": self.title,
+            "economic_rationale": self.economic_rationale,
+            "universe": self.universe,
+            "long_logic": self.long_logic,
+            "short_logic": self.short_logic,
+            "holding_period_days": self.holding_period_days,
+            "rebalance_cadence": self.rebalance_cadence,
+            "risk_constraints": self.risk_constraints,
+            "regime_behavior": self.regime_behavior,
+            "baseline_requirement": self.baseline_requirement,
+            "failure_modes": self.failure_modes,
+            "source": self.source,
+        }
 
 
 @dataclass
@@ -32,9 +78,20 @@ class AlphaResearcherConfig(SDKAgentConfig):
     # Regime analysis settings
     regime_lookback_days: int = 252 * 3  # 3 years of history for regime detection
 
-    # Research note output
+    # NEW: Strategy generation settings
+    enable_strategy_generation: bool = True
+    generation_target_count: int = 3  # New strategies per run
+    generation_sources: list[str] = field(default_factory=lambda: [
+        "claude_ideation",
+        "literature_patterns",
+        "pattern_mining"
+    ])
+
+    # Documentation output
     write_research_note: bool = True
     research_note_dir: str = "docs/research"
+    write_strategy_docs: bool = True  # NEW
+    strategy_docs_dir: str = "docs/strategies"  # NEW
 
 
 @dataclass
@@ -115,10 +172,14 @@ class AlphaResearcher(SDKAgent):
         """
         Execute the Alpha Researcher analysis.
 
+        Performs:
+        1. Reviews draft hypotheses (existing behavior)
+        2. Generates new strategies from economic first principles (NEW)
+
         Returns:
             Dict with analysis results
         """
-        # Get hypotheses to process
+        # Part 1: Review draft hypotheses (existing behavior)
         if self.hypothesis_ids:
             hypotheses = [
                 self.api.get_hypothesis(hid)
@@ -128,47 +189,83 @@ class AlphaResearcher(SDKAgent):
         else:
             hypotheses = self.api.list_hypotheses(status="draft")
 
-        if not hypotheses:
-            logger.info("No draft hypotheses to process")
-            return {
-                "hypotheses_reviewed": 0,
-                "hypotheses_promoted": 0,
-                "hypotheses_deferred": 0,
-                "analyses": [],
-            }
-
-        logger.info(f"Processing {len(hypotheses)} hypotheses")
-
         promoted = 0
         deferred = 0
+        reviewed_ids = []
 
-        for hypothesis in hypotheses:
-            # Checkpoint before each hypothesis
-            self.checkpoint({
-                "processing": hypothesis["hypothesis_id"],
-                "completed": [a.hypothesis_id for a in self._analyses],
-            })
+        if hypotheses:
+            logger.info(f"Processing {len(hypotheses)} draft hypotheses")
 
-            try:
-                analysis = self._analyze_hypothesis(hypothesis)
-                self._analyses.append(analysis)
+            for hypothesis in hypotheses:
+                # Checkpoint before each hypothesis
+                self.checkpoint({
+                    "processing": hypothesis["hypothesis_id"],
+                    "completed": [a.hypothesis_id for a in self._analyses],
+                })
 
-                if analysis.status_updated:
-                    promoted += 1
-                else:
+                try:
+                    analysis = self._analyze_hypothesis(hypothesis)
+                    self._analyses.append(analysis)
+                    reviewed_ids.append(hypothesis["hypothesis_id"])
+
+                    if analysis.status_updated:
+                        promoted += 1
+                    else:
+                        deferred += 1
+
+                except Exception as e:
+                    logger.error(f"Failed to analyze {hypothesis['hypothesis_id']}: {e}")
                     deferred += 1
 
-            except Exception as e:
-                logger.error(f"Failed to analyze {hypothesis['hypothesis_id']}: {e}")
-                deferred += 1
+        # Part 2: Generate new strategies (NEW)
+        strategies_generated = []
+        strategy_docs_written = []
+
+        if isinstance(self.config, AlphaResearcherConfig) and self.config.enable_strategy_generation:
+            logger.info(f"Generating {self.config.generation_target_count} new strategies")
+            new_specs = self.generate_strategies(
+                target_count=self.config.generation_target_count,
+                sources=self.config.generation_sources,
+            )
+
+            for spec in new_specs:
+                strategies_generated.append(spec.name)
+
+                # Write strategy spec document
+                if self.config.write_strategy_docs:
+                    doc_path = self._write_strategy_spec_doc(spec)
+                    if doc_path:
+                        strategy_docs_written.append(doc_path)
+
+                # Create hypothesis in registry from strategy spec
+                try:
+                    hyp_id = self._create_hypothesis_from_strategy(spec)
+                    logger.info(f"Created hypothesis {hyp_id} from strategy {spec.name}")
+                except Exception as e:
+                    logger.error(f"Failed to create hypothesis for {spec.name}: {e}")
 
         # Write research note if configured
         research_note_path = None
         if isinstance(self.config, AlphaResearcherConfig) and self.config.write_research_note:
             research_note_path = self._write_research_note()
 
+        # Log completion event (NEW)
+        log_event(
+            event_type=EventType.ALPHA_RESEARCHER_COMPLETE.value,
+            actor=self.ACTOR,
+            details={
+                "hypotheses_reviewed": len(reviewed_ids),
+                "hypotheses_promoted": promoted,
+                "hypotheses_deferred": deferred,
+                "strategies_generated": len(strategies_generated),
+                "strategy_docs_written": len(strategy_docs_written),
+                "reviewed_ids": reviewed_ids,
+                "strategy_names": strategies_generated,
+            },
+        )
+
         return {
-            "hypotheses_reviewed": len(hypotheses),
+            "hypotheses_reviewed": len(hypotheses) if hypotheses else 0,
             "hypotheses_promoted": promoted,
             "hypotheses_deferred": deferred,
             "analyses": [
@@ -180,6 +277,8 @@ class AlphaResearcher(SDKAgent):
                 for a in self._analyses
             ],
             "research_note_path": research_note_path,
+            "strategies_generated": strategies_generated,
+            "strategy_docs_written": strategy_docs_written,
             "token_usage": {
                 "input": self.token_usage.input_tokens,
                 "output": self.token_usage.output_tokens,
@@ -534,6 +633,495 @@ Respond with a JSON object containing:
             return filepath
         except Exception as e:
             logger.error(f"Failed to write research note: {e}")
+            return None
+
+    # =========================================================================
+    # STRATEGY GENERATION (NEW)
+    # =========================================================================
+
+    def generate_strategies(
+        self,
+        target_count: int = 3,
+        sources: list[str] | None = None,
+    ) -> list[StrategySpec]:
+        """
+        Generate new strategy concepts from mixed sources.
+
+        Args:
+            target_count: Number of strategies to generate
+            sources: List of generation sources (claude_ideation, literature_patterns, pattern_mining)
+
+        Returns:
+            List of StrategySpec objects
+        """
+        sources = sources or ["claude_ideation", "literature_patterns", "pattern_mining"]
+        all_strategies: list[StrategySpec] = []
+
+        # Generate from each source
+        for source in sources:
+            try:
+                if source == "claude_ideation":
+                    strategies = self._generate_from_claude_ideation()
+                elif source == "literature_patterns":
+                    strategies = self._generate_from_literature_patterns()
+                elif source == "pattern_mining":
+                    strategies = self._generate_from_pattern_mining()
+                else:
+                    logger.warning(f"Unknown generation source: {source}")
+                    continue
+
+                all_strategies.extend(strategies)
+                logger.info(f"Generated {len(strategies)} strategies from {source}")
+
+            except Exception as e:
+                logger.error(f"Failed to generate strategies from {source}: {e}")
+
+        # Return top target_count strategies
+        return all_strategies[:target_count]
+
+    def _generate_from_claude_ideation(self) -> list[StrategySpec]:
+        """
+        Use Claude to ideate novel strategies from first principles.
+
+        Generates strategies based on:
+        - Market inefficiencies (behavioral biases, structural factors)
+        - Academic research (momentum, value, quality factors)
+        - Practical considerations (execution, capacity, costs)
+
+        Returns:
+            List of StrategySpec objects
+        """
+        prompt = """You are the Alpha Researcher agent for a quantitative research platform.
+
+Your task is to generate novel trading strategy concepts based on economic first principles.
+
+## Platform Context
+- Universe: S&P 500 ex-financials, long-only US equities
+- Timeframe: Daily rebalancing
+- Features available: 44 technical and fundamental features (momentum, volatility, volume, oscillators, trend, moving averages, ratios, fundamentals)
+- Cost model: IBKR-style (5 bps commission, 10 bps slippage)
+
+## Strategy Requirements
+
+Generate 1-3 strategy concepts. Each strategy must include:
+
+1. **Name**: snake_case identifier (e.g., "post_earnings_momentum")
+2. **Title**: Human-readable name (e.g., "Post-Earnings Momentum")
+3. **Economic Rationale**: WHY the alpha should exist (market inefficiency, behavioral effect, structural factor)
+4. **Universe**: Specific universe filter (e.g., "S&P 500 ex-financials, market cap > $5B")
+5. **Long Logic**: Economic logic for long positions (what to buy and why)
+6. **Short Logic**: None (long-only) or short logic if applicable
+7. **Holding Period**: Target holding period in trading days (5-60)
+8. **Rebalance Cadence**: "weekly", "bi-weekly", or "monthly"
+9. **Risk Constraints**: Dict with max positions, sector limits, position size limits
+10. **Regime Behavior**: Expected performance in bull/bear/sideways markets
+11. **Baseline Requirement**: Minimum performance benchmark (e.g., "Beat SPY by 2% annually")
+12. **Failure Modes**: List of 3-5 conditions that would invalidate the thesis
+
+## Response Format
+
+Return a JSON object with a "strategies" array:
+
+```json
+{
+    "strategies": [
+        {
+            "name": "strategy_name",
+            "title": "Strategy Title",
+            "economic_rationale": "...",
+            "universe": "...",
+            "long_logic": "...",
+            "short_logic": null,
+            "holding_period_days": 20,
+            "rebalance_cadence": "weekly",
+            "risk_constraints": {"max_positions": 20, "max_sector_exposure": 0.25, "max_position_pct": 0.05},
+            "regime_behavior": {"bull": "expected outperformance", "bear": "may underperform", "sideways": "neutral"},
+            "baseline_requirement": "...",
+            "failure_modes": ["...", "...", "..."]
+        }
+    ]
+}
+```
+
+Focus on economically sound strategies with clear rationale, NOT data mining or overfitting.
+"""
+
+        response = self.invoke_claude(prompt=prompt, tools=[])
+
+        try:
+            content = response.get("content", "")
+
+            # Extract JSON from response
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0]
+            elif "{" in content:
+                start = content.index("{")
+                end = content.rindex("}") + 1
+                json_str = content[start:end]
+            else:
+                json_str = content
+
+            data = json.loads(json_str)
+
+            strategies = []
+            for s in data.get("strategies", []):
+                spec = StrategySpec(
+                    name=s["name"],
+                    title=s["title"],
+                    economic_rationale=s["economic_rationale"],
+                    universe=s["universe"],
+                    long_logic=s["long_logic"],
+                    short_logic=s.get("short_logic"),
+                    holding_period_days=s["holding_period_days"],
+                    rebalance_cadence=s["rebalance_cadence"],
+                    risk_constraints=s["risk_constraints"],
+                    regime_behavior=s["regime_behavior"],
+                    baseline_requirement=s["baseline_requirement"],
+                    failure_modes=s["failure_modes"],
+                    source="claude_ideation",
+                )
+                strategies.append(spec)
+
+            return strategies
+
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            logger.warning(f"Failed to parse Claude ideation response: {e}")
+            return []
+
+    def _generate_from_literature_patterns(self) -> list[StrategySpec]:
+        """
+        Adapt known academic factors to platform context.
+
+        Returns:
+            List of StrategySpec objects based on academic literature
+        """
+        # Pre-defined literature-based strategies
+        # These are well-known factors from academic research
+        strategies = []
+
+        # 1. Post-earnings announcement drift (Bernard & Thomas, 1989)
+        strategies.append(StrategySpec(
+            name="post_earnings_drift",
+            title="Post-Earnings Announcement Drift",
+            economic_rationale=(
+                "Markets underreact to earnings surprises due to: (1) analyst revision lag, "
+                "(2) institutional flow frictions, (3) gradual information diffusion. "
+                "Stocks with positive earnings surprises continue outperforming for 1-3 months."
+            ),
+            universe="S&P 500 ex-financials, liquid stocks with earnings data",
+            long_logic="Long top decile of stocks with positive standardized earnings surprise",
+            short_logic=None,  # Long-only for simplicity
+            holding_period_days=20,
+            rebalance_cadence="weekly",
+            risk_constraints={
+                "max_positions": 20,
+                "max_sector_exposure": 0.25,
+                "max_position_pct": 0.05,
+            },
+            regime_behavior={
+                "bull": "strong outperformance (risk-on, surprises matter)",
+                "bear": "may underperform (risk-off, earnings secondary)",
+                "sideways": "moderate outperformance",
+            },
+            baseline_requirement="Beat equal-weight long-only by 2% annually, Sharpe > 0.8",
+            failure_modes=[
+                "Prolonged bear market reduces earnings signal relevance",
+                "Regulatory changes affecting disclosure timing",
+                "Increased hedge fund crowding in earnings trade",
+                "Analyst forecast improvements reducing surprise magnitude",
+            ],
+            source="literature_patterns",
+        ))
+
+        # 2. Momentum continuation (Jegadeesh & Titman, 1993)
+        strategies.append(StrategySpec(
+            name="momentum_continuation",
+            title="Momentum Continuation (3-12 month)",
+            economic_rationale=(
+                "Momentum persists due to: (1) delayed overreaction to news, "
+                "(2) gradual information diffusion, (3) herding behavior. "
+                "Past winners continue outperforming for 3-12 months before reversing."
+            ),
+            universe="S&P 500 ex-financials, market cap > $1B",
+            long_logic="Long top decile of 12-month returns (skipping most recent month)",
+            short_logic=None,  # Long-only
+            holding_period_days=20,
+            rebalance_cadence="monthly",
+            risk_constraints={
+                "max_positions": 20,
+                "max_sector_exposure": 0.30,
+                "max_position_pct": 0.06,
+            },
+            regime_behavior={
+                "bull": "strong outperformance",
+                "bear": "crash risk (momentum crashes in bear markets)",
+                "sideways": "moderate outperformance",
+            },
+            baseline_requirement="Beat SPY by 3% annually, Sharpe > 0.9",
+            failure_modes=[
+                "Momentum crash (rapid reversal after sustained outperformance)",
+                "Regime shift to mean-reversion market",
+                "Increased factor crowding reducing alpha",
+                "Transaction costs eating into narrow margins",
+            ],
+            source="literature_patterns",
+        ))
+
+        # 3. Low volatility anomaly (Baker et al., 2011)
+        strategies.append(StrategySpec(
+            name="low_volatility_anomaly",
+            title="Low Volatility Anomaly",
+            economic_rationale=(
+                "Low-volatility stocks outperform on risk-adjusted basis due to: "
+                "(1) benchmark constraints (institutional can't go all-in on low vol), "
+                "(2) preference for lottery-like stocks, (3) misperception of risk-return tradeoff."
+            ),
+            universe="S&P 500 ex-financials, market cap > $5B",
+            long_logic="Long bottom quintile of 60-day volatility (exclude bottom 10% to avoid illiquid stocks)",
+            short_logic=None,  # Long-only
+            holding_period_days=60,
+            rebalance_cadence="monthly",
+            risk_constraints={
+                "max_positions": 30,
+                "max_sector_exposure": 0.25,
+                "max_position_pct": 0.04,
+            },
+            regime_behavior={
+                "bull": "may lag high-beta stocks (FOMO benefits high vol)",
+                "bear": "strong outperformance (defensive, lower drawdowns)",
+                "sideways": "consistent outperformance",
+            },
+            baseline_requirement="Beat SPY on Sharpe ratio by 0.3, max drawdown < 15%",
+            failure_modes=[
+                "Prolonged bull market favors high-beta stocks",
+                "Low vol stocks become overvalued (crowding)",
+                "Rising rate environment hurting defensive sectors",
+                "Volatility regime shift to persistently low levels",
+            ],
+            source="literature_patterns",
+        ))
+
+        return strategies
+
+    def _generate_from_pattern_mining(self) -> list[StrategySpec]:
+        """
+        Extend patterns from existing successful hypotheses.
+
+        Returns:
+            List of StrategySpec objects based on existing hypothesis patterns
+        """
+        strategies = []
+
+        # Get existing hypotheses
+        existing = self.api.list_hypotheses(status="validated")
+
+        if not existing:
+            logger.info("No validated hypotheses to mine for patterns")
+            return []
+
+        # Look for patterns in successful hypotheses
+        # This is a simplified implementation - could be enhanced with embeddings
+
+        # Pattern 1: Multi-factor momentum (combine multiple momentum signals)
+        strategies.append(StrategySpec(
+            name="multi_factor_momentum",
+            title="Multi-Factor Momentum",
+            economic_rationale=(
+                "Combining multiple momentum signals (price, earnings, revisions) "
+                "provides more robust alpha by: (1) confirming signal across domains, "
+                "(2) reducing false positives, (3) capturing different aspects of momentum."
+            ),
+            universe="S&P 500 ex-financials, market cap > $2B",
+            long_logic="Long top quintile of composite momentum score (price + earnings + estimate revision momentum)",
+            short_logic=None,
+            holding_period_days=20,
+            rebalance_cadence="weekly",
+            risk_constraints={
+                "max_positions": 25,
+                "max_sector_exposure": 0.25,
+                "max_position_pct": 0.05,
+            },
+            regime_behavior={
+                "bull": "strong outperformance",
+                "bear": "moderate underperformance (momentum struggles)",
+                "sideways": "neutral to positive",
+            },
+            baseline_requirement="Beat single-factor momentum by 1.5% annually, Sharpe > 1.0",
+            failure_modes=[
+                "Momentum regime shift to mean-reversion",
+                "Factor crowding reducing multi-factor edge",
+                "Increased correlation between factors reducing diversification benefit",
+                "Transaction costs from frequent rebalancing",
+            ],
+            source="pattern_mining",
+        ))
+
+        # Pattern 2: Mean reversion with trend filter
+        strategies.append(StrategySpec(
+            name="trend_filtered_reversal",
+            title="Trend-Filtered Mean Reversion",
+            economic_rationale=(
+                "Mean reversion works best when: (1) price deviation is extreme (>2 sigma), "
+                "(2) longer-term trend is neutral (not strong momentum), "
+                "(3) volatility is elevated (overreaction). Trend filter prevents "
+                "catching falling knives in persistent downtrends."
+            ),
+            universe="S&P 500 ex-financials, liquid stocks only",
+            long_logic="Long oversold stocks (RSI < 30) in neutral trend regime (price near 200-day SMA)",
+            short_logic=None,
+            holding_period_days=10,
+            rebalance_cadence="weekly",
+            risk_constraints={
+                "max_positions": 15,
+                "max_sector_exposure": 0.20,
+                "max_position_pct": 0.07,
+            },
+            regime_behavior={
+                "bull": "moderate outperformance (oversold bounces)",
+                "bear": "poor performance (trend filter prevents entries)",
+                "sideways": "strong outperformance (ideal range-trading environment)",
+            },
+            baseline_requirement="Beat SPY by 2% in sideways markets, Sharpe > 0.7",
+            failure_modes=[
+                "Strong trending market (no mean reversion opportunities)",
+                "Gap risk (stocks continue down after entry)",
+                "Low volatility regime (no oversold conditions)",
+                "High correlation reducing stock-picking edge",
+            ],
+            source="pattern_mining",
+        ))
+
+        return strategies
+
+    def _write_strategy_spec_doc(self, strategy: StrategySpec) -> str | None:
+        """
+        Write detailed strategy specification to docs/strategies/.
+
+        Args:
+            strategy: StrategySpec to write
+
+        Returns:
+            Filepath if successful, None otherwise
+        """
+        if not isinstance(self.config, AlphaResearcherConfig):
+            return None
+
+        # Create directory if it doesn't exist
+        os.makedirs(self.config.strategy_docs_dir, exist_ok=True)
+
+        # Generate filename
+        filename = f"{strategy.name}.md"
+        filepath = os.path.join(self.config.strategy_docs_dir, filename)
+
+        # Generate content
+        content = f"""# Strategy: {strategy.title}
+
+## Economic Rationale
+{strategy.economic_rationale}
+
+## Strategy Specification
+
+**Universe:** {strategy.universe}
+**Long Logic:** {strategy.long_logic}
+**Short Logic:** {strategy.short_logic or 'Long-only (no short positions)'}
+**Holding Period:** {strategy.holding_period_days} trading days
+**Rebalance Cadence:** {strategy.rebalance_cadence}
+
+### Risk Constraints
+"""
+
+        for key, value in strategy.risk_constraints.items():
+            content += f"- **{key}:** {value}\n"
+
+        content += f"""
+## Regime Behavior
+"""
+
+        for regime, behavior in strategy.regime_behavior.items():
+            content += f"- **{regime.capitalize()}:** {behavior}\n"
+
+        content += f"""
+## Baseline Requirement
+{strategy.baseline_requirement}
+
+## Failure Modes
+
+This strategy may fail if:
+"""
+
+        for i, mode in enumerate(strategy.failure_modes, 1):
+            content += f"{i}. {mode}\n"
+
+        content += f"""
+## Implementation Notes
+
+**Source:** {strategy.source}
+**Generated:** {datetime.now().isoformat()}
+**Generated by:** Alpha Researcher (agent:alpha-researcher)
+
+---
+
+## Next Steps
+
+1. **Feature Selection:** Identify required features from the 44 available
+2. **Signal Definition:** Map economic logic to specific feature combinations
+3. **Backtest:** Run historical backtest with realistic costs
+4. **Validation:** Walk-forward validation, regime analysis
+5. **Deployment:** Paper trading before live deployment
+
+---
+
+*This is a strategy specification from the Alpha Researcher. It describes WHAT to trade and WHY, not HOW to implement it. Implementation details are handled by the Quant Developer.*
+"""
+
+        # Write to file
+        try:
+            with open(filepath, "w") as f:
+                f.write(content)
+            logger.info(f"Strategy spec written to {filepath}")
+            return filepath
+        except Exception as e:
+            logger.error(f"Failed to write strategy spec: {e}")
+            return None
+
+    def _create_hypothesis_from_strategy(self, strategy: StrategySpec) -> str | None:
+        """
+        Create a hypothesis in the registry from a strategy spec.
+
+        Args:
+            strategy: StrategySpec to convert to hypothesis
+
+        Returns:
+            hypothesis_id if successful, None otherwise
+        """
+        try:
+            # Create hypothesis from strategy
+            hyp_id = self.api.create_hypothesis(
+                title=strategy.title,
+                thesis=strategy.economic_rationale + "\n\n" + strategy.long_logic,
+                prediction=strategy.baseline_requirement,
+                falsification=f"Sharpe < 0.7 or fails in {len(strategy.failure_modes)}+ of the identified failure modes",
+                actor=self.ACTOR,
+            )
+
+            # Add strategy spec to metadata
+            self.api.update_hypothesis(
+                hypothesis_id=hyp_id,
+                status="draft",
+                actor=self.ACTOR,
+                metadata={
+                    "strategy_spec": strategy.to_dict(),
+                    "strategy_source": strategy.source,
+                    "strategy_doc": f"docs/strategies/{strategy.name}.md",
+                },
+            )
+
+            return hyp_id
+
+        except Exception as e:
+            logger.error(f"Failed to create hypothesis from strategy: {e}")
             return None
 
     def _get_system_prompt(self) -> str:

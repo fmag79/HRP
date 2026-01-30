@@ -30,6 +30,7 @@ from loguru import logger
 
 from hrp.agents.jobs import IngestionJob
 from hrp.api.platform import PlatformAPI
+from hrp.ml.regime_detection import StructuralRegimeClassifier, StructuralRegime
 from hrp.research.lineage import EventType, log_event
 
 
@@ -477,6 +478,52 @@ class PipelineOrchestrator(IngestionJob):
         queue.sort(key=lambda x: x.priority, reverse=True)
 
         return queue[: self.config.experiment_queue_size]
+
+    def _generate_structural_regime_scenarios(
+        self,
+        prices: pd.DataFrame,
+        min_days: int = 60,
+    ) -> dict[StructuralRegime, list[tuple]]:
+        """
+        Generate structural regime scenarios using HMM-based detection.
+
+        Classifies market periods into 4 structural regimes:
+        - low_vol_bull: Low volatility, positive returns
+        - low_vol_bear: Low volatility, negative returns
+        - high_vol_bull: High volatility, positive returns
+        - high_vol_bear: High volatility, negative returns
+
+        Args:
+            prices: DataFrame with 'close' column and DatetimeIndex
+            min_days: Minimum days for a period to be included
+
+        Returns:
+            Dict mapping regime to list of (start_date, end_date) tuples
+        """
+        classifier = StructuralRegimeClassifier()
+
+        # Fit classifier to price data
+        try:
+            classifier.fit(prices)
+        except Exception as e:
+            logger.warning(f"Failed to fit structural regime classifier: {e}")
+            # Return empty dict if fitting fails
+            return {
+                "low_vol_bull": [],
+                "low_vol_bear": [],
+                "high_vol_bull": [],
+                "high_vol_bear": [],
+            }
+
+        # Get scenario periods
+        periods = classifier.get_scenario_periods(prices, min_days=min_days)
+
+        logger.info(
+            f"Generated structural regime scenarios: "
+            f"{sum(len(p) for p in periods.values())} periods"
+        )
+
+        return periods
 
     def _run_parallel_experiments(
         self,

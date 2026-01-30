@@ -1062,6 +1062,126 @@ class IngestionScheduler:
             f"(dry_run={dry_run})"
         )
 
+    def setup_weekly_alpha_researcher(
+        self,
+        review_time: str = "09:00",
+        day_of_week: str = "mon",
+        enable_strategy_generation: bool = True,
+        generation_target_count: int = 3,
+    ) -> None:
+        """
+        Schedule weekly Alpha Researcher run with strategy generation.
+
+        The Alpha Researcher:
+        - Reviews draft hypotheses from Signal Scientist
+        - Generates new strategies from economic first principles (NEW)
+        - Writes strategy spec documents to docs/strategies/
+        - Creates hypotheses in registry for generated strategies
+
+        Args:
+            review_time: Time to run review (HH:MM format, default: 09:00)
+            day_of_week: Day to run review (default: "mon" for Monday)
+            enable_strategy_generation: Enable new strategy generation (default: True)
+            generation_target_count: Number of new strategies to generate (default: 3)
+        """
+        from hrp.agents.alpha_researcher import AlphaResearcher, AlphaResearcherConfig
+
+        # Parse and validate time
+        hour, minute = _parse_time(review_time, "review_time")
+
+        # Create a wrapper function that runs Alpha Researcher
+        def run_alpha_researcher():
+            config = AlphaResearcherConfig(
+                enable_strategy_generation=enable_strategy_generation,
+                generation_target_count=generation_target_count,
+                write_strategy_docs=True,
+            )
+            researcher = AlphaResearcher(config=config)
+            result = researcher.run()
+
+            # Log results
+            logger.info(
+                f"Alpha Researcher completed: reviewed={result['hypotheses_reviewed']}, "
+                f"promoted={result['hypotheses_promoted']}, "
+                f"strategies_generated={result.get('strategies_generated', 0)}, "
+                f"docs_written={result.get('strategy_docs_written', 0)}"
+            )
+
+        # Schedule weekly Alpha Researcher job
+        self.add_job(
+            func=run_alpha_researcher,
+            job_id="weekly_alpha_researcher",
+            trigger=CronTrigger(
+                day_of_week=day_of_week,
+                hour=hour,
+                minute=minute,
+                timezone=ET_TIMEZONE,
+            ),
+            name="Weekly Alpha Researcher",
+        )
+        logger.info(
+            f"Scheduled weekly Alpha Researcher on {day_of_week.capitalize()} at {review_time} ET "
+            f"(strategy_generation={enable_strategy_generation}, target_count={generation_target_count})"
+        )
+
+    def setup_daily_pipeline_orchestrator(
+        self,
+        orchestration_time: str = "06:00",
+        enable_early_kill: bool = True,
+        min_baseline_sharpe: float = 0.5,
+    ) -> None:
+        """
+        Schedule daily Pipeline Orchestrator run.
+
+        The Pipeline Orchestrator:
+        - Runs baseline experiments first (sequential)
+        - Queues parallel experiments for validated hypotheses
+        - Applies early kill gates to save compute
+        - Generates kill gate reports
+
+        Args:
+            orchestration_time: Time to run orchestration (HH:MM format, default: 06:00)
+            enable_early_kill: Enable early kill gates (default: True)
+            min_baseline_sharpe: Minimum baseline Sharpe to proceed (default: 0.5)
+        """
+        from hrp.agents.pipeline_orchestrator import (
+            PipelineOrchestrator,
+            PipelineOrchestratorConfig,
+        )
+
+        # Parse and validate time
+        hour, minute = _parse_time(orchestration_time, "orchestration_time")
+
+        # Create a wrapper function that runs Pipeline Orchestrator
+        def run_pipeline_orchestrator():
+            config = PipelineOrchestratorConfig(
+                enable_early_kill=enable_early_kill,
+                min_baseline_sharpe=min_baseline_sharpe,
+            )
+            orchestrator = PipelineOrchestrator(config=config)
+            result = orchestrator.run()
+
+            # Log results
+            if result["status"] == "complete":
+                report = result["report"]
+                logger.info(
+                    f"Pipeline Orchestrator completed: processed={report['hypotheses_processed']}, "
+                    f"killed={report['hypotheses_killed']}, "
+                    f"time_saved={report['time_saved_seconds']:.0f}s"
+                )
+
+        # Schedule daily Pipeline Orchestrator job
+        self.add_job(
+            func=run_pipeline_orchestrator,
+            job_id="daily_pipeline_orchestrator",
+            trigger=CronTrigger(hour=hour, minute=minute, timezone=ET_TIMEZONE),
+            name="Daily Pipeline Orchestrator",
+        )
+        logger.info(
+            f"Scheduled daily Pipeline Orchestrator at {orchestration_time} ET "
+            f"(early_kill={enable_early_kill}, min_sharpe={min_baseline_sharpe})"
+        )
+
     def setup_research_agent_triggers(
         self,
         poll_interval_seconds: int = 60,
@@ -1072,11 +1192,13 @@ class IngestionScheduler:
         Creates a LineageEventWatcher that monitors the lineage table and
         automatically triggers downstream agents when upstream agents complete.
 
-        Trigger chain:
+        Full trigger chain:
         - Signal Scientist (hypothesis_created) → Alpha Researcher
-        - Alpha Researcher (alpha_researcher_review, PROCEED) → ML Scientist
+        - Alpha Researcher (alpha_researcher_complete) → ML Scientist (for promoted hypotheses)
         - ML Scientist (experiment_completed) → ML Quality Sentinel
-        - ML Quality Sentinel (ml_quality_sentinel_audit, passed) → Validation Analyst
+        - ML Quality Sentinel (ml_quality_sentinel_audit, passed) → Quant Developer
+        - Quant Developer (quant_developer_backtest_complete) → Pipeline Orchestrator
+        - Pipeline Orchestrator (pipeline_orchestrator_complete) → Validation Analyst
 
         Args:
             poll_interval_seconds: How often to poll lineage table (default: 60s)
@@ -1085,7 +1207,13 @@ class IngestionScheduler:
             The configured LineageEventWatcher instance
         """
         from hrp.agents.alpha_researcher import AlphaResearcher
-        from hrp.agents.research_agents import MLQualitySentinel, MLScientist, ValidationAnalyst
+        from hrp.agents.pipeline_orchestrator import PipelineOrchestrator
+        from hrp.agents.research_agents import (
+            MLQualitySentinel,
+            MLScientist,
+            QuantDeveloper,
+            ValidationAnalyst,
+        )
 
         watcher = LineageEventWatcher(
             poll_interval_seconds=poll_interval_seconds,
@@ -1113,24 +1241,22 @@ class IngestionScheduler:
         )
 
         # Trigger 2: Alpha Researcher → ML Scientist
-        # When Alpha Researcher promotes hypothesis to testing, ML Scientist validates it
-        def on_alpha_review(event: dict) -> None:
+        # When Alpha Researcher completes, ML Scientist validates promoted hypotheses
+        def on_alpha_researcher_complete(event: dict) -> None:
             details = event.get("details", {})
-            recommendation = details.get("recommendation", "")
-            hypothesis_id = event.get("hypothesis_id")
+            promoted_ids = details.get("reviewed_ids", [])  # Hypotheses promoted to testing
 
-            # Only trigger if Alpha Researcher recommended PROCEED
-            if recommendation == "PROCEED" and hypothesis_id:
+            for hypothesis_id in promoted_ids:
                 logger.info(f"Triggering ML Scientist for hypothesis {hypothesis_id}")
                 try:
-                    scientist = MLScientist(hypothesis_id=hypothesis_id)
+                    scientist = MLScientist(hypothesis_ids=[hypothesis_id])
                     scientist.run()
                 except Exception as e:
                     logger.error(f"ML Scientist trigger failed: {e}")
 
         watcher.register_trigger(
-            event_type="alpha_researcher_review",
-            callback=on_alpha_review,
+            event_type="alpha_researcher_complete",
+            callback=on_alpha_researcher_complete,
             actor_filter="agent:alpha-researcher",
             name="alpha_researcher_to_ml_scientist",
         )
@@ -1162,8 +1288,8 @@ class IngestionScheduler:
             name="ml_scientist_to_quality_sentinel",
         )
 
-        # Trigger 4: ML Quality Sentinel → Validation Analyst
-        # When Quality Sentinel completes audit, Validation Analyst stress tests
+        # Trigger 4: ML Quality Sentinel → Quant Developer
+        # When Quality Sentinel completes audit, Quant Developer runs backtests
         def on_quality_audit(event: dict) -> None:
             details = event.get("details", {})
             hypothesis_id = event.get("hypothesis_id")
@@ -1172,11 +1298,58 @@ class IngestionScheduler:
             # Only trigger if audit passed (no critical issues)
             if overall_passed and hypothesis_id:
                 logger.info(
-                    f"Triggering Validation Analyst for hypothesis {hypothesis_id}"
+                    f"Triggering Quant Developer for hypothesis {hypothesis_id}"
+                )
+                try:
+                    developer = QuantDeveloper(hypothesis_ids=[hypothesis_id])
+                    developer.run()
+                except Exception as e:
+                    logger.error(f"Quant Developer trigger failed: {e}")
+
+        watcher.register_trigger(
+            event_type="ml_quality_sentinel_audit",
+            callback=on_quality_audit,
+            actor_filter="agent:ml-quality-sentinel",
+            name="ml_quality_sentinel_to_quant_developer",
+        )
+
+        # Trigger 5: Quant Developer → Pipeline Orchestrator
+        # When Quant Developer completes backtest, Pipeline Orchestrator coordinates experiments
+        def on_quant_developer_complete(event: dict) -> None:
+            hypothesis_id = event.get("hypothesis_id")
+
+            if hypothesis_id:
+                logger.info(
+                    f"Triggering Pipeline Orchestrator for hypothesis {hypothesis_id}"
+                )
+                try:
+                    orchestrator = PipelineOrchestrator(hypothesis_ids=[hypothesis_id])
+                    orchestrator.run()
+                except Exception as e:
+                    logger.error(f"Pipeline Orchestrator trigger failed: {e}")
+
+        watcher.register_trigger(
+            event_type="quant_developer_backtest_complete",
+            callback=on_quant_developer_complete,
+            actor_filter="agent:quant-developer",
+            name="quant_developer_to_pipeline_orchestrator",
+        )
+
+        # Trigger 6: Pipeline Orchestrator → Validation Analyst
+        # When Pipeline Orchestrator completes, Validation Analyst stress tests
+        def on_pipeline_orchestrator_complete(event: dict) -> None:
+            details = event.get("details", {})
+            hypotheses_processed = details.get("hypotheses_processed", 0)
+            hypotheses_killed = details.get("hypotheses_killed", 0)
+
+            # Only trigger if there were hypotheses that passed (not killed)
+            if hypotheses_processed > hypotheses_killed:
+                logger.info(
+                    f"Triggering Validation Analyst for {hypotheses_processed - hypotheses_killed} hypotheses"
                 )
                 try:
                     analyst = ValidationAnalyst(
-                        hypothesis_ids=[hypothesis_id],
+                        hypothesis_ids=None,  # Will fetch all validated
                         send_alerts=True,
                     )
                     analyst.run()
@@ -1184,10 +1357,10 @@ class IngestionScheduler:
                     logger.error(f"Validation Analyst trigger failed: {e}")
 
         watcher.register_trigger(
-            event_type="ml_quality_sentinel_audit",
-            callback=on_quality_audit,
-            actor_filter="agent:ml-quality-sentinel",
-            name="ml_quality_sentinel_to_validation_analyst",
+            event_type="pipeline_orchestrator_complete",
+            callback=on_pipeline_orchestrator_complete,
+            actor_filter="agent:pipeline-orchestrator",
+            name="pipeline_orchestrator_to_validation_analyst",
         )
 
         # Store watcher reference

@@ -413,7 +413,7 @@ scheduler.setup_daily_ingestion()
 scheduler.setup_weekly_signal_scan()
 
 # Enable automatic agent chaining via lineage events:
-# Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+# Signal Scientist → Alpha Researcher → Pipeline Orchestrator → ML Scientist → ML Quality Sentinel
 scheduler.setup_research_agent_triggers(poll_interval_seconds=60)
 
 # Start scheduler with event watcher
@@ -432,6 +432,27 @@ result = researcher.run()
 print(f"Analyzed: {result['hypotheses_analyzed']}")
 print(f"Promoted: {result['promoted_to_testing']}")
 # Research note written to docs/research/YYYY-MM-DD-alpha-researcher.md
+```
+
+### Strategy Generation
+```python
+from hrp.agents import AlphaResearcher, AlphaResearcherConfig
+
+# Enable strategy generation with 3 new concepts per run
+config = AlphaResearcherConfig(
+    enable_strategy_generation=True,
+    generation_target_count=3,
+    generation_sources=["claude_ideation", "literature_patterns", "pattern_mining"],
+    write_strategy_docs=True,
+    strategy_docs_dir="docs/strategies",
+)
+
+researcher = AlphaResearcher(config=config)
+result = researcher.run()
+
+print(f"Strategies generated: {result['strategies_generated']}")
+print(f"Strategy docs written: {result['strategy_docs_written']}")
+# Output: Strategies generated: 3, Strategy docs written: ["docs/strategies/post_earnings_drift.md", ...]
 ```
 
 ### Run ML Scientist for hypothesis validation
@@ -632,6 +653,31 @@ print(f"Vetoed: {result['hypotheses_vetoed']}")
 # - MAX_SINGLE_POSITION = 0.10 (10%)
 # - MIN_DIVERSIFICATION = 10 positions
 # - TARGET_POSITIONS = 20 positions
+```
+
+### Pipeline Orchestrator
+```python
+from hrp.agents import PipelineOrchestrator, PipelineOrchestratorConfig
+
+# Configure with kill gates
+config = PipelineOrchestratorConfig(
+    enable_early_kill=True,
+    min_baseline_sharpe=0.5,
+    max_train_sharpe=3.0,
+    max_drawdown_threshold=0.30,
+    max_feature_count=50,
+)
+
+orchestrator = PipelineOrchestrator(
+    hypothesis_ids=["HYP-2026-001"],
+    config=config,
+)
+
+result = orchestrator.run()
+
+print(f"Processed: {result['report']['hypotheses_processed']}")
+print(f"Killed by gates: {result['report']['hypotheses_killed']}")
+print(f"Time saved: {result['report']['time_saved_seconds']:.0f}s")
 ```
 
 
