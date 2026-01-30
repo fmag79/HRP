@@ -2,6 +2,18 @@
 Standard metrics calculation for backtests.
 
 Uses empyrical-reloaded for battle-tested portfolio performance metrics.
+
+Stability Score metrics:
+    - stability_score_v1: Walk-forward validation stability (2026-01-29)
+
+Components:
+    1. Sharpe coefficient of variation (CV): Measures performance consistency
+    2. Drawdown dispersion: Measures risk consistency
+    3. Sign flip penalty: Penalizes direction changes
+
+Threshold:
+    - ≤ 1.0: Stable
+    - > 1.0: Unstable
 """
 
 import empyrical as ep
@@ -253,6 +265,53 @@ def _calculate_alpha_beta(
         return float(alpha), float(beta)
     except Exception:
         return 0.0, 0.0
+
+
+def calculate_stability_score_v1(
+    fold_sharpes: list[float],
+    fold_drawdowns: list[float],
+    mean_fold_ic: float,
+) -> float:
+    """
+    Stability Score v1 - Lower is better.
+
+    Components:
+    1. Sharpe coefficient of variation (CV)
+    2. Drawdown dispersion penalty
+    3. Sign flip penalty
+
+    Args:
+        fold_sharpes: List of Sharpe ratios from each fold
+        fold_drawdowns: List of max drawdowns from each fold
+        mean_fold_ic: Mean Information Coefficient across folds
+
+    Returns:
+        float: Stability score (≤ 1.0 is stable)
+
+    Examples:
+        >>> fold_sharpes = [1.0, 1.0, 1.0, 1.0, 1.0]
+        >>> fold_drawdowns = [0.10, 0.10, 0.10, 0.10, 0.10]
+        >>> score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, 0.05)
+        >>> assert score <= 1.0
+    """
+    # Component 1: Sharpe CV
+    mean_sharpe = np.mean(fold_sharpes)
+    std_sharpe = np.std(fold_sharpes)
+    sharpe_cv = std_sharpe / abs(mean_sharpe) if mean_sharpe != 0 else float('inf')
+
+    # Component 2: Drawdown dispersion
+    mean_dd = np.mean(fold_drawdowns)
+    std_dd = np.std(fold_drawdowns)
+    dd_dispersion = (std_dd / mean_dd) if mean_dd > 0 else 0
+
+    # Component 3: Sign flip penalty (simplified - uses mean IC sign)
+    # For multi-fold sign flips, count positive vs negative fold ICs
+    # This is a simplified version using mean IC
+    sign_flip_penalty = 0.5 if mean_fold_ic < 0 else 0
+
+    stability_score = sharpe_cv + dd_dispersion + sign_flip_penalty
+
+    return stability_score
 
 
 def format_metrics(metrics: dict[str, float]) -> str:

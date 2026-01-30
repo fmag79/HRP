@@ -10,6 +10,7 @@ import numpy as np
 from hrp.research.metrics import (
     calculate_metrics,
     format_metrics,
+    calculate_stability_score_v1,
     _calculate_cagr,
     _sharpe_ratio,
     _sortino_ratio,
@@ -833,3 +834,75 @@ class TestIntegration:
             # Check that exactly one line starts with this key
             matching_lines = [line for line in lines if line.strip().startswith(key)]
             assert len(matching_lines) == 1, f"{key} should appear exactly once as line start"
+
+
+# =============================================================================
+# TestStabilityScoreV1 - Tests for Stability Score v1 (walk-forward validation)
+# =============================================================================
+
+
+class TestStabilityScoreV1:
+    """Tests for Stability Score v1 - walk-forward validation stability metric."""
+
+    def test_stability_score_perfect_stability(self):
+        """Perfect stability returns low score."""
+        fold_sharpes = [1.0, 1.0, 1.0, 1.0, 1.0]  # No variation
+        fold_drawdowns = [0.10, 0.10, 0.10, 0.10, 0.10]  # No variation
+        mean_ic = 0.05  # Positive
+
+        score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, mean_ic)
+
+        assert score <= 1.0  # Should be stable
+
+    def test_stability_score_unstable(self):
+        """Highly variable folds return high score."""
+        fold_sharpes = [2.0, 0.5, -0.5, 1.5, 0.2]  # High variation
+        fold_drawdowns = [0.05, 0.30, 0.40, 0.10, 0.25]  # High variation
+        mean_ic = 0.02  # Low IC
+
+        score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, mean_ic)
+
+        assert score > 1.0  # Should be unstable
+
+    def test_stability_score_sign_flip_penalty(self):
+        """Sign flip adds penalty."""
+        fold_sharpes = [1.0, 1.0, 1.0, 1.0, 1.0]
+        fold_drawdowns = [0.10, 0.10, 0.10, 0.10, 0.10]
+        mean_ic = -0.01  # Negative IC
+
+        score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, mean_ic)
+
+        # Score with negative IC should be higher than with positive IC
+        score_positive_ic = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, 0.01)
+        assert score > score_positive_ic  # Penalty applied
+
+    def test_stability_score_zero_mean_sharpe(self):
+        """Handle zero mean Sharpe (edge case)."""
+        fold_sharpes = [0.0, 0.0, 0.0, 0.0, 0.0]
+        fold_drawdowns = [0.10, 0.10, 0.10, 0.10, 0.10]
+        mean_ic = 0.05
+
+        # Should handle gracefully (return inf or very high score)
+        score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, mean_ic)
+        assert score >= 0  # Should not crash
+
+    def test_stability_score_zero_mean_drawdown(self):
+        """Handle zero mean drawdown (edge case)."""
+        fold_sharpes = [1.0, 1.0, 1.0, 1.0, 1.0]
+        fold_drawdowns = [0.0, 0.0, 0.0, 0.0, 0.0]
+        mean_ic = 0.05
+
+        # Should handle gracefully
+        score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, mean_ic)
+        assert score >= 0  # Should not crash
+
+    def test_stability_score_positive_ic_no_penalty(self):
+        """Positive IC adds no sign flip penalty."""
+        fold_sharpes = [1.0, 1.0, 1.0, 1.0, 1.0]
+        fold_drawdowns = [0.10, 0.10, 0.10, 0.10, 0.10]
+        mean_ic = 0.01  # Positive
+
+        score = calculate_stability_score_v1(fold_sharpes, fold_drawdowns, mean_ic)
+
+        # With perfect Sharpe and DD stability, score should just be 0
+        assert score == 0.0  # No CV, no dispersion, no sign flip penalty
