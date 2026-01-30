@@ -11,6 +11,19 @@ from hrp.dashboard.agents_monitor import get_all_agent_status, get_timeline, Age
 from hrp.api.platform import PlatformAPI
 
 
+# Cached functions for performance
+@st.cache_data(ttl=5)
+def get_cached_agent_status() -> list[AgentStatus]:
+    """Get agent status with 5-second cache."""
+    return get_all_agent_status(PlatformAPI())
+
+
+@st.cache_data(ttl=10)
+def get_cached_timeline(_limit: int = 100) -> list[dict]:
+    """Get timeline with 10-second cache."""
+    return get_timeline(PlatformAPI(), limit=_limit)
+
+
 st.title("🤖 Agents Monitor")
 
 # Page controls
@@ -24,9 +37,8 @@ with col2:
 # Real-Time Monitor Section
 st.subheader("Real-Time Monitor")
 
-# Initialize API and get agent status
-api = PlatformAPI()
-agents = get_all_agent_status(api)
+# Get agent status (cached)
+agents = get_cached_agent_status()
 
 # 4-column grid of agent cards
 cols = st.columns(4)
@@ -81,8 +93,8 @@ with col4:
     if st.button("Apply Filters"):
         st.rerun()
 
-# Get and display timeline
-timeline = get_timeline(api, limit=limit)
+# Get and display timeline (cached)
+timeline = get_cached_timeline(limit)
 
 if not timeline:
     st.info("No events found.")
