@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
 from hrp.dashboard.agents_monitor import get_all_agent_status, AgentStatus
@@ -18,9 +20,40 @@ with col2:
     if st.button("Refresh Now"):
         st.rerun()
 
-# Real-time Monitor Section
+# Real-Time Monitor Section
 st.subheader("Real-Time Monitor")
-st.info("Loading agent status...")
+
+# Initialize API and get agent status
+api = PlatformAPI()
+agents = get_all_agent_status(api)
+
+# 4-column grid of agent cards
+cols = st.columns(4)
+for idx, agent in enumerate(agents):
+    with cols[idx % 4]:
+        # Status colors
+        status_colors = {
+            "running": "🟦",
+            "completed": "🟢",
+            "failed": "🔴",
+            "idle": "⚪",
+        }
+        status_icon = status_colors.get(agent.status, "⚪")
+
+        st.markdown(f"### {status_icon} {agent.name}")
+        st.markdown(f"**Status:** `{agent.status.upper()}`")
+
+        if agent.status == "running" and agent.elapsed_seconds:
+            st.caption(f"⏱ Elapsed: {agent.elapsed_seconds}s")
+
+        if agent.current_hypothesis:
+            st.caption(f"📋 `{agent.current_hypothesis}`")
+
+        if agent.last_event:
+            ts = datetime.fromisoformat(agent.last_event["timestamp"])
+            st.caption(f"🕐 {ts.strftime('%H:%M:%S')}")
+
+        st.markdown("---")
 
 # Historical Timeline Section (placeholder)
 st.markdown("---")
