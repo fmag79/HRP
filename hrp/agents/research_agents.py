@@ -871,12 +871,20 @@ class SignalScientist(ResearchAgent):
             f"(3) the signal decays within 6 months of discovery."
         )
 
+        # Determine strategy class based on feature name
+        feature = signal.feature_name.lower()
+        if "momentum" in feature or "returns" in feature:
+            strategy_class = "time_series_momentum"
+        else:
+            strategy_class = "cross_sectional_factor"
+
         return self.api.create_hypothesis(
             title=title,
             thesis=thesis,
             prediction=prediction,
             falsification=falsification,
             actor=self.actor,
+            strategy_class=strategy_class,
         )
 
     def _log_to_mlflow(self, results: list[SignalScanResult]) -> str:
@@ -983,6 +991,49 @@ class SignalScientist(ResearchAgent):
 
         except Exception as e:
             logger.error(f"Failed to send email notification: {e}")
+
+
+# Adaptive IC thresholds by strategy class
+IC_THRESHOLDS = {
+    "cross_sectional_factor": {
+        "pass": 0.015,
+        "kill": 0.005,
+        "description": "Value, quality, low-vol factors"
+    },
+    "time_series_momentum": {
+        "pass": 0.02,
+        "kill": 0.01,
+        "description": "Trend-following strategies"
+    },
+    "ml_composite": {
+        "pass": 0.025,
+        "kill": 0.01,
+        "description": "Multi-feature ML models"
+    },
+    "default": {
+        "pass": 0.03,
+        "kill": 0.01,
+        "description": "Legacy uniform threshold"
+    }
+}
+
+
+def get_ic_thresholds(strategy_class: str) -> dict:
+    """
+    Get IC thresholds for a strategy class.
+
+    Args:
+        strategy_class: One of: cross_sectional_factor, time_series_momentum,
+                       ml_composite, default
+
+    Returns:
+        dict with 'pass' and 'kill' thresholds
+
+    Examples:
+        >>> thresholds = get_ic_thresholds("cross_sectional_factor")
+        >>> assert thresholds["pass"] == 0.015
+    """
+    return IC_THRESHOLDS.get(strategy_class, IC_THRESHOLDS["default"])
 
 
 @dataclass

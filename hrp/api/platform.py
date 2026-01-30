@@ -572,6 +572,7 @@ class PlatformAPI:
         prediction: str,
         falsification: str,
         actor: str = "user",
+        strategy_class: Optional[str] = None,
     ) -> str:
         """
         Create a new research hypothesis.
@@ -582,6 +583,7 @@ class PlatformAPI:
             prediction: Testable prediction
             falsification: Criteria for falsifying the hypothesis
             actor: Who is creating the hypothesis ('user' or 'agent:<name>')
+            strategy_class: Optional strategy class (cross_sectional_factor, time_series_momentum, ml_composite)
 
         Returns:
             hypothesis_id: Unique identifier for the hypothesis
@@ -595,15 +597,21 @@ class PlatformAPI:
 
         hypothesis_id = self._generate_hypothesis_id()
 
+        # Build metadata JSON if strategy_class provided
+        metadata_json = None
+        if strategy_class:
+            import json
+            metadata_json = json.dumps({"strategy_class": strategy_class})
+
         query = """
             INSERT INTO hypotheses (
                 hypothesis_id, title, thesis, testable_prediction,
-                falsification_criteria, created_by, status
-            ) VALUES (?, ?, ?, ?, ?, ?, 'draft')
+                falsification_criteria, created_by, status, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)
         """
 
         self._db.execute(
-            query, (hypothesis_id, title, thesis, prediction, falsification, actor)
+            query, (hypothesis_id, title, thesis, prediction, falsification, actor, metadata_json)
         )
 
         # Log to lineage

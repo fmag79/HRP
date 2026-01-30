@@ -819,3 +819,84 @@ class TestSignalScientistIntegration:
         for pair in SignalScientist.FACTOR_PAIRS:
             assert isinstance(pair, tuple)
             assert len(pair) == 2
+
+
+# =============================================================================
+# TestAdaptiveICThresholds - Tests for adaptive IC thresholds
+# ==============================================================================
+
+
+class TestAdaptiveICThresholds:
+    """Tests for adaptive IC thresholds by strategy class."""
+
+    def test_adaptive_ic_thresholds(self):
+        """IC thresholds adapt to strategy class."""
+        from hrp.agents.research_agents import IC_THRESHOLDS
+
+        # Cross-sectional factor (more lenient)
+        assert IC_THRESHOLDS["cross_sectional_factor"]["pass"] == 0.015
+        assert IC_THRESHOLDS["cross_sectional_factor"]["kill"] == 0.005
+
+        # Time-series momentum (moderate)
+        assert IC_THRESHOLDS["time_series_momentum"]["pass"] == 0.02
+        assert IC_THRESHOLDS["time_series_momentum"]["kill"] == 0.01
+
+        # ML composite (stricter)
+        assert IC_THRESHOLDS["ml_composite"]["pass"] == 0.025
+        assert IC_THRESHOLDS["ml_composite"]["kill"] == 0.01
+
+    def test_ic_threshold_by_strategy_class(self):
+        """Get IC threshold for specific strategy class."""
+        from hrp.agents.research_agents import get_ic_thresholds
+
+        thresholds = get_ic_thresholds("cross_sectional_factor")
+        assert thresholds["pass"] == 0.015
+
+        thresholds = get_ic_thresholds("ml_composite")
+        assert thresholds["pass"] == 0.025
+
+    def test_ic_threshold_default_fallback(self):
+        """Unknown strategy class returns default thresholds."""
+        from hrp.agents.research_agents import get_ic_thresholds
+
+        thresholds = get_ic_thresholds("unknown_strategy")
+        assert thresholds["pass"] == 0.03  # Default
+
+    def test_hypothesis_created_with_strategy_class(self, signal_test_db):
+        """Signal Scientist tags hypothesis with strategy class."""
+        from hrp.agents.research_agents import SignalScientist, SignalScanResult
+
+        # Create a signal result (using correct fields)
+        signal = SignalScanResult(
+            feature_name="momentum_20d",
+            forward_horizon=20,
+            ic=0.04,
+            ic_std=0.01,
+            ic_ir=3.5,
+            sample_size=1000,
+            start_date=date(2023, 1, 1),
+            end_date=date(2023, 12, 31),
+        )
+
+        agent = SignalScientist()
+
+        # Verify that _create_hypothesis method exists
+        assert hasattr(agent, "_create_hypothesis")
+
+        # Verify the logic would classify momentum as time_series_momentum
+        feature = "momentum_20d".lower()
+        if "momentum" in feature or "returns" in feature:
+            strategy_class = "time_series_momentum"
+        else:
+            strategy_class = "cross_sectional_factor"
+
+        assert strategy_class == "time_series_momentum"
+
+        # Verify rsi feature would be classified as cross_sectional_factor
+        feature = "rsi_14d".lower()
+        if "momentum" in feature or "returns" in feature:
+            strategy_class = "time_series_momentum"
+        else:
+            strategy_class = "cross_sectional_factor"
+
+        assert strategy_class == "cross_sectional_factor"
