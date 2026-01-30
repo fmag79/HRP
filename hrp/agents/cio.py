@@ -11,8 +11,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal, Optional
 
+import pandas as pd
+
 from hrp.agents.sdk_agent import SDKAgent
 from hrp.api.platform import PlatformAPI
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from anthropic import Anthropic
@@ -245,6 +249,13 @@ class CIOAgent(SDKAgent):
                 "rationale": rationale,
             })
 
+            # Stage model if CONTINUE
+            self._maybe_stage_model(
+                hypothesis_id=hypothesis_id,
+                decision=score.decision,
+                experiment_data=experiment_data,
+            )
+
         # Generate report
         report_path = self._generate_report(decisions)
 
@@ -383,6 +394,65 @@ class CIOAgent(SDKAgent):
                 False,  # Requires manual approval
             ),
         )
+
+    def _maybe_stage_model(
+        self,
+        hypothesis_id: str,
+        decision: str,
+        experiment_data: dict,
+    ) -> None:
+        """Stage model for deployment if decision is CONTINUE."""
+        if decision != "CONTINUE":
+            return
+        self._stage_model_for_deployment(hypothesis_id, experiment_data)
+
+    def _stage_model_for_deployment(
+        self,
+        hypothesis_id: str,
+        experiment_data: dict,
+    ) -> None:
+        """Register model and deploy to staging."""
+        try:
+            experiment_id = experiment_data.get("experiment_id")
+            model_type = experiment_data.get("model_type", "unknown")
+            model_name = f"hyp_{hypothesis_id}_{model_type}"
+
+            model_version = self.api.register_model(
+                model=None,
+                model_name=model_name,
+                model_type=model_type,
+                features=experiment_data.get("features", []),
+                target=experiment_data.get("target", "returns_20d"),
+                metrics=experiment_data.get("metrics", {}),
+                hyperparameters=experiment_data.get("hyperparameters", {}),
+                training_date=date.today(),
+                hypothesis_id=hypothesis_id,
+                experiment_id=experiment_id,
+            )
+
+            self.api.deploy_model(
+                model_name=model_name,
+                model_version=model_version,
+                validation_data=pd.DataFrame(),
+                environment="staging",
+                actor="agent:cio",
+            )
+
+            self.api.log_event(
+                event_type="model_deployed",
+                actor="agent:cio",
+                hypothesis_id=hypothesis_id,
+                details={
+                    "model_name": model_name,
+                    "environment": "staging",
+                    "experiment_id": experiment_id,
+                },
+            )
+
+            logger.info(f"Staged model {model_name} for hypothesis {hypothesis_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to stage model for {hypothesis_id}: {e}")
 
     def _generate_report(self, decisions: list[dict]) -> "Path":
         """Generate weekly CIO report markdown file."""
