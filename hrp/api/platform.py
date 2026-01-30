@@ -1400,12 +1400,14 @@ class PlatformAPI:
             from hrp.notifications.email import EmailNotifier
 
             notifier = EmailNotifier()
-            notifier.send_quality_alert(
-                health_score=report.health_score,
-                critical_issues=report.critical_issues,
-                warning_issues=report.warning_issues,
-                issues=[i.to_dict() for r in report.results for i in r.issues],
-                timestamp=report.generated_at.isoformat(),
+            notifier.send_summary_email(
+                subject=f"HRP Quality Alert: {report.critical_issues} critical issues (score: {report.health_score:.0f})",
+                summary_data={
+                    "health_score": report.health_score,
+                    "critical_issues": report.critical_issues,
+                    "warning_issues": report.warning_issues,
+                    "timestamp": report.generated_at.isoformat(),
+                },
             )
             logger.info(
                 f"Sent quality alerts: {report.critical_issues} critical issues"

@@ -1813,3 +1813,36 @@ class TestPlatformAPIBacktest:
         lineage = test_api.get_lineage(experiment_id="run-lineage-test")
         assert len(lineage) >= 1
         assert any(e["event_type"] == "backtest_run" for e in lineage)
+
+
+class TestPlatformAPIQualityAlerts:
+    """Tests for quality alert email notifications."""
+
+    @patch("hrp.notifications.email.EmailNotifier")
+    def test_send_quality_alerts_uses_send_summary_email(self, MockNotifier, test_api):
+        """_send_quality_alerts should call send_summary_email, not send_quality_alert."""
+        mock_notifier = MagicMock()
+        MockNotifier.return_value = mock_notifier
+
+        # Create a mock quality report
+        report = MagicMock()
+        report.health_score = 45.0
+        report.critical_issues = 3
+        report.warning_issues = 5
+        report.generated_at.isoformat.return_value = "2026-01-30T12:00:00"
+
+        test_api._send_quality_alerts(report)
+
+        # Must call send_summary_email (the method that exists)
+        mock_notifier.send_summary_email.assert_called_once_with(
+            subject="HRP Quality Alert: 3 critical issues (score: 45)",
+            summary_data={
+                "health_score": 45.0,
+                "critical_issues": 3,
+                "warning_issues": 5,
+                "timestamp": "2026-01-30T12:00:00",
+            },
+        )
+
+        # Must NOT call the nonexistent send_quality_alert
+        mock_notifier.send_quality_alert.assert_not_called()
