@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 import streamlit as st
@@ -59,3 +60,29 @@ for idx, agent in enumerate(agents):
 st.markdown("---")
 st.subheader("Historical Timeline")
 st.info("Timeline view coming soon...")
+
+# Auto-refresh logic
+if auto_refresh:
+    # Check if any agents are running
+    active_agents = [a for a in agents if a.status == "running"]
+
+    # Initialize session state for refresh interval
+    if "refresh_interval" not in st.session_state:
+        st.session_state.refresh_interval = 5  # Default 5 seconds
+    if "last_activity" not in st.session_state:
+        st.session_state.last_activity = None
+
+    # Adjust refresh interval based on activity
+    now = time.time()
+
+    if active_agents:
+        st.session_state.last_activity = now
+        st.session_state.refresh_interval = 2  # Fast refresh when active
+    elif st.session_state.last_activity:
+        idle_time = now - st.session_state.last_activity
+        if idle_time > 30:
+            st.session_state.refresh_interval = 10  # Slow refresh when idle
+
+    # Sleep and rerun
+    time.sleep(st.session_state.refresh_interval)
+    st.rerun()
