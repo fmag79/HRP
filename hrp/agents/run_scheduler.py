@@ -2,24 +2,25 @@
 """
 Run the HRP data ingestion scheduler.
 
-This script starts the background scheduler that runs:
+Always runs:
 - Daily price ingestion at 6:00 PM ET
 - Daily universe update at 6:05 PM ET
 - Daily feature computation at 6:10 PM ET
 - Daily backup at 2:00 AM ET
 - Weekly fundamentals ingestion (Saturday 10 AM ET)
-- Weekly signal scan (Monday 7 PM ET) [optional]
-- Daily ML Quality Sentinel audit (6 AM ET) [optional]
-- Daily research report generation (7 AM ET) [optional]
-- Weekly research report generation (Sunday 8 PM ET) [optional]
-- Event-driven research agent pipeline [optional]
+
+--with-data-jobs adds:
+- Weekly fundamentals timeseries, snapshot fundamentals, sectors, cleanup
+
+--with-research-pipeline adds:
+- Signal scan, alpha researcher, pipeline orchestrator
+- Model monitoring, quality monitoring, CIO review
+- Daily/weekly reports, event-driven agent triggers
 
 Usage:
     python -m hrp.agents.run_scheduler
-    python -m hrp.agents.run_scheduler --with-research-triggers
-    python -m hrp.agents.run_scheduler --with-signal-scan --with-research-triggers
-    python -m hrp.agents.run_scheduler --with-daily-report --with-weekly-report
-    python -m hrp.agents.run_scheduler --with-quality-sentinel --with-research-triggers
+    python -m hrp.agents.run_scheduler --with-data-jobs
+    python -m hrp.agents.run_scheduler --with-data-jobs --with-research-pipeline
 """
 
 import argparse
@@ -102,107 +103,16 @@ def main():
         help="Disable weekly fundamentals ingestion job",
     )
 
-    # Research agent options
     parser.add_argument(
-        "--with-research-triggers",
+        "--with-data-jobs",
         action="store_true",
-        help="Enable event-driven research agent pipeline (Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Report Generator)",
+        help="Enable extended data jobs: fundamentals timeseries, snapshot fundamentals, sectors, cleanup",
     )
     parser.add_argument(
-        "--trigger-poll-interval",
-        type=int,
-        default=60,
-        help="Lineage event poll interval in seconds (default: 60)",
-    )
-    parser.add_argument(
-        "--with-signal-scan",
+        "--with-research-pipeline",
         action="store_true",
-        help="Enable weekly signal scan (Monday 7 PM ET by default)",
-    )
-    parser.add_argument(
-        "--signal-scan-time",
-        type=str,
-        default="19:00",
-        help="Time to run signal scan (HH:MM format, default: 19:00)",
-    )
-    parser.add_argument(
-        "--signal-scan-day",
-        type=str,
-        default="mon",
-        help="Day of week for signal scan (mon-sun, default: mon)",
-    )
-    parser.add_argument(
-        "--ic-threshold",
-        type=float,
-        default=0.03,
-        help="Minimum IC to create hypothesis (default: 0.03)",
-    )
-    parser.add_argument(
-        "--with-quality-sentinel",
-        action="store_true",
-        help="Enable daily model monitoring (deployed models + audit safety net, 6 AM ET by default)",
-    )
-    parser.add_argument(
-        "--sentinel-time",
-        type=str,
-        default="06:00",
-        help="Time to run model monitoring (HH:MM format, default: 06:00)",
-    )
-    parser.add_argument(
-        "--with-daily-report",
-        action="store_true",
-        help="Enable daily research report generation (7 AM ET by default)",
-    )
-    parser.add_argument(
-        "--daily-report-time",
-        type=str,
-        default="07:00",
-        help="Time to generate daily report (HH:MM format, default: 07:00)",
-    )
-    parser.add_argument(
-        "--with-weekly-report",
-        action="store_true",
-        help="Enable weekly research report generation (Sunday 8 PM ET by default)",
-    )
-    parser.add_argument(
-        "--weekly-report-time",
-        type=str,
-        default="20:00",
-        help="Time to generate weekly report (HH:MM format, default: 20:00)",
-    )
-    parser.add_argument(
-        "--with-quality-monitoring",
-        action="store_true",
-        help="Enable daily quality monitoring with threshold-based alerting (6 AM ET by default)",
-    )
-    parser.add_argument(
-        "--quality-monitor-time",
-        type=str,
-        default="06:00",
-        help="Time to run quality monitoring (HH:MM format, default: 06:00)",
-    )
-    parser.add_argument(
-        "--health-threshold",
-        type=float,
-        default=90.0,
-        help="Health score threshold for warnings (default: 90.0)",
-    )
-    parser.add_argument(
-        "--with-cio-review",
-        action="store_true",
-        help="Enable weekly CIO Agent review (Friday 5 PM ET by default)",
-    )
-    parser.add_argument(
-        "--cio-review-time",
-        type=str,
-        default="17:00",
-        help="Time to run CIO review (HH:MM format, default: 17:00)",
-    )
-    parser.add_argument(
-        "--cio-review-day",
-        type=str,
-        default="fri",
-        help="Day to run CIO review (default: fri)",
+        help="Enable full research pipeline: signal scan, alpha researcher, pipeline orchestrator, "
+        "quality sentinel, CIO review, reports, event-driven agent triggers",
     )
 
     args = parser.parse_args()
@@ -237,61 +147,29 @@ def main():
             source=args.fundamentals_source,
         )
 
-    # Setup weekly signal scan
-    if args.with_signal_scan:
-        logger.info("Setting up weekly signal scan job...")
-        scheduler.setup_weekly_signal_scan(
-            scan_time=args.signal_scan_time,
-            day_of_week=args.signal_scan_day,
-            ic_threshold=args.ic_threshold,
-            create_hypotheses=True,
-        )
+    # Extended data jobs
+    if args.with_data_jobs:
+        logger.info("Setting up extended data jobs...")
+        scheduler.setup_weekly_fundamentals_timeseries()
+        scheduler.setup_weekly_snapshot_fundamentals()
+        scheduler.setup_weekly_sectors()
+        scheduler.setup_weekly_cleanup()
 
-    # Setup daily model monitoring
-    if args.with_quality_sentinel:
-        logger.info("Setting up daily model monitoring (deployed models + safety net)...")
-        scheduler.setup_model_monitoring(
-            audit_time=args.sentinel_time,
-            audit_window_days=7,  # Safety net for missed experiments
-            send_alerts=True,
-        )
-
-    # Setup daily report
-    if args.with_daily_report:
-        logger.info("Setting up daily research report generation...")
-        scheduler.setup_daily_report(report_time=args.daily_report_time)
-
-    # Setup weekly report
-    if args.with_weekly_report:
-        logger.info("Setting up weekly research report generation...")
-        scheduler.setup_weekly_report(report_time=args.weekly_report_time)
-
-    # Setup quality monitoring
-    if args.with_quality_monitoring:
-        logger.info("Setting up daily quality monitoring...")
-        scheduler.setup_quality_monitoring(
-            check_time=args.quality_monitor_time,
-            health_threshold=args.health_threshold,
-            send_alerts=True,
-        )
-
-    # Setup weekly CIO review
-    if args.with_cio_review:
-        logger.info("Setting up weekly CIO Agent review...")
-        scheduler.setup_weekly_cio_review(
-            review_time=args.cio_review_time,
-            day_of_week=args.cio_review_day,
-        )
-
-    # Setup research agent triggers (event-driven pipeline)
-    if args.with_research_triggers:
-        logger.info("Setting up event-driven research agent pipeline...")
-        scheduler.setup_research_agent_triggers(
-            poll_interval_seconds=args.trigger_poll_interval,
-        )
+    # Full research pipeline
+    if args.with_research_pipeline:
+        logger.info("Setting up full research pipeline...")
+        scheduler.setup_weekly_signal_scan()
+        scheduler.setup_model_monitoring(send_alerts=True)
+        scheduler.setup_daily_report()
+        scheduler.setup_weekly_report()
+        scheduler.setup_quality_monitoring(send_alerts=True)
+        scheduler.setup_weekly_cio_review()
+        scheduler.setup_weekly_alpha_researcher()
+        scheduler.setup_daily_pipeline_orchestrator()
+        scheduler.setup_research_agent_triggers()
 
     # Start scheduler
-    if args.with_research_triggers:
+    if args.with_research_pipeline:
         logger.info("Starting scheduler with research agent triggers...")
         scheduler.start_with_triggers()
     else:
