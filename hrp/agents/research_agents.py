@@ -2334,14 +2334,22 @@ class MLQualitySentinel(ResearchAgent):
             # Get runs from the last N days
             cutoff_time = int((datetime.now() - timedelta(days=days)).timestamp() * 1000)
 
+            # Search all walk-forward experiments plus Default
+            all_experiments = client.search_experiments()
+            all_exp_ids = [exp.experiment_id for exp in all_experiments]
+
             runs = client.search_runs(
-                experiment_ids=["0"],  # Default experiment
+                experiment_ids=all_exp_ids,
                 filter_string=f"attributes.start_time > {cutoff_time}",
                 max_results=100,
             )
 
             experiments = []
             for run in runs:
+                # Skip nested fold runs (only audit parent walk-forward runs)
+                if run.data.tags.get("mlflow.parentRunId"):
+                    continue
+
                 exp_dict = {
                     "id": run.info.run_id,
                     "mlflow_run_id": run.info.run_id,

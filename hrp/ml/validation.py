@@ -639,7 +639,9 @@ def _log_to_mlflow(result: WalkForwardResult) -> None:
     """Log walk-forward results to MLflow."""
     try:
         import mlflow
+        from hrp.research.mlflow_utils import setup_mlflow
 
+        setup_mlflow()
         experiment_name = f"hrp_walkforward_{result.config.model_type}"
         mlflow.set_experiment(experiment_name)
 
