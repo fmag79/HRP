@@ -1536,6 +1536,17 @@ class MLScientist(ResearchAgent):
                 status=status,
                 outcome=outcome,
                 actor=self.ACTOR,
+                metadata={
+                    "ml_scientist_results": {
+                        "model_type": best_result.model_type,
+                        "features": best_result.features,
+                        "mean_ic": best_result.mean_ic,
+                        "ic_std": best_result.ic_std,
+                        "stability_score": best_result.stability_score,
+                        "n_folds": best_result.n_folds,
+                        "mlflow_run_id": best_result.mlflow_run_id,
+                    }
+                },
             )
             logger.info(f"Updated hypothesis {hypothesis_id} to status={status}")
         except Exception as e:
@@ -3473,6 +3484,9 @@ class RiskManager(ResearchAgent):
         """
         Get experiment metrics from metadata or MLflow.
 
+        Reads ml_scientist_results first (structured walk-forward metrics),
+        then falls back to validation_analyst_review, then conservative defaults.
+
         Args:
             hypothesis_id: Hypothesis ID
             metadata: Hypothesis metadata dict
@@ -3480,24 +3494,41 @@ class RiskManager(ResearchAgent):
         Returns:
             Dict with key metrics: sharpe, max_drawdown, volatility, etc.
         """
-        # Check if metrics are in metadata (from Validation Analyst)
+        # Primary source: ML Scientist structured results
+        ml_results = metadata.get("ml_scientist_results", {})
+        if ml_results:
+            stability = ml_results.get("stability_score", 2.0)
+            mean_ic = ml_results.get("mean_ic", 0)
+            return {
+                "sharpe": mean_ic * 20,  # IC-based proxy (IC=0.05 → ~1.0 Sharpe)
+                "max_drawdown": min(0.10 + stability * 0.10, 0.50),
+                "volatility": 0.15,
+                "turnover": 0.30,
+                "num_positions": self.TARGET_POSITIONS,
+                "sector_exposure": {},
+            }
+
+        # Secondary: Validation Analyst review
         validation = metadata.get("validation_analyst_review", {})
         if validation:
             return {
                 "sharpe": validation.get("sharpe", 0),
-                "max_drawdown": validation.get("max_drawdown", 1.0),
+                "max_drawdown": validation.get("max_drawdown", 0.25),
                 "volatility": validation.get("volatility", 0.20),
                 "turnover": validation.get("turnover", 0.50),
                 "num_positions": validation.get("num_positions", self.TARGET_POSITIONS),
                 "sector_exposure": validation.get("sector_exposure", {}),
             }
 
-        # Otherwise, query MLflow for experiments
-        # For now, return default values
+        # Last resort: conservative defaults
+        logger.warning(
+            f"{hypothesis_id}: No ml_scientist_results or validation_analyst_review "
+            "in metadata, using conservative defaults"
+        )
         return {
-            "sharpe": 0.8,
-            "max_drawdown": 0.18,
-            "volatility": 0.15,
+            "sharpe": 0.0,
+            "max_drawdown": 0.25,
+            "volatility": 0.20,
             "turnover": 0.30,
             "num_positions": self.TARGET_POSITIONS,
             "sector_exposure": {},

@@ -283,23 +283,45 @@ class CIOAgent(SDKAgent):
         return result.to_dict(orient="records")
 
     def _get_experiment_data(self, hypothesis_id: str) -> dict | None:
-        """Get experiment metrics for a hypothesis."""
-        # For now, return sample data if no experiments exist
-        # In production, this would query actual MLflow results
+        """Get experiment metrics for a hypothesis from ML Scientist results."""
+        import json
+
+        hyp = self.api.get_hypothesis(hypothesis_id)
+        if not hyp:
+            return None
+
+        # Metadata is stored in the hypothesis record fetched by _fetch_validated_hypotheses
+        # but get_hypothesis doesn't return it — re-fetch from DB
+        row = self.api._db.fetchone(
+            "SELECT metadata FROM hypotheses WHERE hypothesis_id = ?",
+            (hypothesis_id,),
+        )
+        if not row or not row[0]:
+            return None
+
+        metadata = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        ml_results = metadata.get("ml_scientist_results", {})
+        if not ml_results:
+            return None
+
+        mean_ic = ml_results.get("mean_ic", 0)
+        ic_std = ml_results.get("ic_std", 0)
+
         return {
-            "sharpe": 1.0,
-            "stability_score": 0.7,
-            "mean_ic": 0.04,
-            "fold_cv": 1.5,
+            "sharpe": mean_ic * 20,  # IC-based proxy (IC=0.05 → ~1.0 Sharpe)
+            "stability_score": ml_results.get("stability_score", 2.0),
+            "mean_ic": mean_ic,
+            "fold_cv": ic_std / max(mean_ic, 0.001),
         }
 
     def _get_risk_data(self, experiment_data: dict) -> dict:
         """Derive risk metrics from experiment data."""
+        stability = experiment_data.get("stability_score", 2.0)
         return {
-            "max_drawdown": 0.15,
-            "volatility": 0.12,
-            "regime_stable": True,
-            "sharpe_decay": 0.35,
+            "max_drawdown": min(0.10 + stability * 0.10, 0.50),
+            "volatility": 0.15,  # conservative default for long-only equities
+            "regime_stable": stability <= 1.0,
+            "sharpe_decay": experiment_data.get("fold_cv", 2.0) / 3.0,
         }
 
     def _get_economic_data(self, hypothesis: dict) -> dict:
