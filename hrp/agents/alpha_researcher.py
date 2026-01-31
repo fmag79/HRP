@@ -341,13 +341,12 @@ class AlphaResearcher(SDKAgent):
         # Try to get regime information
         try:
             from hrp.ml.regime import HMMConfig, RegimeDetector
+            from hrp.research.benchmark import get_benchmark_prices
 
             # Get price data for regime detection
-            prices = self.api.get_prices(
-                symbols=["SPY"],  # Use SPY as market proxy
-                start=date.today().replace(
-                    year=date.today().year - 3
-                ),  # 3 years
+            prices = get_benchmark_prices(
+                benchmark="SPY",
+                start=date.today().replace(year=date.today().year - 3),
                 end=date.today(),
             )
 

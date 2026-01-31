@@ -12,6 +12,52 @@ from loguru import logger
 from hrp.data.db import get_db
 
 
+def migrate_agent_token_usage_identity(db_path: Union[str, None] = None) -> None:
+    """Recreate agent_token_usage with sequence-based auto-increment on id column.
+
+    The old schema used `INTEGER PRIMARY KEY` which doesn't auto-increment in DuckDB.
+    This migration drops and recreates the table with a sequence default.
+    Safe because the table has 0 rows in all existing deployments.
+
+    Idempotent - safe to run multiple times.
+    """
+    db = get_db(db_path)
+
+    # Check if table exists
+    tables = db.fetchdf("SHOW TABLES")
+    if "agent_token_usage" not in tables["name"].tolist():
+        logger.debug("agent_token_usage table does not exist yet, skipping migration")
+        return
+
+    # Check if id column already has a default (sequence)
+    col_info = db.fetchdf(
+        "SELECT column_default FROM information_schema.columns "
+        "WHERE table_name = 'agent_token_usage' AND column_name = 'id'"
+    )
+    if not col_info.empty and col_info.iloc[0, 0] is not None:
+        logger.debug("agent_token_usage.id already has a default, skipping migration")
+        return
+
+    # Recreate with sequence-based id
+    logger.info("Migrating agent_token_usage: adding sequence-based auto-increment to id")
+    with db.connection() as conn:
+        conn.execute("DROP TABLE agent_token_usage")
+        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_agent_token_usage START 1")
+        conn.execute("""
+            CREATE TABLE agent_token_usage (
+                id INTEGER PRIMARY KEY DEFAULT nextval('seq_agent_token_usage'),
+                agent_type VARCHAR NOT NULL,
+                run_id VARCHAR NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                model VARCHAR,
+                estimated_cost DECIMAL(10,6)
+            )
+        """)
+    logger.info("agent_token_usage table recreated with sequence-based id")
+
+
 def migrate_add_sector_columns(db_path: Union[str, None] = None) -> None:
     """Add sector and industry columns to symbols table.
 
@@ -269,8 +315,9 @@ TABLES = {
         )
     """,
     "agent_token_usage": """
+        CREATE SEQUENCE IF NOT EXISTS seq_agent_token_usage START 1;
         CREATE TABLE IF NOT EXISTS agent_token_usage (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY DEFAULT nextval('seq_agent_token_usage'),
             agent_type VARCHAR NOT NULL,
             run_id VARCHAR NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
