@@ -8,7 +8,7 @@ Advisory mode: presents recommendations, awaits user approval.
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal, Optional
 
 import pandas as pd
@@ -485,7 +485,7 @@ class CIOAgent(SDKAgent):
         report_dir = get_config().data.reports_dir / date.today().strftime("%Y-%m-%d")
         report_dir.mkdir(parents=True, exist_ok=True)
 
-        report_path = report_dir / f"{date.today().strftime('%H-%M')}-cio-review.md"
+        report_path = report_dir / f"{datetime.now().strftime('%H-%M')}-cio-review.md"
 
         # Count decisions by type
         decision_counts = {}
