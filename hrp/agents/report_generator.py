@@ -255,7 +255,7 @@ class ReportGenerator(SDKAgent):
             # Get Signal Scientist run events
             signal_events = db.fetchall(
                 """
-                SELECT event_id, actor, timestamp, details
+                SELECT lineage_id, actor, timestamp, details
                 FROM lineage
                 WHERE event_type = 'agent_run_complete'
                   AND actor = 'agent:signal-scientist'

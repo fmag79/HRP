@@ -16,7 +16,7 @@ from loguru import logger
 from hrp.data.db import get_db
 from hrp.data.ingestion.features import compute_features
 from hrp.data.ingestion.fundamentals import ingest_fundamentals
-from hrp.data.ingestion.prices import TEST_SYMBOLS, ingest_prices
+from hrp.data.ingestion.prices import ingest_prices
 from hrp.data.universe import UniverseManager
 from hrp.notifications.email import EmailNotifier
 
@@ -532,7 +532,7 @@ class PriceIngestionJob(IngestionJob):
         Initialize price ingestion job.
 
         Args:
-            symbols: List of stock tickers to ingest (default: TEST_SYMBOLS)
+            symbols: List of stock tickers to ingest (default: universe symbols)
             start: Start date (default: yesterday)
             end: End date (default: today)
             source: Data source to use (default: 'yfinance')
@@ -543,7 +543,7 @@ class PriceIngestionJob(IngestionJob):
         """
         super().__init__(job_id, max_retries, retry_backoff, dependencies)
         self._symbols_override = symbols
-        self.symbols = symbols or TEST_SYMBOLS  # Resolved at execute() if no override
+        self.symbols = symbols
         self.start = start or (date.today() - timedelta(days=1))
         self.end = end or date.today()
         self.source = source
@@ -558,12 +558,10 @@ class PriceIngestionJob(IngestionJob):
         # Resolve symbols from universe if no explicit override was provided
         if self._symbols_override is None:
             um = UniverseManager()
-            universe = um.get_universe_at_date(date.today())
-            if universe:
-                self.symbols = universe
-                logger.info(f"Price ingestion using {len(universe)} symbols from universe")
-            else:
-                logger.warning("Universe empty, falling back to TEST_SYMBOLS")
+            self.symbols = um.get_universe_at_date(date.today())
+            if not self.symbols:
+                raise RuntimeError("Universe is empty — cannot run price ingestion without symbols")
+            logger.info(f"Price ingestion using {len(self.symbols)} symbols from universe")
 
         logger.info(
             f"Ingesting prices for {len(self.symbols)} symbols from {self.start} to {self.end}"
@@ -793,8 +791,7 @@ class FundamentalsIngestionJob(IngestionJob):
             manager = UniverseManager()
             symbols = manager.get_universe_at_date(date.today())
             if not symbols:
-                # Fallback to test symbols if universe is empty
-                symbols = TEST_SYMBOLS
+                raise RuntimeError("Universe is empty — cannot run fundamentals ingestion without symbols")
             logger.info(f"Using {len(symbols)} symbols from universe")
 
         logger.info(
@@ -872,8 +869,7 @@ class SnapshotFundamentalsJob(IngestionJob):
             manager = UniverseManager()
             symbols = manager.get_universe_at_date(date.today())
             if not symbols:
-                # Fallback to test symbols if universe is empty
-                symbols = TEST_SYMBOLS
+                raise RuntimeError("Universe is empty — cannot run snapshot fundamentals ingestion without symbols")
             logger.info(f"Using {len(symbols)} symbols from universe")
 
         logger.info(
