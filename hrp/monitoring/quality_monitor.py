@@ -156,6 +156,12 @@ class DataQualityMonitor:
             MonitoringResult with check status and alerts sent
         """
         as_of_date = as_of_date or date.today()
+
+        # Resolve to most recent trading day so checks don't flag
+        # missing data on weekends/holidays when markets are closed
+        from hrp.utils.calendar import get_previous_trading_day
+
+        as_of_date = get_previous_trading_day(as_of_date)
         logger.info(f"Running daily quality check for {as_of_date}")
 
         # Generate quality report

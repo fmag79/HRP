@@ -58,6 +58,148 @@ def migrate_agent_token_usage_identity(db_path: Union[str, None] = None) -> None
     logger.info("agent_token_usage table recreated with sequence-based id")
 
 
+def migrate_remove_cio_foreign_keys(db_path: Union[str, None] = None) -> None:
+    """Remove FK constraints from CIO tables that reference hypotheses.
+
+    DuckDB FK constraints prevent UPDATE on parent rows. The codebase already
+    removed FKs from hypothesis_experiments and lineage but missed these 4 tables:
+    - cio_decisions
+    - model_cemetery
+    - paper_portfolio
+    - paper_portfolio_trades
+
+    Idempotent - checks for FK presence before migrating.
+    """
+    db = get_db(db_path)
+
+    tables = db.fetchdf("SHOW TABLES")
+    table_list = tables["name"].tolist()
+
+    # Tables to migrate: (name, has_fk) - we check if FK exists via constraint info
+    target_tables = ["cio_decisions", "model_cemetery", "paper_portfolio", "paper_portfolio_trades"]
+    present_tables = [t for t in target_tables if t in table_list]
+
+    if not present_tables:
+        logger.debug("CIO tables do not exist yet, skipping FK migration")
+        return
+
+    # Check if any table still has FK constraints
+    has_fk = False
+    for tbl in present_tables:
+        try:
+            constraints = db.fetchdf(
+                f"SELECT constraint_type FROM information_schema.table_constraints "
+                f"WHERE table_name = '{tbl}' AND constraint_type = 'FOREIGN KEY'"
+            )
+            if not constraints.empty:
+                has_fk = True
+                break
+        except Exception:
+            # If we can't check, assume migration needed
+            has_fk = True
+            break
+
+    if not has_fk:
+        logger.debug("CIO tables already have no FK constraints, skipping migration")
+        return
+
+    logger.info("Migrating CIO tables: removing FK constraints on hypotheses")
+
+    with db.connection() as conn:
+        # cio_decisions
+        if "cio_decisions" in present_tables:
+            conn.execute("CREATE TABLE cio_decisions_bak AS SELECT * FROM cio_decisions")
+            conn.execute("DROP TABLE cio_decisions")
+            conn.execute("""
+                CREATE TABLE cio_decisions (
+                    id INTEGER PRIMARY KEY,
+                    decision_id VARCHAR UNIQUE,
+                    report_date DATE,
+                    hypothesis_id VARCHAR,
+                    decision VARCHAR,
+                    score_total DECIMAL(4, 2),
+                    score_statistical DECIMAL(4, 2),
+                    score_risk DECIMAL(4, 2),
+                    score_economic DECIMAL(4, 2),
+                    score_cost DECIMAL(4, 2),
+                    rationale TEXT,
+                    approved BOOLEAN DEFAULT FALSE,
+                    approved_by VARCHAR,
+                    approved_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("INSERT INTO cio_decisions SELECT * FROM cio_decisions_bak")
+            conn.execute("DROP TABLE cio_decisions_bak")
+            logger.info("  cio_decisions: FK removed")
+
+        # model_cemetery
+        if "model_cemetery" in present_tables:
+            conn.execute("CREATE TABLE model_cemetery_bak AS SELECT * FROM model_cemetery")
+            conn.execute("DROP TABLE model_cemetery")
+            conn.execute("""
+                CREATE TABLE model_cemetery (
+                    id INTEGER PRIMARY KEY,
+                    hypothesis_id VARCHAR UNIQUE,
+                    killed_date DATE,
+                    reason TEXT,
+                    final_score DECIMAL(4, 2),
+                    experiment_count INTEGER,
+                    archived_by VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("INSERT INTO model_cemetery SELECT * FROM model_cemetery_bak")
+            conn.execute("DROP TABLE model_cemetery_bak")
+            logger.info("  model_cemetery: FK removed")
+
+        # paper_portfolio
+        if "paper_portfolio" in present_tables:
+            conn.execute("CREATE TABLE paper_portfolio_bak AS SELECT * FROM paper_portfolio")
+            conn.execute("DROP TABLE paper_portfolio")
+            conn.execute("""
+                CREATE TABLE paper_portfolio (
+                    id INTEGER PRIMARY KEY,
+                    hypothesis_id VARCHAR NOT NULL UNIQUE,
+                    weight DECIMAL(5, 4),
+                    entry_price DECIMAL(10, 4),
+                    entry_date DATE,
+                    current_price DECIMAL(10, 4),
+                    unrealized_pnl DECIMAL(10, 2),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("INSERT INTO paper_portfolio SELECT * FROM paper_portfolio_bak")
+            conn.execute("DROP TABLE paper_portfolio_bak")
+            logger.info("  paper_portfolio: FK removed")
+
+        # paper_portfolio_trades
+        if "paper_portfolio_trades" in present_tables:
+            conn.execute(
+                "CREATE TABLE paper_portfolio_trades_bak AS SELECT * FROM paper_portfolio_trades"
+            )
+            conn.execute("DROP TABLE paper_portfolio_trades")
+            conn.execute("""
+                CREATE TABLE paper_portfolio_trades (
+                    id INTEGER PRIMARY KEY,
+                    hypothesis_id VARCHAR,
+                    action VARCHAR,
+                    weight_before DECIMAL(5, 4),
+                    weight_after DECIMAL(5, 4),
+                    price DECIMAL(10, 4),
+                    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute(
+                "INSERT INTO paper_portfolio_trades SELECT * FROM paper_portfolio_trades_bak"
+            )
+            conn.execute("DROP TABLE paper_portfolio_trades_bak")
+            logger.info("  paper_portfolio_trades: FK removed")
+
+    logger.info("CIO tables FK migration complete")
+
+
 def migrate_add_sector_columns(db_path: Union[str, None] = None) -> None:
     """Add sector and industry columns to symbols table.
 
@@ -405,6 +547,11 @@ def create_tables(db_path: Union[str, None] = None) -> None:
             conn.execute(index_sql)
 
     logger.info(f"Schema initialized with {len(TABLES)} tables and {len(INDEXES)} indexes")
+
+    # Run migrations (idempotent)
+    migrate_agent_token_usage_identity(db_path)
+    migrate_add_sector_columns(db_path)
+    migrate_remove_cio_foreign_keys(db_path)
 
 
 def drop_all_tables(db_path: Union[str, None] = None) -> None:

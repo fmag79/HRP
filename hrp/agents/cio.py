@@ -485,7 +485,7 @@ class CIOAgent(SDKAgent):
         report_dir = get_config().data.reports_dir / date.today().strftime("%Y-%m-%d")
         report_dir.mkdir(parents=True, exist_ok=True)
 
-        report_path = report_dir / f"{datetime.now().strftime('%H-%M')}-cio-review.md"
+        report_path = report_dir / f"{datetime.now().strftime('%Y-%m-%d-%H-%M')}-cio-review.md"
 
         # Count decisions by type
         decision_counts = {}
