@@ -35,10 +35,10 @@ def get_available_features() -> list[str]:
         List of feature names
     """
     try:
-        from hrp.data.db import get_db
+        from hrp.api.platform import PlatformAPI
 
-        db = get_db()
-        result = db.fetchall(
+        api = PlatformAPI()
+        result = api.fetchall_readonly(
             "SELECT DISTINCT feature_name FROM features ORDER BY feature_name"
         )
         return [r[0] for r in result]

@@ -25,6 +25,7 @@ def get_benchmark_prices(
     benchmark: str = "SPY",
     start: date | None = None,
     end: date | None = None,
+    db=None,
 ) -> pd.DataFrame:
     """
     Get benchmark price data.
@@ -35,11 +36,12 @@ def get_benchmark_prices(
         benchmark: Benchmark ticker (default SPY)
         start: Start date
         end: End date
+        db: Optional database connection (uses default if not provided)
 
     Returns:
         DataFrame with date, close, adj_close columns
     """
-    db = get_db()
+    db = db or get_db()
 
     # Try database first
     query = """
@@ -159,7 +161,7 @@ def compare_to_benchmark(
     }
 
 
-def ensure_benchmark_data(benchmark: str = "SPY", years: int = 10) -> None:
+def ensure_benchmark_data(benchmark: str = "SPY", years: int = 10, db=None) -> None:
     """
     Ensure benchmark data is loaded in the database.
 
@@ -173,7 +175,7 @@ def ensure_benchmark_data(benchmark: str = "SPY", years: int = 10) -> None:
     end = date.today()
     start = date(end.year - years, 1, 1)
 
-    db = get_db()
+    db = db or get_db()
 
     # Check if we have data
     result = db.fetchone(

@@ -104,6 +104,7 @@ class DriftMonitor:
         self,
         thresholds: DriftThresholds | None = None,
         db_path: str | None = None,
+        db=None,
     ):
         """
         Initialize the drift monitor.
@@ -111,10 +112,11 @@ class DriftMonitor:
         Args:
             thresholds: Custom drift thresholds (uses defaults if None)
             db_path: Optional database path
+            db: Optional database connection (uses default if not provided)
         """
         self.thresholds = thresholds or DriftThresholds()
         self.db_path = db_path
-        self._db = get_db(db_path)
+        self._db = db or get_db(db_path)
 
         logger.info(
             f"DriftMonitor initialized (thresholds: "

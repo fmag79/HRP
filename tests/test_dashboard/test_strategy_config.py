@@ -26,10 +26,10 @@ class TestGetAvailableFeatures:
             ("rsi_14d",),
         ]
 
-        with patch('hrp.data.db.get_db') as mock_get_db:
-            mock_db = MagicMock()
-            mock_db.fetchall.return_value = mock_result
-            mock_get_db.return_value = mock_db
+        with patch('hrp.api.platform.PlatformAPI') as mock_api_cls:
+            mock_api = MagicMock()
+            mock_api.fetchall_readonly.return_value = mock_result
+            mock_api_cls.return_value = mock_api
 
             features = get_available_features()
 
@@ -44,10 +44,10 @@ class TestGetAvailableFeatures:
             ("volatility_60d",),
         ]
 
-        with patch('hrp.data.db.get_db') as mock_get_db:
-            mock_db = MagicMock()
-            mock_db.fetchall.return_value = mock_result
-            mock_get_db.return_value = mock_db
+        with patch('hrp.api.platform.PlatformAPI') as mock_api_cls:
+            mock_api = MagicMock()
+            mock_api.fetchall_readonly.return_value = mock_result
+            mock_api_cls.return_value = mock_api
 
             features = get_available_features()
 
@@ -55,8 +55,8 @@ class TestGetAvailableFeatures:
 
     def test_returns_default_on_database_error(self):
         """Returns default features when database query fails."""
-        with patch('hrp.data.db.get_db') as mock_get_db:
-            mock_get_db.side_effect = Exception("Database error")
+        with patch('hrp.api.platform.PlatformAPI') as mock_api_cls:
+            mock_api_cls.side_effect = Exception("Database error")
 
             features = get_available_features()
 
@@ -64,10 +64,10 @@ class TestGetAvailableFeatures:
 
     def test_returns_empty_list_when_no_features(self):
         """Returns empty list when no features in database."""
-        with patch('hrp.data.db.get_db') as mock_get_db:
-            mock_db = MagicMock()
-            mock_db.fetchall.return_value = []
-            mock_get_db.return_value = mock_db
+        with patch('hrp.api.platform.PlatformAPI') as mock_api_cls:
+            mock_api = MagicMock()
+            mock_api.fetchall_readonly.return_value = []
+            mock_api_cls.return_value = mock_api
 
             features = get_available_features()
 

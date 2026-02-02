@@ -10,14 +10,17 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from hrp.data.db import get_db
+from hrp.api.platform import PlatformAPI
+
+def _get_api():
+    return PlatformAPI()
 
 
 @st.cache_data(ttl=60)  # Cache for 1 minute
 def get_job_stats() -> pd.DataFrame:
     """Get aggregated job statistics."""
-    db = get_db()
-    stats = db.fetchdf(
+    api = _get_api()
+    stats = api.query_readonly(
         """
         SELECT
             source_id,
@@ -42,8 +45,8 @@ def get_job_stats() -> pd.DataFrame:
 @st.cache_data(ttl=30)  # Cache for 30 seconds
 def get_recent_jobs(limit: int = 100) -> pd.DataFrame:
     """Get recent job executions with duration calculation."""
-    db = get_db()
-    jobs = db.fetchdf(
+    api = _get_api()
+    jobs = api.query_readonly(
         """
         SELECT
             log_id,
@@ -71,8 +74,8 @@ def get_recent_jobs(limit: int = 100) -> pd.DataFrame:
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_job_timeline(days: int = 7) -> pd.DataFrame:
     """Get job execution timeline for the last N days."""
-    db = get_db()
-    timeline = db.fetchdf(
+    api = _get_api()
+    timeline = api.query_readonly(
         f"""
         SELECT
             source_id,

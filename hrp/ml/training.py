@@ -65,6 +65,7 @@ def _fetch_features(
     start_date: date,
     end_date: date,
     target: str,
+    db=None,
 ) -> pd.DataFrame:
     """
     Fetch features and target from the database.
@@ -79,7 +80,7 @@ def _fetch_features(
     Returns:
         DataFrame with MultiIndex (date, symbol) and columns for features and target
     """
-    db = get_db()
+    db = db or get_db()
 
     # Build list of all feature columns needed (features + target)
     all_features = list(set(features + [target]))

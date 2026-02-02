@@ -203,12 +203,8 @@ class TestSDKAgentInit:
 class TestSDKAgentTrackCost:
     """Tests for SDKAgent.track_cost method."""
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_track_cost_updates_usage(self, mock_get_db):
+    def test_track_cost_updates_usage(self):
         """Should update internal token usage."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
@@ -221,8 +217,7 @@ class TestSDKAgentTrackCost:
         assert agent.token_usage.total_tokens == 150
 
     @patch("hrp.agents.sdk_agent.PlatformAPI")
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_track_cost_logs_to_db(self, mock_get_db, mock_platform_api_cls):
+    def test_track_cost_logs_to_db(self, mock_platform_api_cls):
         """Should log usage to database via PlatformAPI."""
         mock_api = MagicMock()
         mock_platform_api_cls.return_value = mock_api
@@ -237,15 +232,16 @@ class TestSDKAgentTrackCost:
 
         mock_api.log_token_usage.assert_called_once()
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_track_cost_handles_db_error(self, mock_get_db):
+    def test_track_cost_handles_db_error(self):
         """Should handle database errors gracefully."""
-        mock_get_db.side_effect = Exception("DB error")
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        # Mock the api to raise on log_token_usage
+        agent.api = MagicMock()
+        agent.api.log_token_usage.side_effect = Exception("DB error")
 
         # Should not raise
         agent.track_cost(100, 50)
@@ -257,17 +253,16 @@ class TestSDKAgentTrackCost:
 class TestSDKAgentInvokeClaude:
     """Tests for SDKAgent.invoke_claude method."""
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_invoke_claude_basic(self, mock_get_db):
+    def test_invoke_claude_basic(self):
         """Should call Claude API with configured settings."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (0,)
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        # Mock daily token usage check
+        agent.api = MagicMock()
+        agent.api.get_daily_token_usage.return_value = 0
 
         # Mock the internal API call method
         agent._call_claude_api = MagicMock(
@@ -284,17 +279,15 @@ class TestSDKAgentInvokeClaude:
         assert result["content"] == "Test response"
         assert agent.token_usage.total_tokens == 150
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_invoke_claude_with_tools(self, mock_get_db):
+    def test_invoke_claude_with_tools(self):
         """Should pass tools to Claude API."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (0,)
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        agent.api = MagicMock()
+        agent.api.get_daily_token_usage.return_value = 0
 
         tools = [{"name": "test_tool", "description": "A test tool"}]
 
@@ -312,13 +305,8 @@ class TestSDKAgentInvokeClaude:
         assert len(result["tool_calls"]) == 1
         assert result["tool_calls"][0]["name"] == "test_tool"
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_invoke_claude_respects_per_run_limit(self, mock_get_db):
+    def test_invoke_claude_respects_per_run_limit(self):
         """Should raise when per-run token limit exceeded."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (0,)
-        mock_get_db.return_value = mock_db
-
         config = SDKAgentConfig(max_tokens_per_run=100)
         agent = ConcreteSDKAgent(
             job_id="test-job",
@@ -332,13 +320,8 @@ class TestSDKAgentInvokeClaude:
         with pytest.raises(RuntimeError, match="Per-run token limit exceeded"):
             agent.invoke_claude("Test prompt")
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_invoke_claude_respects_daily_budget(self, mock_get_db):
+    def test_invoke_claude_respects_daily_budget(self):
         """Should raise when daily budget exceeded."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (100_000,)  # Daily usage
-        mock_get_db.return_value = mock_db
-
         config = SDKAgentConfig(daily_budget_tokens=50_000)
         agent = ConcreteSDKAgent(
             job_id="test-job",
@@ -346,21 +329,23 @@ class TestSDKAgentInvokeClaude:
             config=config,
         )
 
+        # Mock daily token usage to return above budget
+        agent.api = MagicMock()
+        agent.api.get_daily_token_usage.return_value = 100_000
+
         with pytest.raises(RuntimeError, match="Daily token budget exceeded"):
             agent.invoke_claude("Test prompt")
 
-    @patch("hrp.agents.sdk_agent.get_db")
     @patch("time.sleep")
-    def test_invoke_claude_retries_on_error(self, mock_sleep, mock_get_db):
+    def test_invoke_claude_retries_on_error(self, mock_sleep):
         """Should retry on API errors."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (0,)
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        agent.api = MagicMock()
+        agent.api.get_daily_token_usage.return_value = 0
 
         # Fail twice, succeed on third try
         call_count = {"value": 0}
@@ -383,20 +368,18 @@ class TestSDKAgentInvokeClaude:
         assert result["content"] == "Success"
         assert call_count["value"] == 3
 
-    @patch("hrp.agents.sdk_agent.get_db")
     @patch("time.sleep")
-    def test_invoke_claude_raises_after_max_retries(self, mock_sleep, mock_get_db):
+    def test_invoke_claude_raises_after_max_retries(self, mock_sleep):
         """Should raise after all retries exhausted."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (0,)
-        mock_get_db.return_value = mock_db
-
         config = SDKAgentConfig(max_retries=3)
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
             config=config,
         )
+
+        agent.api = MagicMock()
+        agent.api.get_daily_token_usage.return_value = 0
 
         agent._call_claude_api = MagicMock(side_effect=Exception("API error"))
 
@@ -408,12 +391,8 @@ class TestSDKAgentCheckpoint:
     """Tests for SDKAgent checkpointing."""
 
     @patch("hrp.agents.sdk_agent.log_event")
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_checkpoint_saves_state(self, mock_get_db, mock_log_event):
+    def test_checkpoint_saves_state(self, mock_log_event):
         """Should save state to checkpoint."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
@@ -429,12 +408,8 @@ class TestSDKAgentCheckpoint:
         assert agent._checkpoint.completed is False
 
     @patch("hrp.agents.sdk_agent.log_event")
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_checkpoint_logs_lineage_event(self, mock_get_db, mock_log_event):
+    def test_checkpoint_logs_lineage_event(self, mock_log_event):
         """Should log checkpoint to lineage."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
@@ -450,8 +425,7 @@ class TestSDKAgentCheckpoint:
 
     @patch("hrp.agents.sdk_agent.log_event")
     @patch("hrp.agents.sdk_agent.PlatformAPI")
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_checkpoint_saves_to_db(self, mock_get_db, mock_platform_api_cls, mock_log_event):
+    def test_checkpoint_saves_to_db(self, mock_platform_api_cls, mock_log_event):
         """Should save checkpoint to database via PlatformAPI."""
         mock_api = MagicMock()
         mock_platform_api_cls.return_value = mock_api
@@ -484,21 +458,20 @@ class TestSDKAgentCheckpoint:
 class TestSDKAgentResumeCheckpoint:
     """Tests for SDKAgent checkpoint resume."""
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_resume_from_checkpoint(self, mock_get_db):
+    def test_resume_from_checkpoint(self):
         """Should restore state from checkpoint."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (
-            json.dumps({"step": 5, "data": [1, 2, 3]}),
-            100,  # input_tokens
-            50,  # output_tokens
-        )
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        # Mock api.resume_agent_checkpoint to return checkpoint data
+        agent.api = MagicMock()
+        agent.api.resume_agent_checkpoint.return_value = {
+            "state_json": json.dumps({"step": 5, "data": [1, 2, 3]}),
+            "input_tokens": 100,
+            "output_tokens": 50,
+        }
 
         state = agent.resume_from_checkpoint()
 
@@ -506,54 +479,51 @@ class TestSDKAgentResumeCheckpoint:
         assert agent.token_usage.input_tokens == 100
         assert agent.token_usage.output_tokens == 50
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_resume_from_specific_run(self, mock_get_db):
+    def test_resume_from_specific_run(self):
         """Should resume from specific run_id."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = (
-            json.dumps({"step": 10}),
-            200,
-            100,
-        )
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        agent.api = MagicMock()
+        agent.api.resume_agent_checkpoint.return_value = {
+            "state_json": json.dumps({"step": 10}),
+            "input_tokens": 200,
+            "output_tokens": 100,
+        }
 
         state = agent.resume_from_checkpoint(run_id="specific-run")
 
         assert state == {"step": 10}
-        # Verify run_id was used in query
-        call_args = mock_db.fetchone.call_args
-        assert "specific-run" in call_args[0][1]
+        # Verify run_id was passed
+        agent.api.resume_agent_checkpoint.assert_called_once_with(
+            "ConcreteSDKAgent", "specific-run"
+        )
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_resume_no_checkpoint(self, mock_get_db):
+    def test_resume_no_checkpoint(self):
         """Should return None when no checkpoint found."""
-        mock_db = MagicMock()
-        mock_db.fetchone.return_value = None
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        agent.api = MagicMock()
+        agent.api.resume_agent_checkpoint.return_value = None
 
         state = agent.resume_from_checkpoint()
 
         assert state is None
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_resume_handles_db_error(self, mock_get_db):
+    def test_resume_handles_db_error(self):
         """Should handle database errors gracefully."""
-        mock_get_db.side_effect = Exception("DB error")
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
         )
+
+        agent.api = MagicMock()
+        agent.api.resume_agent_checkpoint.side_effect = Exception("DB error")
 
         state = agent.resume_from_checkpoint()
 
@@ -565,8 +535,7 @@ class TestSDKAgentMarkComplete:
 
     @patch("hrp.agents.sdk_agent.log_event")
     @patch("hrp.agents.sdk_agent.PlatformAPI")
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_mark_checkpoint_complete(self, mock_get_db, mock_platform_api_cls, mock_log_event):
+    def test_mark_checkpoint_complete(self, mock_platform_api_cls, mock_log_event):
         """Should mark checkpoint as complete via PlatformAPI."""
         mock_api = MagicMock()
         mock_platform_api_cls.return_value = mock_api
@@ -602,12 +571,8 @@ class TestSDKAgentMarkComplete:
 class TestSDKAgentRun:
     """Tests for SDKAgent.run method."""
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_run_creates_run_id(self, mock_get_db):
+    def test_run_creates_run_id(self):
         """Should create unique run_id."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
@@ -618,12 +583,8 @@ class TestSDKAgentRun:
         assert agent._run_id is not None
         assert len(agent._run_id) == 8  # UUID[:8]
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_run_resets_token_usage(self, mock_get_db):
+    def test_run_resets_token_usage(self):
         """Should reset token usage for new run."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
@@ -636,12 +597,8 @@ class TestSDKAgentRun:
 
         assert agent.token_usage.total_tokens == 0
 
-    @patch("hrp.agents.sdk_agent.get_db")
-    def test_run_returns_execute_result(self, mock_get_db):
+    def test_run_returns_execute_result(self):
         """Should return result from execute method."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",
@@ -653,13 +610,9 @@ class TestSDKAgentRun:
         assert result["result"] == "test"
 
     @patch("hrp.agents.sdk_agent.log_event")
-    @patch("hrp.agents.sdk_agent.get_db")
     @patch("hrp.agents.sdk_agent.PlatformAPI")
-    def test_run_marks_checkpoint_complete(self, mock_platform_api_cls, mock_get_db, mock_log_event):
+    def test_run_marks_checkpoint_complete(self, mock_platform_api_cls, mock_log_event):
         """Should mark checkpoint complete on success."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-
         agent = ConcreteSDKAgent(
             job_id="test-job",
             actor="agent:test",

@@ -14,7 +14,6 @@ from typing import Any
 from loguru import logger
 
 from hrp.api.platform import PlatformAPI
-from hrp.data.db import get_db
 from hrp.data.ingestion.features import compute_features
 from hrp.data.ingestion.fundamentals import ingest_fundamentals
 from hrp.data.ingestion.prices import ingest_prices
@@ -75,40 +74,41 @@ class DataRequirement:
         Returns:
             Tuple of (is_met, message)
         """
-        db = get_db()
-        with db.connection() as conn:
-            # Check row count
-            result = conn.execute(
-                f"SELECT COUNT(*) FROM {self.table}"
-            ).fetchone()
-            row_count = result[0] if result else 0
+        from hrp.api.platform import PlatformAPI
+        api = PlatformAPI()
 
-            if row_count < self.min_rows:
-                return False, f"{self.description}: found {row_count} rows, need {self.min_rows}"
+        # Check row count
+        result = api.fetchone_readonly(
+            f"SELECT COUNT(*) FROM {self.table}"
+        )
+        row_count = result[0] if result else 0
 
-            # Check recency if max_age_days specified
-            if self.max_age_days is not None:
-                result = conn.execute(
-                    f"SELECT MAX({self.date_column}) FROM {self.table}"
-                ).fetchone()
-                if result and result[0]:
-                    from datetime import datetime
-                    max_date = result[0]
-                    if isinstance(max_date, str):
-                        max_date = datetime.strptime(max_date[:10], "%Y-%m-%d").date()
-                    elif hasattr(max_date, 'date'):
-                        max_date = max_date.date()
+        if row_count < self.min_rows:
+            return False, f"{self.description}: found {row_count} rows, need {self.min_rows}"
 
-                    age_days = (date.today() - max_date).days
-                    if age_days > self.max_age_days:
-                        return False, (
-                            f"{self.description}: most recent data is {age_days} days old "
-                            f"(max allowed: {self.max_age_days})"
-                        )
-                else:
-                    return False, f"{self.description}: no date data found"
+        # Check recency if max_age_days specified
+        if self.max_age_days is not None:
+            result = api.fetchone_readonly(
+                f"SELECT MAX({self.date_column}) FROM {self.table}"
+            )
+            if result and result[0]:
+                from datetime import datetime
+                max_date = result[0]
+                if isinstance(max_date, str):
+                    max_date = datetime.strptime(max_date[:10], "%Y-%m-%d").date()
+                elif hasattr(max_date, 'date'):
+                    max_date = max_date.date()
 
-            return True, f"{self.description}: OK ({row_count} rows)"
+                age_days = (date.today() - max_date).days
+                if age_days > self.max_age_days:
+                    return False, (
+                        f"{self.description}: most recent data is {age_days} days old "
+                        f"(max allowed: {self.max_age_days})"
+                    )
+            else:
+                return False, f"{self.description}: no date data found"
+
+        return True, f"{self.description}: OK ({row_count} rows)"
 
 
 class IngestionJob(ABC):
@@ -285,33 +285,34 @@ class IngestionJob(ABC):
         if not self.dependencies:
             return True
 
-        db = get_db()
-        with db.connection() as conn:
-            for dep_job_id in self.dependencies:
-                # Get the most recent run of the dependency job
-                result = conn.execute(
-                    """
-                    SELECT status, completed_at
-                    FROM ingestion_log
-                    WHERE source_id = ?
-                    ORDER BY started_at DESC
-                    LIMIT 1
-                    """,
-                    (dep_job_id,),
-                ).fetchone()
+        from hrp.api.platform import PlatformAPI
+        api = PlatformAPI()
 
-                if not result:
-                    logger.warning(f"Dependency {dep_job_id} has never run")
-                    return False
+        for dep_job_id in self.dependencies:
+            # Get the most recent run of the dependency job
+            result = api.fetchone_readonly(
+                """
+                SELECT status, completed_at
+                FROM ingestion_log
+                WHERE source_id = ?
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (dep_job_id,),
+            )
 
-                status, completed_at = result
-                if status != "completed":
-                    logger.warning(f"Dependency {dep_job_id} did not complete successfully (status: {status})")
-                    return False
+            if not result:
+                logger.warning(f"Dependency {dep_job_id} has never run")
+                return False
 
-                if completed_at is None:
-                    logger.warning(f"Dependency {dep_job_id} has not completed yet")
-                    return False
+            status, completed_at = result
+            if status != "completed":
+                logger.warning(f"Dependency {dep_job_id} did not complete successfully (status: {status})")
+                return False
+
+            if completed_at is None:
+                logger.warning(f"Dependency {dep_job_id} has not completed yet")
+                return False
 
         logger.info(f"All dependencies met for job {self.job_id}")
         return True
@@ -420,22 +421,22 @@ class IngestionJob(ABC):
         Returns:
             Datetime of last successful run, or None if never succeeded
         """
-        db = get_db()
-        with db.connection() as conn:
-            result = conn.execute(
-                """
-                SELECT completed_at
-                FROM ingestion_log
-                WHERE source_id = ? AND status = 'completed'
-                ORDER BY completed_at DESC
-                LIMIT 1
-                """,
-                (self.job_id,),
-            ).fetchone()
+        from hrp.api.platform import PlatformAPI
+        api = PlatformAPI()
+        result = api.fetchone_readonly(
+            """
+            SELECT completed_at
+            FROM ingestion_log
+            WHERE source_id = ? AND status = 'completed'
+            ORDER BY completed_at DESC
+            LIMIT 1
+            """,
+            (self.job_id,),
+        )
 
-            if result and result[0]:
-                return result[0]
-            return None
+        if result and result[0]:
+            return result[0]
+        return None
 
     def get_status(self) -> dict[str, Any]:
         """

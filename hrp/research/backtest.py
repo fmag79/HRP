@@ -19,16 +19,17 @@ from hrp.research.stops import apply_trailing_stops
 from hrp.risk.limits import PreTradeValidator, ValidationReport
 
 
-def _load_sector_mapping(symbols: list[str]) -> pd.Series:
+def _load_sector_mapping(symbols: list[str], db=None) -> pd.Series:
     """Load sector mapping from database.
 
     Args:
         symbols: List of ticker symbols
+        db: Optional database connection (uses default if not provided)
 
     Returns:
         Series mapping symbol -> sector
     """
-    db = get_db()
+    db = db or get_db()
     symbols_str = ",".join(f"'{s}'" for s in symbols)
 
     try:
@@ -57,18 +58,19 @@ def _compute_adv(prices: pd.DataFrame, window: int = 20) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _load_volatility(symbols: list[str], start: date, end: date) -> pd.Series:
+def _load_volatility(symbols: list[str], start: date, end: date, db=None) -> pd.Series:
     """Load volatility data for cost estimation.
 
     Args:
         symbols: List of ticker symbols
         start: Start date
         end: End date
+        db: Optional database connection (uses default if not provided)
 
     Returns:
         Series with average volatility per symbol
     """
-    db = get_db()
+    db = db or get_db()
     symbols_str = ",".join(f"'{s}'" for s in symbols)
 
     try:
@@ -88,13 +90,13 @@ def _load_volatility(symbols: list[str], start: date, end: date) -> pd.Series:
         return result.set_index("symbol")["avg_vol"]
     except Exception:
         return pd.Series({s: 0.02 for s in symbols})
-from hrp.risk.limits import PreTradeValidator, ValidationReport
 
 
 def get_price_data(
     symbols: list[str],
     start: date,
     end: date,
+    db=None,
 ) -> pd.DataFrame:
     """
     Load price data from database.
@@ -126,7 +128,7 @@ def get_price_data(
         f"{filtered_start} to {filtered_end}"
     )
 
-    db = get_db()
+    db = db or get_db()
 
     symbols_str = ",".join(f"'{s}'" for s in symbols)
     query = f"""
@@ -319,7 +321,7 @@ def get_fundamentals_for_backtest(
         # Access fundamentals for a specific date
         date_fundamentals = fundamentals.loc['2023-01-15']
     """
-    db = get_db(db_path)
+    db = get_db(db_path) if db_path else get_db()
     all_data = []
 
     # Build query parts
@@ -436,9 +438,8 @@ def main():
 
     # Default symbols from database
     if args.symbols is None:
-        db = get_db()
-        result = db.fetchall("SELECT DISTINCT symbol FROM prices ORDER BY symbol")
-        symbols = [r[0] for r in result]
+        from hrp.api.platform import PlatformAPI
+        symbols = PlatformAPI().get_available_symbols()
     else:
         symbols = args.symbols
 

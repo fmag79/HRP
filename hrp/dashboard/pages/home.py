@@ -95,9 +95,9 @@ def _get_database_stats(api: Any) -> dict[str, Any]:
 
             # Get date range from prices table
             try:
-                from hrp.data.db import get_db
-                db = get_db()
-                result = db.fetchone("SELECT MIN(date), MAX(date) FROM prices")
+                from hrp.api.platform import PlatformAPI
+                api = PlatformAPI()
+                result = api.fetchone_readonly("SELECT MIN(date), MAX(date) FROM prices")
                 if result and result[0] is not None:
                     stats["date_range_start"] = result[0]
                     stats["date_range_end"] = result[1]

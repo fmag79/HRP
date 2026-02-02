@@ -14,7 +14,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from hrp.data.db import get_db
+from hrp.api.platform import PlatformAPI
+
+def _get_api():
+    return PlatformAPI()
 
 
 class QueryEngine:
@@ -48,7 +51,7 @@ class QueryEngine:
         Returns:
             DataFrame with OHLCV data
         """
-        db = get_db()
+        api = _get_api()
         conditions = []
         params = []
 
@@ -82,7 +85,7 @@ class QueryEngine:
             LIMIT {limit}
         """
 
-        return db.fetchdf(query, tuple(params) if params else ())
+        return api.query_readonly(query, tuple(params) if params else ())
 
     @staticmethod
     @st.cache_data(ttl=300)
@@ -96,7 +99,7 @@ class QueryEngine:
         Returns:
             DataFrame with per-symbol stats
         """
-        db = get_db()
+        api = _get_api()
         symbols = list(_symbols) if _symbols else None
         symbol_filter = ""
         params = ()
@@ -123,7 +126,7 @@ class QueryEngine:
             ORDER BY symbol
         """
 
-        return db.fetchdf(query, params)
+        return api.query_readonly(query, params)
 
     # -------------------------------------------------------------------------
     # Feature Data Queries
@@ -133,13 +136,13 @@ class QueryEngine:
     @st.cache_data(ttl=300)
     def get_available_features() -> list[str]:
         """Get list of all available feature names."""
-        db = get_db()
+        api = _get_api()
         query = """
             SELECT DISTINCT feature_name
             FROM features
             ORDER BY feature_name
         """
-        result = db.fetchdf(query)
+        result = api.query_readonly(query)
         return result["feature_name"].tolist() if not result.empty else []
 
     @staticmethod
@@ -162,7 +165,7 @@ class QueryEngine:
         Returns:
             DataFrame in wide format (one row per date/symbol)
         """
-        db = get_db()
+        api = _get_api()
         features = list(_features)
         symbols = list(_symbols) if _symbols else None
         as_of_date = _as_of_date
@@ -196,7 +199,7 @@ class QueryEngine:
             LIMIT {limit}
         """
 
-        df = db.fetchdf(query, tuple(params) if params else ())
+        df = api.query_readonly(query, tuple(params) if params else ())
 
         # Pivot to wide format
         if not df.empty:
@@ -215,7 +218,7 @@ class QueryEngine:
         Returns:
             DataFrame with distribution stats
         """
-        db = get_db()
+        api = _get_api()
         feature_name = _feature_name
         query = """
             SELECT
@@ -233,7 +236,7 @@ class QueryEngine:
             GROUP BY feature_name
         """
 
-        return db.fetchdf(query, (feature_name,))
+        return api.query_readonly(query, (feature_name,))
 
     @staticmethod
     @st.cache_data(ttl=300)
@@ -253,7 +256,7 @@ class QueryEngine:
         Returns:
             Correlation matrix DataFrame
         """
-        db = get_db()
+        api = _get_api()
         features = list(_features)
         symbols = list(_symbols) if _symbols else None
         recent_days = _recent_days
@@ -279,7 +282,7 @@ class QueryEngine:
             {where_clause}
         """
 
-        df = db.fetchdf(query, tuple(params) if params else ())
+        df = api.query_readonly(query, tuple(params) if params else ())
 
         if df.empty:
             return pd.DataFrame()
@@ -312,7 +315,7 @@ class QueryEngine:
         Returns:
             DataFrame with fundamentals data
         """
-        db = get_db()
+        api = _get_api()
         symbols = list(_symbols)
         metrics = list(_metrics) if _metrics else None
         start_date = _start_date
@@ -348,7 +351,7 @@ class QueryEngine:
             ORDER BY symbol, as_of_date, metric
         """
 
-        df = db.fetchdf(query, tuple(params))
+        df = api.query_readonly(query, tuple(params))
 
         if not df.empty:
             return df.pivot(index=["symbol", "as_of_date"], columns="metric", values="value").reset_index()
@@ -372,7 +375,7 @@ class QueryEngine:
         Returns:
             List of symbol strings
         """
-        db = get_db()
+        api = _get_api()
         active_only = _active_only
 
         if active_only:
@@ -392,7 +395,7 @@ class QueryEngine:
                 ORDER BY symbol
             """
 
-        result = db.fetchdf(query)
+        result = api.query_readonly(query)
         return result["symbol"].tolist() if not result.empty else []
 
     @staticmethod
@@ -404,7 +407,7 @@ class QueryEngine:
         Returns:
             Dict with freshness info
         """
-        db = get_db()
+        api = _get_api()
         query = """
             SELECT
                 MAX(date) as latest_date,
@@ -413,7 +416,7 @@ class QueryEngine:
             FROM prices
         """
 
-        result = db.fetchone(query)
+        result = api.fetchone_readonly(query)
 
         if result and result[0]:
             latest = result[0]

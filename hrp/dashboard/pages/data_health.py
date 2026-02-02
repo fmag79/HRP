@@ -10,7 +10,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from hrp.data.db import get_db
+from hrp.api.platform import PlatformAPI
+
+def _get_api():
+    return PlatformAPI()
 from hrp.data.quality.checks import CheckResult, IssueSeverity, QualityIssue
 from hrp.data.quality.report import QualityReport, QualityReportGenerator
 
@@ -47,16 +50,16 @@ def get_health_color(score: float) -> str:
 @st.cache_data(ttl=300)
 def get_symbol_count() -> int:
     """Get count of distinct symbols in prices table."""
-    db = get_db()
-    result = db.fetchone("SELECT COUNT(DISTINCT symbol) FROM prices")
+    api = _get_api()
+    result = api.fetchone_readonly("SELECT COUNT(DISTINCT symbol) FROM prices")
     return result[0] if result else 0
 
 
 @st.cache_data(ttl=300)
 def get_date_range() -> tuple[str | None, str | None]:
     """Get min and max dates from prices table."""
-    db = get_db()
-    result = db.fetchone("SELECT MIN(date), MAX(date) FROM prices")
+    api = _get_api()
+    result = api.fetchone_readonly("SELECT MIN(date), MAX(date) FROM prices")
     if result and result[0] and result[1]:
         return str(result[0]), str(result[1])
     return None, None
@@ -65,15 +68,15 @@ def get_date_range() -> tuple[str | None, str | None]:
 @st.cache_data(ttl=300)
 def get_total_records() -> int:
     """Get total number of price records."""
-    db = get_db()
-    result = db.fetchone("SELECT COUNT(*) FROM prices")
+    api = _get_api()
+    result = api.fetchone_readonly("SELECT COUNT(*) FROM prices")
     return result[0] if result else 0
 
 
 @st.cache_data(ttl=300)
 def get_ingestion_logs(limit: int = 10) -> pd.DataFrame:
     """Get recent ingestion log entries."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             log_id,
@@ -89,7 +92,7 @@ def get_ingestion_logs(limit: int = 10) -> pd.DataFrame:
         LIMIT ?
     """
     try:
-        df = db.fetchdf(query, (limit,))
+        df = api.query_readonly(query, (limit,))
         return df
     except Exception:
         # Return empty DataFrame if table doesn't exist or query fails
@@ -145,7 +148,7 @@ def render_quality_alert_banner() -> None:
 @st.cache_data(ttl=300)
 def get_symbol_coverage() -> pd.DataFrame:
     """Get per-symbol data summary."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             symbol,
@@ -158,7 +161,7 @@ def get_symbol_coverage() -> pd.DataFrame:
         ORDER BY symbol
     """
     try:
-        df = db.fetchdf(query)
+        df = api.query_readonly(query)
         return df
     except Exception:
         return pd.DataFrame(columns=[
@@ -172,7 +175,7 @@ def get_missing_dates_summary() -> pd.DataFrame:
     Detect gaps in date sequences per symbol.
     Returns symbols with gaps and the number of missing trading days.
     """
-    db = get_db()
+    api = _get_api()
     # This query finds gaps by comparing each date to the next date for each symbol
     query = """
         WITH date_gaps AS (
@@ -196,7 +199,7 @@ def get_missing_dates_summary() -> pd.DataFrame:
         LIMIT 20
     """
     try:
-        df = db.fetchdf(query)
+        df = api.query_readonly(query)
         return df
     except Exception:
         return pd.DataFrame(columns=[
@@ -214,7 +217,7 @@ def get_price_anomalies() -> pd.DataFrame:
     - Volume is negative
     - Extreme daily moves (>50%)
     """
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             symbol,
@@ -240,7 +243,7 @@ def get_price_anomalies() -> pd.DataFrame:
         LIMIT 50
     """
     try:
-        df = db.fetchdf(query)
+        df = api.query_readonly(query)
         return df
     except Exception:
         return pd.DataFrame(columns=[
@@ -251,8 +254,8 @@ def get_price_anomalies() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def get_recent_data_freshness() -> dict[str, Any]:
     """Check how fresh the data is compared to today."""
-    db = get_db()
-    result = db.fetchone("SELECT MAX(date) FROM prices")
+    api = _get_api()
+    result = api.fetchone_readonly("SELECT MAX(date) FROM prices")
     if result and result[0]:
         last_date = result[0]
         if isinstance(last_date, str):
@@ -270,7 +273,7 @@ def get_recent_data_freshness() -> dict[str, Any]:
 @st.cache_data(ttl=300)
 def get_last_successful_ingestion() -> dict[str, Any]:
     """Get the most recent successful ingestion run."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             log_id,
@@ -285,7 +288,7 @@ def get_last_successful_ingestion() -> dict[str, Any]:
         LIMIT 1
     """
     try:
-        result = db.fetchone(query)
+        result = api.fetchone_readonly(query)
         if result:
             return {
                 "log_id": result[0],
@@ -303,7 +306,7 @@ def get_last_successful_ingestion() -> dict[str, Any]:
 @st.cache_data(ttl=300)
 def get_ingestion_summary() -> dict[str, Any]:
     """Get summary statistics for ingestion jobs."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             COUNT(*) as total_runs,
@@ -314,7 +317,7 @@ def get_ingestion_summary() -> dict[str, Any]:
         FROM ingestion_log
     """
     try:
-        result = db.fetchone(query)
+        result = api.fetchone_readonly(query)
         if result:
             total = result[0] or 0
             success = result[1] or 0

@@ -43,10 +43,8 @@ def mock_all_db_access(monkeypatch):
     mock_db.connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
     mock_db.connection.return_value.__exit__ = MagicMock(return_value=False)
 
-    # Mock get_db in all modules that import it directly
-    monkeypatch.setattr("hrp.data.db.get_db", lambda: mock_db)
-    monkeypatch.setattr("hrp.agents.jobs.get_db", lambda: mock_db)
-    monkeypatch.setattr("hrp.agents.sdk_agent.get_db", lambda: mock_db)
+    # Mock get_db in the data layer (the only module that still uses it directly)
+    monkeypatch.setattr("hrp.data.db.get_db", lambda *args, **kwargs: mock_db)
 
 
 @pytest.fixture(autouse=True)

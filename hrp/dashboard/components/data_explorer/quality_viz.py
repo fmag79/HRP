@@ -12,7 +12,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from hrp.data.db import get_db
+from hrp.api.platform import PlatformAPI
+
+def _get_api():
+    return PlatformAPI()
 
 from hrp.dashboard.components.data_explorer.styles import (
     CHART_DEFAULTS,
@@ -26,7 +29,7 @@ from hrp.dashboard.components.data_explorer.styles import (
 @st.cache_data(ttl=300)
 def get_missing_dates() -> pd.DataFrame:
     """Get symbols with missing date gaps."""
-    db = get_db()
+    api = _get_api()
 
     query = """
         WITH date_gaps AS (
@@ -50,13 +53,13 @@ def get_missing_dates() -> pd.DataFrame:
         LIMIT 50
     """
 
-    return db.fetchdf(query)
+    return api.query_readonly(query)
 
 
 @st.cache_data(ttl=300)
 def get_price_anomalies() -> pd.DataFrame:
     """Get price data anomalies."""
-    db = get_db()
+    api = _get_api()
 
     query = """
         SELECT
@@ -75,13 +78,13 @@ def get_price_anomalies() -> pd.DataFrame:
         LIMIT 100
     """
 
-    return db.fetchdf(query)
+    return api.query_readonly(query)
 
 
 @st.cache_data(ttl=60)
 def get_symbol_freshness() -> pd.DataFrame:
     """Get data freshness per symbol."""
-    db = get_db()
+    api = _get_api()
 
     query = """
         SELECT
@@ -94,7 +97,7 @@ def get_symbol_freshness() -> pd.DataFrame:
         ORDER BY last_date DESC
     """
 
-    df = db.fetchdf(query)
+    df = api.query_readonly(query)
 
     # Calculate days stale
     today = datetime.now().date()

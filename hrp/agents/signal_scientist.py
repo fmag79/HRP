@@ -18,7 +18,6 @@ from scipy import stats
 
 from hrp.agents.base import ResearchAgent
 from hrp.agents.jobs import DataRequirement
-from hrp.data.db import get_db
 from hrp.notifications.email import EmailNotifier
 from hrp.research.lineage import EventType
 
@@ -323,8 +322,7 @@ class SignalScientist(ResearchAgent):
         except Exception as e:
             logger.warning(f"Failed to get universe: {e}")
             # Fallback to symbols with features
-            db = get_db()
-            result = db.fetchall(
+            result = self.api.fetchall_readonly(
                 """
                 SELECT DISTINCT symbol
                 FROM features
@@ -349,9 +347,8 @@ class SignalScientist(ResearchAgent):
         except Exception as e:
             logger.warning(f"Failed to load prices via API: {e}")
             # Direct query fallback
-            db = get_db()
             symbols_str = ",".join(f"'{s}'" for s in symbols)
-            df = db.fetchdf(
+            df = self.api.query_readonly(
                 f"""
                 SELECT symbol, date, adj_close as close
                 FROM prices
@@ -374,12 +371,11 @@ class SignalScientist(ResearchAgent):
         Returns:
             DataFrame with columns: symbol, date, feature_name, value
         """
-        db = get_db()
         start_date = self.as_of_date - timedelta(days=self.lookback_days)
         symbols_str = ",".join(f"'{s}'" for s in symbols)
         features_str = ",".join(f"'{f}'" for f in features)
 
-        return db.fetchdf(
+        return self.api.query_readonly(
             f"""
             SELECT symbol, date, feature_name, value
             FROM features
@@ -517,9 +513,8 @@ class SignalScientist(ResearchAgent):
             ][["symbol", "date", "value"]].copy()
         else:
             # Fallback to DB query (for backward compatibility with tests)
-            db = get_db()
             symbols_str = ",".join(f"'{s}'" for s in symbols)
-            feature_df = db.fetchdf(
+            feature_df = self.api.query_readonly(
                 f"""
                 SELECT symbol, date, value
                 FROM features
@@ -544,9 +539,8 @@ class SignalScientist(ResearchAgent):
             price_df = price_df.rename(columns={fwd_ret_col: "forward_return"})
         else:
             # Fallback to DB query (for backward compatibility with tests)
-            db = get_db()
             symbols_str = ",".join(f"'{s}'" for s in symbols)
-            price_df = db.fetchdf(
+            price_df = self.api.query_readonly(
                 f"""
                 SELECT symbol, date, adj_close
                 FROM prices
@@ -635,9 +629,8 @@ class SignalScientist(ResearchAgent):
             ].copy()
         else:
             # Fallback to DB query (for backward compatibility with tests)
-            db = get_db()
             symbols_str = ",".join(f"'{s}'" for s in symbols)
-            features_df = db.fetchdf(
+            features_df = self.api.query_readonly(
                 f"""
                 SELECT symbol, date, feature_name, value
                 FROM features
@@ -688,9 +681,8 @@ class SignalScientist(ResearchAgent):
             price_df = price_df.rename(columns={fwd_ret_col: "forward_return"})
         else:
             # Fallback: query DB and compute forward returns
-            db = get_db()
             symbols_str = ",".join(f"'{s}'" for s in symbols)
-            price_df = db.fetchdf(
+            price_df = self.api.query_readonly(
                 f"""
                 SELECT symbol, date, adj_close
                 FROM prices

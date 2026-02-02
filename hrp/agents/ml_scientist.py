@@ -14,7 +14,6 @@ from loguru import logger
 
 from hrp.agents.base import ResearchAgent
 from hrp.agents.signal_scientist import SignalScientist
-from hrp.data.db import get_db
 from hrp.notifications.email import EmailNotifier
 from hrp.research.lineage import EventType
 
@@ -271,8 +270,7 @@ class MLScientist(ResearchAgent):
         except Exception as e:
             logger.warning(f"Failed to get universe: {e}")
             # Fallback to symbols with features
-            db = get_db()
-            result = db.fetchall(
+            result = self.api.fetchall_readonly(
                 """
                 SELECT DISTINCT symbol
                 FROM features

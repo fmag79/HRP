@@ -106,9 +106,9 @@ def _row_to_event(row: tuple) -> LineageEvent:
     )
 
 
-def _get_next_lineage_id() -> int:
+def _get_next_lineage_id(db=None) -> int:
     """Get the next available lineage_id."""
-    db = get_db()
+    db = db or get_db()
     result = db.fetchone("SELECT COALESCE(MAX(lineage_id), 0) + 1 FROM lineage")
     return result[0] if result else 1
 
@@ -120,6 +120,7 @@ def log_event(
     hypothesis_id: str | None = None,
     experiment_id: str | None = None,
     parent_lineage_id: int | None = None,
+    db=None,
 ) -> int:
     """
     Log a lineage event to the database.
@@ -146,7 +147,7 @@ def log_event(
             f"Valid types: {sorted(valid_types)}"
         )
 
-    db = get_db()
+    db = db or get_db()
     lineage_id = _get_next_lineage_id()
     timestamp = datetime.now(timezone.utc)
     details_json = json.dumps(details or {})
@@ -185,6 +186,7 @@ def create_child_event(
     event_type: str,
     actor: str,
     details: dict | None = None,
+    db=None,
 ) -> int:
     """
     Create a child event linked to a parent event.
@@ -204,7 +206,7 @@ def create_child_event(
     Raises:
         ValueError: If parent_lineage_id does not exist
     """
-    db = get_db()
+    db = db or get_db()
     parent = db.fetchone(
         "SELECT hypothesis_id, experiment_id FROM lineage WHERE lineage_id = ?",
         (parent_lineage_id,),
@@ -231,6 +233,7 @@ def get_lineage(
     event_type: str | None = None,
     actor: str | None = None,
     limit: int = 100,
+    db=None,
 ) -> list[dict]:
     """
     Query lineage events with optional filters.
@@ -245,7 +248,7 @@ def get_lineage(
     Returns:
         List of event dictionaries ordered by timestamp descending
     """
-    db = get_db()
+    db = db or get_db()
 
     conditions = []
     params = []
@@ -282,7 +285,7 @@ def get_lineage(
     return [_row_to_event(row).to_dict() for row in rows]
 
 
-def get_hypothesis_chain(hypothesis_id: str) -> list[dict]:
+def get_hypothesis_chain(hypothesis_id: str, db=None) -> list[dict]:
     """
     Get the full event chain for a hypothesis from creation to current state.
 
@@ -295,7 +298,7 @@ def get_hypothesis_chain(hypothesis_id: str) -> list[dict]:
     Returns:
         List of event dictionaries in chronological order
     """
-    db = get_db()
+    db = db or get_db()
 
     # Get all events directly related to the hypothesis
     # or related through experiments linked to the hypothesis
@@ -337,6 +340,7 @@ def get_hypothesis_chain(hypothesis_id: str) -> list[dict]:
 def get_recent_events(
     hours: int = 24,
     actor: str | None = None,
+    db=None,
 ) -> list[dict]:
     """
     Get events from the last N hours.
@@ -348,7 +352,7 @@ def get_recent_events(
     Returns:
         List of event dictionaries ordered by timestamp descending
     """
-    db = get_db()
+    db = db or get_db()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     if actor is not None:
@@ -376,6 +380,7 @@ def get_recent_events(
 def get_agent_activity(
     agent_name: str,
     days: int = 7,
+    db=None,
 ) -> list[dict]:
     """
     Get all activity for a specific agent over the last N days.
@@ -388,7 +393,7 @@ def get_agent_activity(
     Returns:
         List of event dictionaries ordered by timestamp descending
     """
-    db = get_db()
+    db = db or get_db()
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Match both 'agent:name' format and just 'name' if it starts with agent:
@@ -438,6 +443,7 @@ def get_deployment_trace(hypothesis_id: str) -> list[dict]:
 def get_events_between(
     start_event_id: int,
     end_event_id: int,
+    db=None,
 ) -> list[dict]:
     """
     Get all events that occurred between two specific events (by timestamp).
@@ -451,7 +457,7 @@ def get_events_between(
     Returns:
         List of event dictionaries in chronological order
     """
-    db = get_db()
+    db = db or get_db()
 
     # Get timestamps for the boundary events
     start = db.fetchone(

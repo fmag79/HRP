@@ -209,9 +209,9 @@ class FeatureCountValidator:
         )
 
 
-def _load_evaluation_count(hypothesis_id: str) -> int:
+def _load_evaluation_count(hypothesis_id: str, db=None) -> int:
     """Load existing evaluation count from database."""
-    db = get_db()
+    db = db or get_db()
     
     with db.connection() as conn:
         result = conn.execute(
@@ -231,9 +231,10 @@ def _log_evaluation(
     override: bool,
     override_reason: str | None,
     metadata: dict[str, Any] | None,
+    db=None,
 ) -> None:
     """Log test set evaluation to database."""
-    db = get_db()
+    db = db or get_db()
 
     # Convert metadata dict to JSON string if present
     metadata_json = json.dumps(metadata) if metadata else None
@@ -275,17 +276,19 @@ class TestSetGuard:
         OverfittingError: If evaluation limit exceeded without explicit override
     """
 
-    def __init__(self, hypothesis_id: str, max_evaluations: int = 3):
+    def __init__(self, hypothesis_id: str, max_evaluations: int = 3, db=None):
         """
         Initialize test set guard.
-        
+
         Args:
             hypothesis_id: Hypothesis ID
             max_evaluations: Maximum allowed evaluations (default 3)
+            db: Optional database connection (uses default if not provided)
         """
         self.hypothesis_id = hypothesis_id
         self.max_evaluations = max_evaluations
-        self._count = _load_evaluation_count(hypothesis_id)
+        self._db = db
+        self._count = _load_evaluation_count(hypothesis_id, db=db)
         
         logger.debug(
             f"TestSetGuard for {hypothesis_id}: "
@@ -337,7 +340,7 @@ class TestSetGuard:
             )
 
         # Log the evaluation
-        _log_evaluation(self.hypothesis_id, override, reason, metadata)
+        _log_evaluation(self.hypothesis_id, override, reason, metadata, db=self._db)
         self._count += 1
 
         try:
@@ -348,9 +351,9 @@ class TestSetGuard:
             raise
 
 
-def _load_trial_count(hypothesis_id: str) -> int:
+def _load_trial_count(hypothesis_id: str, db=None) -> int:
     """Load existing trial count from database."""
-    db = get_db()
+    db = db or get_db()
 
     with db.connection() as conn:
         result = conn.execute(
@@ -386,17 +389,19 @@ class HyperparameterTrialCounter:
         best = counter.get_best_trial()
     """
 
-    def __init__(self, hypothesis_id: str, max_trials: int = 50):
+    def __init__(self, hypothesis_id: str, max_trials: int = 50, db=None):
         """
         Initialize hyperparameter trial counter.
 
         Args:
             hypothesis_id: Hypothesis ID
             max_trials: Maximum allowed trials (default 50)
+            db: Optional database connection (uses default if not provided)
         """
         self.hypothesis_id = hypothesis_id
         self.max_trials = max_trials
-        self._count = _load_trial_count(hypothesis_id)
+        self._db = db
+        self._count = _load_trial_count(hypothesis_id, db=db)
 
         logger.debug(
             f"HyperparameterTrialCounter for {hypothesis_id}: "
@@ -446,7 +451,7 @@ class HyperparameterTrialCounter:
                 f"Already tried {self._count} combinations (limit: {self.max_trials})."
             )
 
-        db = get_db()
+        db = self._db or get_db()
         hp_json = json.dumps(hyperparameters)
 
         with db.connection() as conn:
@@ -488,7 +493,7 @@ class HyperparameterTrialCounter:
         Returns:
             Dictionary with trial details or None if no trials
         """
-        db = get_db()
+        db = self._db or get_db()
 
         query = """
             SELECT model_type, hyperparameters, metric_name, metric_value, fold_index

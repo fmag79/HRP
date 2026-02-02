@@ -122,6 +122,7 @@ class DeploymentPipeline:
         config: DeploymentConfig | None = None,
         registry: ModelRegistry | None = None,
         db_path: str | None = None,
+        db=None,
     ):
         """
         Initialize the deployment pipeline.
@@ -130,10 +131,11 @@ class DeploymentPipeline:
             config: Deployment configuration (uses defaults if None)
             registry: Model registry instance (creates new if None)
             db_path: Optional database path
+            db: Optional database connection (uses default if not provided)
         """
         self.config = config or DeploymentConfig()
         self.registry = registry or ModelRegistry()
-        self._db = get_db(db_path)
+        self._db = db or get_db(db_path)
 
         logger.info(
             f"DeploymentPipeline initialized "

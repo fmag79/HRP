@@ -15,7 +15,6 @@ from loguru import logger
 
 from hrp.agents.base import ResearchAgent
 from hrp.agents.ml_quality_sentinel import AuditSeverity
-from hrp.data.db import get_db
 from hrp.notifications.email import EmailNotifier
 from hrp.research.lineage import EventType
 
@@ -260,9 +259,8 @@ class ValidationAnalyst(ResearchAgent):
 
         # Get hypotheses that passed quality audit
         # Look for recent ML_QUALITY_SENTINEL_AUDIT events with overall_passed=True
-        db = get_db()
         cutoff = datetime.now() - timedelta(days=7)
-        result = db.fetchall(
+        result = self.api.fetchall_readonly(
             """
             SELECT DISTINCT l.hypothesis_id
             FROM lineage l

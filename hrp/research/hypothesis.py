@@ -4,7 +4,7 @@ Hypothesis Registry for HRP.
 Manages research hypotheses through their full lifecycle:
 draft -> testing -> validated/rejected -> deployed
 
-All database access goes through hrp.data.db.get_db().
+Database access via optional db parameter injection (falls back to get_db()).
 """
 
 from __future__ import annotations
@@ -59,14 +59,14 @@ class HypothesisRecord:
         return d
 
 
-def get_next_hypothesis_id() -> str:
+def get_next_hypothesis_id(db=None) -> str:
     """
     Generate the next hypothesis ID in format 'HYP-{year}-{sequence}'.
 
     Example: HYP-2025-001, HYP-2025-002, etc.
     Sequence resets each year.
     """
-    db = get_db()
+    db = db or get_db()
     current_year = datetime.now().year
     prefix = f"HYP-{current_year}-"
 
@@ -118,6 +118,7 @@ def create_hypothesis(
     prediction: str,
     falsification: str,
     actor: str = "user",
+    db=None,
 ) -> str:
     """
     Create a new hypothesis.
@@ -132,7 +133,7 @@ def create_hypothesis(
     Returns:
         The generated hypothesis ID (e.g., 'HYP-2025-001')
     """
-    db = get_db()
+    db = db or get_db()
     hypothesis_id = get_next_hypothesis_id()
 
     query = """
@@ -157,7 +158,7 @@ def create_hypothesis(
     return hypothesis_id
 
 
-def get_hypothesis(hypothesis_id: str) -> dict | None:
+def get_hypothesis(hypothesis_id: str, db=None) -> dict | None:
     """
     Get a hypothesis by ID.
 
@@ -167,7 +168,7 @@ def get_hypothesis(hypothesis_id: str) -> dict | None:
     Returns:
         Dictionary with hypothesis data, or None if not found
     """
-    db = get_db()
+    db = db or get_db()
 
     query = """
         SELECT hypothesis_id, title, thesis, testable_prediction,
@@ -187,6 +188,7 @@ def get_hypothesis(hypothesis_id: str) -> dict | None:
 def list_hypotheses(
     status: str | None = None,
     actor: str | None = None,
+    db=None,
 ) -> list[dict]:
     """
     List hypotheses with optional filters.
@@ -198,7 +200,7 @@ def list_hypotheses(
     Returns:
         List of hypothesis dictionaries
     """
-    db = get_db()
+    db = db or get_db()
 
     query = """
         SELECT hypothesis_id, title, thesis, testable_prediction,
@@ -229,6 +231,7 @@ def update_hypothesis(
     status: str | None = None,
     outcome: str | None = None,
     confidence_score: float | None = None,
+    db=None,
 ) -> bool:
     """
     Update a hypothesis.
@@ -245,7 +248,7 @@ def update_hypothesis(
     Raises:
         ValueError: If status transition is invalid or validation requirements not met
     """
-    db = get_db()
+    db = db or get_db()
 
     # Get current hypothesis
     current = get_hypothesis(hypothesis_id)
@@ -317,7 +320,7 @@ def update_hypothesis(
     return True
 
 
-def delete_hypothesis(hypothesis_id: str) -> bool:
+def delete_hypothesis(hypothesis_id: str, db=None) -> bool:
     """
     Soft delete a hypothesis (sets status to 'deleted').
 
@@ -333,7 +336,7 @@ def delete_hypothesis(hypothesis_id: str) -> bool:
         return False
 
     # Soft delete by setting status
-    db = get_db()
+    db = db or get_db()
     query = """
         UPDATE hypotheses
         SET status = 'deleted', updated_at = CURRENT_TIMESTAMP
@@ -357,6 +360,7 @@ def link_experiment(
     hypothesis_id: str,
     experiment_id: str,
     relationship: str = "primary",
+    db=None,
 ) -> bool:
     """
     Link an experiment to a hypothesis.
@@ -369,7 +373,7 @@ def link_experiment(
     Returns:
         True if linked successfully
     """
-    db = get_db()
+    db = db or get_db()
 
     # Verify hypothesis exists
     hypothesis = get_hypothesis(hypothesis_id)
@@ -398,7 +402,7 @@ def link_experiment(
     return True
 
 
-def get_experiments(hypothesis_id: str) -> list[str]:
+def get_experiments(hypothesis_id: str, db=None) -> list[str]:
     """
     Get all experiment IDs linked to a hypothesis.
 
@@ -408,7 +412,7 @@ def get_experiments(hypothesis_id: str) -> list[str]:
     Returns:
         List of experiment IDs
     """
-    db = get_db()
+    db = db or get_db()
 
     query = """
         SELECT experiment_id
@@ -422,7 +426,7 @@ def get_experiments(hypothesis_id: str) -> list[str]:
     return [row[0] for row in results]
 
 
-def get_experiment_links(hypothesis_id: str) -> list[dict]:
+def get_experiment_links(hypothesis_id: str, db=None) -> list[dict]:
     """
     Get all experiment links with relationship info.
 
@@ -432,7 +436,7 @@ def get_experiment_links(hypothesis_id: str) -> list[dict]:
     Returns:
         List of dicts with experiment_id, relationship, created_at
     """
-    db = get_db()
+    db = db or get_db()
 
     query = """
         SELECT experiment_id, relationship, created_at
@@ -453,7 +457,7 @@ def get_experiment_links(hypothesis_id: str) -> list[dict]:
     ]
 
 
-def validate_hypothesis_status(hypothesis_id: str) -> dict:
+def validate_hypothesis_status(hypothesis_id: str, db=None) -> dict:
     """
     Check if a hypothesis is ready for validation.
 
@@ -513,9 +517,10 @@ def _log_lineage(
     experiment_id: str | None = None,
     actor: str = "system",
     details: dict | None = None,
+    db=None,
 ) -> None:
     """Log an event to the lineage table."""
-    db = get_db()
+    db = db or get_db()
 
     # Convert details dict to JSON string
     import json

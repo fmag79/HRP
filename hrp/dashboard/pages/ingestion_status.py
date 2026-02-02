@@ -10,13 +10,16 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from hrp.data.db import get_db
+from hrp.api.platform import PlatformAPI
+
+def _get_api():
+    return PlatformAPI()
 
 
 @st.cache_data(ttl=300)
 def get_ingestion_logs(limit: int = 20) -> pd.DataFrame:
     """Get recent ingestion log entries."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             log_id,
@@ -32,7 +35,7 @@ def get_ingestion_logs(limit: int = 20) -> pd.DataFrame:
         LIMIT ?
     """
     try:
-        df = db.fetchdf(query, (limit,))
+        df = api.query_readonly(query, (limit,))
         return df
     except Exception:
         # Return empty DataFrame if table doesn't exist or query fails
@@ -45,7 +48,7 @@ def get_ingestion_logs(limit: int = 20) -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def get_data_sources() -> pd.DataFrame:
     """Get configured data sources."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             source_id,
@@ -57,7 +60,7 @@ def get_data_sources() -> pd.DataFrame:
         ORDER BY source_id
     """
     try:
-        df = db.fetchdf(query)
+        df = api.query_readonly(query)
         return df
     except Exception:
         return pd.DataFrame(columns=[
@@ -69,32 +72,32 @@ def get_data_sources() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def get_ingestion_statistics() -> dict[str, Any]:
     """Get summary statistics for ingestion jobs."""
-    db = get_db()
+    api = _get_api()
 
     # Total runs
-    total_result = db.fetchone("SELECT COUNT(*) FROM ingestion_log")
+    total_result = api.fetchone_readonly("SELECT COUNT(*) FROM ingestion_log")
     total_runs = total_result[0] if total_result else 0
 
     # Success count
-    success_result = db.fetchone(
+    success_result = api.fetchone_readonly(
         "SELECT COUNT(*) FROM ingestion_log WHERE status = 'success'"
     )
     success_count = success_result[0] if success_result else 0
 
     # Failed count
-    failed_result = db.fetchone(
+    failed_result = api.fetchone_readonly(
         "SELECT COUNT(*) FROM ingestion_log WHERE status = 'failed'"
     )
     failed_count = failed_result[0] if failed_result else 0
 
     # Total records inserted
-    records_result = db.fetchone(
+    records_result = api.fetchone_readonly(
         "SELECT SUM(records_inserted) FROM ingestion_log WHERE status = 'success'"
     )
     total_records = records_result[0] if records_result and records_result[0] else 0
 
     # Last successful run
-    last_success_result = db.fetchone(
+    last_success_result = api.fetchone_readonly(
         """
         SELECT MAX(completed_at)
         FROM ingestion_log
@@ -116,7 +119,7 @@ def get_ingestion_statistics() -> dict[str, Any]:
 @st.cache_data(ttl=300)
 def get_recent_errors(limit: int = 5) -> pd.DataFrame:
     """Get recent ingestion errors."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             log_id,
@@ -129,7 +132,7 @@ def get_recent_errors(limit: int = 5) -> pd.DataFrame:
         LIMIT ?
     """
     try:
-        df = db.fetchdf(query, (limit,))
+        df = api.query_readonly(query, (limit,))
         return df
     except Exception:
         return pd.DataFrame(columns=[
@@ -140,7 +143,7 @@ def get_recent_errors(limit: int = 5) -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def get_source_statistics() -> pd.DataFrame:
     """Get per-source statistics."""
-    db = get_db()
+    api = _get_api()
     query = """
         SELECT
             source_id,
@@ -154,7 +157,7 @@ def get_source_statistics() -> pd.DataFrame:
         ORDER BY source_id
     """
     try:
-        df = db.fetchdf(query)
+        df = api.query_readonly(query)
         return df
     except Exception:
         return pd.DataFrame(columns=[

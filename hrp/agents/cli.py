@@ -14,7 +14,6 @@ from loguru import logger
 from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob, UniverseUpdateJob
 from hrp.agents.scheduler import IngestionScheduler
 from hrp.api.platform import PlatformAPI
-from hrp.data.db import get_db
 from hrp.data.ingestion.prices import TEST_SYMBOLS
 
 
@@ -108,30 +107,23 @@ def get_job_status(job_id: str | None = None, limit: int = 10) -> list[dict[str,
     Returns:
         List of job execution records
     """
-    db = get_db()
+    from hrp.api.platform import PlatformAPI
+    api = PlatformAPI()
+    logs = api.get_ingestion_logs(job_id=job_id, limit=limit)
 
-    with db.connection() as conn:
-        if job_id:
-            query = """
-                SELECT log_id, source_id, started_at, completed_at, status,
-                       records_fetched, records_inserted, error_message
-                FROM ingestion_log
-                WHERE source_id = ?
-                ORDER BY started_at DESC
-                LIMIT ?
-            """
-            params = (job_id, limit)
-        else:
-            query = """
-                SELECT log_id, source_id, started_at, completed_at, status,
-                       records_fetched, records_inserted, error_message
-                FROM ingestion_log
-                ORDER BY started_at DESC
-                LIMIT ?
-            """
-            params = (limit,)
-
-        results = conn.execute(query, params).fetchall()
+    results = [
+        (
+            log["log_id"],
+            log["source_id"],
+            log["started_at"],
+            log["completed_at"],
+            log["status"],
+            log["records_fetched"],
+            log["records_inserted"],
+            log["error_message"],
+        )
+        for log in logs
+    ]
 
     if not results:
         logger.info(f"No job history found{f' for {job_id}' if job_id else ''}")

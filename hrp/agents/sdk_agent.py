@@ -16,7 +16,6 @@ from loguru import logger
 
 from hrp.agents.research_agents import ResearchAgent
 from hrp.api.platform import PlatformAPI
-from hrp.data.db import get_db
 from hrp.research.lineage import EventType, log_event
 
 
@@ -302,17 +301,7 @@ class SDKAgent(ResearchAgent):
     def _get_daily_token_usage(self) -> int:
         """Get total tokens used today by this agent type."""
         try:
-            db = get_db()
-            result = db.fetchone(
-                """
-                SELECT COALESCE(SUM(input_tokens + output_tokens), 0)
-                FROM agent_token_usage
-                WHERE agent_type = ?
-                  AND DATE(timestamp) = DATE('now')
-                """,
-                (self.__class__.__name__,),
-            )
-            return result[0] if result else 0
+            return self.api.get_daily_token_usage(self.__class__.__name__)
         except Exception:
             return 0
 
@@ -385,35 +374,16 @@ class SDKAgent(ResearchAgent):
             Checkpoint state dict or None if no checkpoint found
         """
         try:
-            db = get_db()
+            checkpoint = self.api.resume_agent_checkpoint(
+                self.__class__.__name__, run_id
+            )
 
-            if run_id:
-                result = db.fetchone(
-                    """
-                    SELECT state_json, input_tokens, output_tokens
-                    FROM agent_checkpoints
-                    WHERE agent_type = ? AND run_id = ? AND completed = 0
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    (self.__class__.__name__, run_id),
-                )
-            else:
-                result = db.fetchone(
-                    """
-                    SELECT state_json, input_tokens, output_tokens
-                    FROM agent_checkpoints
-                    WHERE agent_type = ? AND completed = 0
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    (self.__class__.__name__,),
-                )
-
-            if result is None:
+            if checkpoint is None:
                 return None
 
-            state_json, input_tokens, output_tokens = result
+            state_json = checkpoint["state_json"]
+            input_tokens = checkpoint["input_tokens"]
+            output_tokens = checkpoint["output_tokens"]
             state = json.loads(state_json)
 
             # Restore token usage

@@ -103,6 +103,7 @@ class ModelPredictor:
         model_version: str | None = None,
         registry: ModelRegistry | None = None,
         db_path: str | None = None,
+        db=None,
     ):
         """
         Initialize the model predictor.
@@ -112,11 +113,12 @@ class ModelPredictor:
             model_version: Specific version (None for production)
             registry: Model registry instance (creates new if None)
             db_path: Optional database path
+            db: Optional database connection (uses default if not provided)
         """
         self.model_name = model_name
         self.model_version = model_version
         self.registry = registry or ModelRegistry()
-        self._db = get_db(db_path)
+        self._db = db or get_db(db_path)
         self._model = None
         self._model_metadata = {}
 

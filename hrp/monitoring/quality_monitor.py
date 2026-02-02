@@ -294,10 +294,10 @@ class DataQualityMonitor:
 
         # Data freshness
         try:
-            from hrp.data.db import get_db
+            from hrp.api.platform import PlatformAPI
 
-            db = get_db()
-            result = db.fetchone("SELECT MAX(date) FROM prices")
+            api = PlatformAPI()
+            result = api.fetchone_readonly("SELECT MAX(date) FROM prices")
             if result and result[0]:
                 last_date = result[0]
                 if isinstance(last_date, str):
@@ -385,10 +385,10 @@ class DataQualityMonitor:
 
         # Data freshness alert
         try:
-            from hrp.data.db import get_db
+            from hrp.api.platform import PlatformAPI
 
-            db = get_db()
-            result = db.fetchone("SELECT MAX(date) FROM prices")
+            api = PlatformAPI()
+            result = api.fetchone_readonly("SELECT MAX(date) FROM prices")
             if result and result[0]:
                 last_date = result[0]
                 if isinstance(last_date, str):

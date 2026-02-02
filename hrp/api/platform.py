@@ -2139,3 +2139,291 @@ class PlatformAPI:
             return self._db.fetchdf(query, params)
         except Exception:
             return pd.DataFrame()
+
+    # =========================================================================
+    # Read-Only Query Access
+    # =========================================================================
+
+    def query_readonly(self, query: str, params: tuple = ()) -> pd.DataFrame:
+        """
+        Execute a read-only SQL query and return results as DataFrame.
+
+        Centralizes DB access for modules that need ad-hoc read queries
+        (e.g., dashboard, monitoring). Only SELECT statements are allowed.
+
+        Args:
+            query: SQL SELECT query
+            params: Query parameters
+
+        Returns:
+            DataFrame with query results
+
+        Raises:
+            ValueError: If query is not a SELECT statement
+        """
+        stripped = query.strip().upper()
+        if not stripped.startswith("SELECT") and not stripped.startswith("WITH"):
+            raise ValueError("query_readonly only accepts SELECT/WITH statements")
+        return self._db.fetchdf(query, params)
+
+    def fetchone_readonly(self, query: str, params: tuple = ()) -> Any:
+        """
+        Execute a read-only SQL query and return a single row.
+
+        Args:
+            query: SQL SELECT query
+            params: Query parameters
+
+        Returns:
+            Single row tuple or None
+
+        Raises:
+            ValueError: If query is not a SELECT statement
+        """
+        stripped = query.strip().upper()
+        if not stripped.startswith("SELECT") and not stripped.startswith("WITH"):
+            raise ValueError("fetchone_readonly only accepts SELECT/WITH statements")
+        return self._db.fetchone(query, params)
+
+    def fetchall_readonly(self, query: str, params: tuple = ()) -> list:
+        """
+        Execute a read-only SQL query and return all rows.
+
+        Args:
+            query: SQL SELECT query
+            params: Query parameters
+
+        Returns:
+            List of row tuples
+
+        Raises:
+            ValueError: If query is not a SELECT statement
+        """
+        stripped = query.strip().upper()
+        if not stripped.startswith("SELECT") and not stripped.startswith("WITH"):
+            raise ValueError("fetchall_readonly only accepts SELECT/WITH statements")
+        return self._db.fetchall(query, params)
+
+    def execute_write(self, query: str, params: tuple = ()) -> None:
+        """
+        Execute a write SQL statement (INSERT, UPDATE, DELETE).
+
+        Centralizes write access for implementation modules that need
+        direct DB writes (e.g., overfitting guards, deployment logging).
+
+        Args:
+            query: SQL write statement
+            params: Query parameters
+        """
+        self._db.execute(query, params)
+
+    # =========================================================================
+    # Extended Data Operations
+    # =========================================================================
+
+    def get_features_range(
+        self,
+        symbols: List[str],
+        features: List[str],
+        start_date: date,
+        end_date: date,
+        target: Optional[str] = None,
+        version: str = "v1",
+    ) -> pd.DataFrame:
+        """
+        Get feature values for symbols over a date range.
+
+        Unlike get_features() which returns a single date, this returns
+        a full time series suitable for ML training.
+
+        Args:
+            symbols: List of ticker symbols
+            features: List of feature names
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive)
+            target: Optional target variable to include
+            version: Feature version (default 'v1')
+
+        Returns:
+            DataFrame with MultiIndex (date, symbol) and features as columns
+        """
+        if not symbols:
+            raise ValueError("symbols list cannot be empty")
+        if not features:
+            raise ValueError("features list cannot be empty")
+
+        all_features = list(set(features + ([target] if target else [])))
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
+        features_str = _sanitize_sql_list(all_features, "feature name")
+
+        query = f"""
+            SELECT symbol, date, feature_name, value
+            FROM features
+            WHERE symbol IN ({symbols_str})
+              AND date >= ?
+              AND date <= ?
+              AND feature_name IN ({features_str})
+            ORDER BY date, symbol, feature_name
+        """
+
+        df = self._db.fetchdf(query, (start_date, end_date))
+
+        if df.empty:
+            logger.warning(
+                f"No features found for {symbols} from {start_date} to {end_date}"
+            )
+            index = pd.MultiIndex.from_product(
+                [pd.DatetimeIndex([]), symbols],
+                names=["date", "symbol"],
+            )
+            return pd.DataFrame(index=index, columns=all_features)
+
+        df["date"] = pd.to_datetime(df["date"])
+
+        result = df.pivot_table(
+            index=["date", "symbol"],
+            columns="feature_name",
+            values="value",
+            aggfunc="first",
+        )
+        result.columns.name = None
+
+        logger.debug(
+            f"Retrieved {len(result)} feature rows for {len(symbols)} symbols"
+        )
+        return result
+
+    def get_symbol_sectors(self, symbols: List[str]) -> pd.Series:
+        """
+        Get sector mapping for symbols.
+
+        Args:
+            symbols: List of ticker symbols
+
+        Returns:
+            Series mapping symbol -> sector
+        """
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
+        try:
+            result = self._db.fetchdf(
+                f"SELECT symbol, sector FROM symbols WHERE symbol IN ({symbols_str})"
+            )
+            if result.empty:
+                return pd.Series({s: "Unknown" for s in symbols})
+            return result.set_index("symbol")["sector"]
+        except Exception:
+            return pd.Series({s: "Unknown" for s in symbols})
+
+    def get_available_symbols(self) -> List[str]:
+        """
+        Get all distinct symbols that have price data.
+
+        Returns:
+            Sorted list of ticker symbols
+        """
+        result = self._db.fetchall(
+            "SELECT DISTINCT symbol FROM prices ORDER BY symbol"
+        )
+        return [row[0] for row in result]
+
+    def get_ingestion_logs(
+        self,
+        job_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict]:
+        """
+        Get ingestion log entries.
+
+        Args:
+            job_id: Optional filter by job/source ID
+            limit: Maximum number of results
+
+        Returns:
+            List of ingestion log dictionaries
+        """
+        query = """
+            SELECT log_id, source_id, started_at, completed_at, status,
+                   records_fetched, records_inserted, error_message
+            FROM ingestion_log
+        """
+        params: List[Any] = []
+
+        if job_id:
+            query += " WHERE source_id = ?"
+            params.append(job_id)
+
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+
+        result = self._db.fetchall(query, tuple(params))
+        return [
+            {
+                "log_id": row[0],
+                "source_id": row[1],
+                "started_at": row[2],
+                "completed_at": row[3],
+                "status": row[4],
+                "records_fetched": row[5],
+                "records_inserted": row[6],
+                "error_message": row[7],
+            }
+            for row in result
+        ]
+
+    def get_daily_token_usage(self, agent_type: str) -> int:
+        """
+        Get total token usage for an agent type today.
+
+        Args:
+            agent_type: Agent type identifier
+
+        Returns:
+            Total tokens (input + output) used today
+        """
+        result = self._db.fetchone(
+            """
+            SELECT COALESCE(SUM(input_tokens + output_tokens), 0)
+            FROM agent_token_usage
+            WHERE agent_type = ? AND DATE(timestamp) = DATE('now')
+            """,
+            (agent_type,),
+        )
+        return result[0] if result else 0
+
+    def resume_agent_checkpoint(
+        self,
+        agent_type: str,
+        run_id: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """
+        Get the latest incomplete checkpoint for an agent.
+
+        Args:
+            agent_type: Agent type identifier
+            run_id: Optional specific run ID
+
+        Returns:
+            Dict with state_json, input_tokens, output_tokens or None
+        """
+        query = """
+            SELECT state_json, input_tokens, output_tokens
+            FROM agent_checkpoints
+            WHERE agent_type = ? AND completed = 0
+        """
+        params: list = [agent_type]
+
+        if run_id:
+            query += " AND run_id = ?"
+            params.append(run_id)
+
+        query += " ORDER BY created_at DESC LIMIT 1"
+
+        result = self._db.fetchone(query, tuple(params))
+        if not result:
+            return None
+
+        return {
+            "state_json": result[0],
+            "input_tokens": result[1],
+            "output_tokens": result[2],
+        }
