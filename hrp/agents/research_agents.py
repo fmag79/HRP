@@ -4204,26 +4204,25 @@ class QuantDeveloper(ResearchAgent):
         Returns:
             Trained model object, or None if training fails
         """
+        from hrp.ml.models import MLConfig
         from hrp.ml.training import train_model
 
         try:
-            # Use train_date = end_date for "full history" training
-            # (uses all available data up to end_date)
-            result = train_model(
+            config = MLConfig(
                 model_type=ml_config["model_type"],
                 target=ml_config["target"],
                 features=ml_config["features"],
-                symbols=symbols,
                 train_start=start_date,
                 train_end=end_date,
-                validation_start=end_date,  # Same as train_end for full history
+                validation_start=end_date,
                 validation_end=end_date,
                 test_start=end_date,
                 test_end=end_date,
-                hyperparameters=ml_config["hyperparameters"],
+                hyperparameters=ml_config.get("hyperparameters", {}),
             )
+            result = train_model(config=config, symbols=symbols)
 
-            return result.get("model")
+            return result.model
 
         except Exception as e:
             logger.error(f"Failed to train model for backtest: {e}")
@@ -4281,6 +4280,10 @@ class QuantDeveloper(ResearchAgent):
                 train_lookback=252,
                 retrain_frequency=21,
             )
+
+            # Ensure signals is a DataFrame
+            if isinstance(signals, pd.Series):
+                signals = signals.to_frame()
 
             # Limit to max_positions
             if len(signals.columns) > self.max_positions:

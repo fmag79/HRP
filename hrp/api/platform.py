@@ -591,7 +591,7 @@ class PlatformAPI:
         query = """
             SELECT hypothesis_id, title, thesis, testable_prediction,
                    falsification_criteria, status, created_at, created_by,
-                   updated_at, outcome, confidence_score
+                   updated_at, outcome, confidence_score, metadata
             FROM hypotheses
             WHERE hypothesis_id = ?
         """
@@ -600,6 +600,13 @@ class PlatformAPI:
 
         if not row:
             return None
+
+        metadata_raw = row[11]
+        if isinstance(metadata_raw, str):
+            try:
+                metadata_raw = json.loads(metadata_raw)
+            except (json.JSONDecodeError, TypeError):
+                metadata_raw = {}
 
         return {
             "hypothesis_id": row[0],
@@ -613,6 +620,7 @@ class PlatformAPI:
             "updated_at": row[8],
             "outcome": row[9],
             "confidence_score": row[10],
+            "metadata": metadata_raw or {},
         }
 
     # =========================================================================
