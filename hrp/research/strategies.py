@@ -222,7 +222,8 @@ def generate_ml_predicted_signals(
 
     # Target: forward 20-day returns (for training)
     # We'll compute returns from prices directly
-    returns_20d = close.pct_change(20).shift(-20)  # Forward returns
+    target_horizon = 20
+    returns_20d = close.pct_change(target_horizon).shift(-target_horizon)  # Forward returns
 
     # Initialize predictions DataFrame
     predictions = pd.DataFrame(np.nan, index=dates, columns=symbols)
@@ -235,11 +236,15 @@ def generate_ml_predicted_signals(
     for idx in rebalance_indices:
         current_date = dates[idx]
 
-        # Training window: from idx - train_lookback to idx - 1
+        # Training window: from idx - train_lookback to idx - 1 - target_horizon
+        # We shift train_end back by target_horizon because the forward return
+        # target for date t requires knowing prices at t + target_horizon.
+        # Without this shift, training uses targets that peek into the future
+        # relative to the prediction date (idx).
         train_start_idx = idx - train_lookback
-        train_end_idx = idx - 1
+        train_end_idx = idx - 1 - target_horizon
 
-        if train_start_idx < 0:
+        if train_start_idx < 0 or train_end_idx < train_start_idx:
             continue
 
         train_dates = dates[train_start_idx:train_end_idx + 1]
