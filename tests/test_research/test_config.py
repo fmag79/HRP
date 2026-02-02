@@ -105,10 +105,21 @@ class TestCostModel:
         assert config.slippage_bps == 5.0
 
     def test_total_cost_pct(self):
-        """Test total_cost_pct calculation."""
+        """Test total_cost_pct includes spread, slippage, and commission."""
         config = CostModel(spread_bps=10.0, slippage_bps=5.0)
-        # (10 + 5) / 10000 = 0.0015 = 0.15%
-        assert config.total_cost_pct() == 0.0015
+        cost = config.total_cost_pct()
+        # Spread + slippage = (10 + 5) / 10000 = 0.0015
+        # Commission = 0.005 / 50.0 = 0.0001
+        # Total = 0.0016
+        assert cost > 0.0015  # Must be higher than spread+slippage alone
+        assert cost == 0.0015 + 0.005 / 50.0  # 0.0016
+
+    def test_total_cost_pct_with_custom_price(self):
+        """Test total_cost_pct with explicit share price."""
+        config = CostModel(spread_bps=10.0, slippage_bps=5.0)
+        # With a $100 share price, commission = 0.005/100 = 0.00005
+        cost = config.total_cost_pct(avg_share_price=100.0)
+        assert cost == 0.0015 + 0.005 / 100.0
 
 
 class TestBacktestConfig:
