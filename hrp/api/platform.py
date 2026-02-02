@@ -6,6 +6,7 @@ All consumers (dashboard, MCP, agents) use this API - no direct database access.
 """
 
 import json
+import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Union
 
@@ -16,6 +17,30 @@ from hrp.data.db import get_db
 from hrp.exceptions import NotFoundError, PermissionError, PlatformAPIError
 from hrp.research.config import BacktestConfig, BacktestResult
 from hrp.api.validators import Validator
+
+# Strict allowlist pattern for SQL-safe identifiers (ticker symbols, feature names, etc.)
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_./-]+$")
+
+
+def _sanitize_sql_list(values: List[str], label: str = "value") -> str:
+    """
+    Build a safe SQL IN-clause string from a list of identifiers.
+
+    Validates each value against a strict allowlist pattern to prevent
+    SQL injection. Only alphanumeric chars, dots, hyphens, underscores,
+    and forward slashes are allowed.
+
+    Raises:
+        ValueError: If any value contains disallowed characters
+    """
+    for v in values:
+        if not _SAFE_IDENTIFIER_RE.match(v):
+            raise ValueError(
+                f"Invalid {label}: {v!r}. "
+                f"Only alphanumeric characters, dots, hyphens, underscores, "
+                f"and forward slashes are allowed."
+            )
+    return ",".join(f"'{v}'" for v in values)
 
 
 class PlatformAPI:
@@ -109,7 +134,7 @@ class PlatformAPI:
 
         self._validate_symbols_in_universe(symbols)
 
-        symbols_str = ",".join(f"'{s}'" for s in symbols)
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
         query = f"""
             SELECT symbol, date, open, high, low, close, adj_close, volume
             FROM prices
@@ -157,8 +182,8 @@ class PlatformAPI:
 
         self._validate_symbols_in_universe(symbols, as_of_date)
 
-        symbols_str = ",".join(f"'{s}'" for s in symbols)
-        features_str = ",".join(f"'{f}'" for f in features)
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
+        features_str = _sanitize_sql_list(features, "feature name")
 
         query = f"""
             SELECT symbol, feature_name, value
@@ -220,8 +245,8 @@ class PlatformAPI:
         Validator.not_future(as_of_date, "as_of_date")
 
         # Build query with parameterized values for symbols and metrics
-        symbols_str = ",".join(f"'{s}'" for s in symbols)
-        metrics_str = ",".join(f"'{m}'" for m in metrics)
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
+        metrics_str = _sanitize_sql_list(metrics, "metric")
 
         # Use window function to get the most recent report for each symbol/metric
         # where report_date <= as_of_date
@@ -309,7 +334,7 @@ class PlatformAPI:
         if not symbols:
             raise ValueError("symbols list cannot be empty")
 
-        symbols_str = ",".join(f"'{s}'" for s in symbols)
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
         query = f"""
             SELECT symbol, date, action_type, factor, source
             FROM corporate_actions
