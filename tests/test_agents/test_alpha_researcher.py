@@ -634,7 +634,7 @@ class TestResearchNote:
         # File content should include hypothesis info
         written_content = mock_file.write.call_args[0][0]
         assert "HYP-2025-001" in written_content
-        assert "Alpha Researcher Report" in written_content
+        assert "Alpha Researcher" in written_content
 
     def test_skips_research_note_when_disabled(self):
         """Should not write research note when disabled."""

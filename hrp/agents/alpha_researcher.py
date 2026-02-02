@@ -255,7 +255,7 @@ class AlphaResearcher(SDKAgent):
         # Write research note if configured
         research_note_path = None
         if isinstance(self.config, AlphaResearcherConfig) and self.config.write_research_note:
-            research_note_path = self._write_research_note()
+            research_note_path = self._write_research_note(strategies_generated=strategies_generated)
 
         # Log completion event (NEW)
         log_event(
@@ -575,7 +575,7 @@ Respond with a JSON object containing:
             },
         )
 
-    def _write_research_note(self) -> str | None:
+    def _write_research_note(self, strategies_generated: list[str] | None = None) -> str | None:
         """Write research note to docs/research/."""
         if not self._analyses:
             return None
@@ -598,23 +598,34 @@ Respond with a JSON object containing:
         today = date.today().isoformat()
         promoted = sum(1 for a in self._analyses if a.status_updated)
         deferred = len(self._analyses) - promoted
+        is_generation_run = bool(strategies_generated)
+
+        if is_generation_run:
+            slug = "02-alpha-researcher-generation"
+            title = "Alpha Researcher — Strategy Generation"
+        else:
+            slug = "02-alpha-researcher-review"
+            title = "Alpha Researcher — Hypothesis Review"
 
         parts: list[str] = []
 
         # ── Header ──
         parts.append(render_header(
-            title="Alpha Researcher Report",
+            title=title,
             report_type="agent-execution",
             date_str=today,
         ))
 
         # ── KPI Dashboard ──
-        parts.append(render_kpi_dashboard([
+        kpis = [
             {"icon": "📋", "label": "Reviewed", "value": len(self._analyses), "detail": "hypotheses"},
             {"icon": "✅", "label": "Promoted", "value": promoted, "detail": "to testing"},
             {"icon": "⏸️", "label": "Deferred", "value": deferred, "detail": "needs work"},
             {"icon": "🪙", "label": "Cost", "value": f"${self.token_usage.estimated_cost_usd:.4f}", "detail": "tokens"},
-        ]))
+        ]
+        if is_generation_run:
+            kpis.insert(3, {"icon": "🧬", "label": "Strategies", "value": len(strategies_generated), "detail": "generated"})
+        parts.append(render_kpi_dashboard(kpis))
 
         # ── Summary table ──
         rows = []
@@ -649,6 +660,13 @@ Respond with a JSON object containing:
 
             parts.append("---\n")
 
+        # ── Strategies Generated (generation runs only) ──
+        if is_generation_run:
+            parts.append(render_section_divider("🧬 Strategies Generated"))
+            for name in strategies_generated:
+                parts.append(f"- {name}")
+            parts.append("")
+
         # ── Footer ──
         parts.append(render_footer(
             agent_name="alpha-researcher",
@@ -661,7 +679,7 @@ Respond with a JSON object containing:
         # Write to file
         from hrp.agents.output_paths import research_note_path
 
-        filepath = str(research_note_path("02-alpha-researcher"))
+        filepath = str(research_note_path(slug))
 
         try:
             with open(filepath, "w") as f:
