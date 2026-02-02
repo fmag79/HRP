@@ -139,7 +139,8 @@ class TestRiskManagerExecute:
     def test_execute_no_hypotheses(self, mock_api_class):
         """Test execute returns early when no hypotheses to assess."""
         mock_api = Mock()
-        mock_api.execute.return_value.fetchdf.return_value.to_dict.return_value = []
+        mock_api.list_hypotheses_with_metadata.return_value = []
+        mock_api.get_paper_portfolio.return_value = []
         mock_api_class.return_value = mock_api
 
         agent = RiskManager()
@@ -152,37 +153,21 @@ class TestRiskManagerExecute:
     def test_execute_with_hypotheses(self, mock_api_class, tmp_path):
         """Test execute processes hypotheses."""
         mock_api = Mock()
-        mock_db = Mock()
 
-        # Mock fetchdf for _get_hypotheses_to_assess
-        mock_hypotheses_df = Mock()
-        mock_hypotheses_df.empty = False
-        mock_hypotheses_df.to_dict.return_value = [
+        # Mock list_hypotheses_with_metadata for _get_hypotheses_to_assess
+        mock_api.list_hypotheses_with_metadata.return_value = [
             {
                 "hypothesis_id": "HYP-001",
                 "title": "Test Strategy",
                 "thesis": "Momentum works",
                 "status": "validated",
-                "metadata": '{"validation_analyst_review": {"sharpe": 1.0, "max_drawdown": 0.15}}',
+                "metadata": {"validation_analyst_review": {"sharpe": 1.0, "max_drawdown": 0.15}},
             }
         ]
 
-        mock_portfolio_df = Mock()
-        mock_portfolio_df.iloc = [{"num_positions": 0, "total_weight": 0.0}]
-        mock_portfolio_df.empty = True  # No existing portfolio
+        # Mock get_paper_portfolio for _calculate_portfolio_impact
+        mock_api.get_paper_portfolio.return_value = []
 
-        call_count = 0
-
-        def fetchdf_side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return mock_hypotheses_df
-            return mock_portfolio_df
-
-        mock_db.fetchdf.side_effect = fetchdf_side_effect
-        mock_db.execute.return_value.fetchdf.return_value = mock_portfolio_df
-        mock_api._db = mock_db
         mock_api_class.return_value = mock_api
 
         # Use tmp_path for research note output
@@ -354,11 +339,10 @@ class TestRiskManagerCalculatePortfolioImpact:
     def test_calculate_impact_existing_positions(self, mock_api_class):
         """Test portfolio impact calculation with existing positions."""
         mock_api = Mock()
-        # Create a mock DataFrame with iloc that returns a dict
-        mock_row = {"num_positions": 5, "total_weight": 0.25}
-        mock_df = Mock()
-        mock_df.iloc = [mock_row]  # iloc[0] will access the first element
-        mock_api._db.execute.return_value.fetchdf.return_value = mock_df
+        # Mock get_paper_portfolio to return existing positions
+        mock_api.get_paper_portfolio.return_value = [
+            {"hypothesis_id": f"HYP-{i:03d}", "weight": 0.05} for i in range(5)
+        ]
         mock_api_class.return_value = mock_api
 
         agent = RiskManager()

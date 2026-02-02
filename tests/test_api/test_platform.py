@@ -1901,3 +1901,444 @@ class TestPlatformAPIQualityAlerts:
 
         # Must NOT call the nonexistent send_quality_alert
         mock_notifier.send_quality_alert.assert_not_called()
+
+
+# =============================================================================
+# Tests for New API Methods (API-First Architecture Enforcement)
+# =============================================================================
+
+
+@pytest.fixture
+def cio_api(test_api):
+    """Create CIO-related tables that are added via migration, not base schema."""
+    test_api._db.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_cio_decisions_id START 1
+    """)
+    test_api._db.execute("""
+        CREATE TABLE IF NOT EXISTS cio_decisions (
+            id INTEGER PRIMARY KEY DEFAULT nextval('seq_cio_decisions_id'),
+            decision_id VARCHAR UNIQUE,
+            report_date DATE,
+            hypothesis_id VARCHAR,
+            decision VARCHAR,
+            score_total DECIMAL(4, 2),
+            score_statistical DECIMAL(4, 2),
+            score_risk DECIMAL(4, 2),
+            score_economic DECIMAL(4, 2),
+            score_cost DECIMAL(4, 2),
+            rationale TEXT,
+            approved BOOLEAN DEFAULT FALSE,
+            approved_by VARCHAR,
+            approved_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    test_api._db.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_paper_portfolio_id START 1
+    """)
+    test_api._db.execute("""
+        CREATE TABLE IF NOT EXISTS paper_portfolio (
+            id INTEGER PRIMARY KEY DEFAULT nextval('seq_paper_portfolio_id'),
+            hypothesis_id VARCHAR NOT NULL UNIQUE,
+            weight DECIMAL(5, 4),
+            entry_price DECIMAL(10, 4),
+            entry_date DATE,
+            current_price DECIMAL(10, 4),
+            unrealized_pnl DECIMAL(10, 2),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    test_api._db.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_paper_trades_id START 1
+    """)
+    test_api._db.execute("""
+        CREATE TABLE IF NOT EXISTS paper_portfolio_trades (
+            id INTEGER PRIMARY KEY DEFAULT nextval('seq_paper_trades_id'),
+            hypothesis_id VARCHAR,
+            action VARCHAR,
+            weight_before DECIMAL(5, 4),
+            weight_after DECIMAL(5, 4),
+            price DECIMAL(10, 4),
+            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    return test_api
+
+
+class TestCIOPaperPortfolioAPI:
+    """Tests for CIO decision and paper portfolio API methods."""
+
+    def test_log_cio_decision(self, cio_api):
+        """log_cio_decision should insert a CIO decision and return a decision_id."""
+        decision_id = cio_api.log_cio_decision(
+            hypothesis_id="HYP-2026-001",
+            decision="APPROVE",
+            score_total=7.5,
+            score_statistical=8.0,
+            score_risk=7.0,
+            score_economic=8.0,
+            score_cost=7.0,
+            rationale="Strong statistical evidence with acceptable risk.",
+        )
+
+        assert decision_id.startswith("CIO-")
+        assert len(decision_id) > 10
+
+        # Verify it was inserted
+        row = cio_api._db.fetchone(
+            "SELECT hypothesis_id, decision, score_total FROM cio_decisions WHERE decision_id = ?",
+            (decision_id,),
+        )
+        assert row is not None
+        assert row[0] == "HYP-2026-001"
+        assert row[1] == "APPROVE"
+        assert row[2] == 7.5
+
+    def test_log_cio_decision_rounds_scores(self, cio_api):
+        """log_cio_decision should round scores to 2 decimal places."""
+        decision_id = cio_api.log_cio_decision(
+            hypothesis_id="HYP-2026-002",
+            decision="REJECT",
+            score_total=3.456789,
+            score_statistical=2.111111,
+            score_risk=4.999999,
+            score_economic=3.333333,
+            score_cost=2.777777,
+            rationale="Weak signal.",
+        )
+
+        row = cio_api._db.fetchone(
+            "SELECT score_total, score_statistical FROM cio_decisions WHERE decision_id = ?",
+            (decision_id,),
+        )
+        assert float(row[0]) == 3.46
+        assert float(row[1]) == 2.11
+
+    def test_add_paper_position(self, cio_api):
+        """add_paper_position should insert into paper_portfolio."""
+        cio_api.add_paper_position(
+            hypothesis_id="HYP-2026-001",
+            weight=0.05,
+            entry_price=150.0,
+        )
+
+        row = cio_api._db.fetchone(
+            "SELECT weight, entry_price FROM paper_portfolio WHERE hypothesis_id = ?",
+            ("HYP-2026-001",),
+        )
+        assert row is not None
+        assert float(row[0]) == 0.05
+        assert float(row[1]) == 150.0
+
+    def test_remove_paper_position(self, cio_api):
+        """remove_paper_position should delete from paper_portfolio."""
+        cio_api.add_paper_position("HYP-2026-001", 0.05, 150.0)
+        cio_api.remove_paper_position("HYP-2026-001")
+
+        row = cio_api._db.fetchone(
+            "SELECT * FROM paper_portfolio WHERE hypothesis_id = ?",
+            ("HYP-2026-001",),
+        )
+        assert row is None
+
+    def test_log_paper_trade(self, cio_api):
+        """log_paper_trade should insert into paper_portfolio_trades."""
+        cio_api.log_paper_trade(
+            hypothesis_id="HYP-2026-001",
+            action="ADD",
+            weight_before=0.0,
+            weight_after=0.05,
+            price=150.0,
+        )
+
+        row = cio_api._db.fetchone(
+            "SELECT action, weight_before, weight_after, price FROM paper_portfolio_trades WHERE hypothesis_id = ?",
+            ("HYP-2026-001",),
+        )
+        assert row is not None
+        assert row[0] == "ADD"
+        assert float(row[1]) == 0.0
+        assert float(row[2]) == 0.05
+        assert float(row[3]) == 150.0
+
+    def test_get_paper_portfolio(self, cio_api):
+        """get_paper_portfolio should return all positions."""
+        cio_api.add_paper_position("HYP-2026-001", 0.05, 150.0)
+        cio_api.add_paper_position("HYP-2026-002", 0.10, 250.0)
+
+        positions = cio_api.get_paper_portfolio()
+
+        assert len(positions) == 2
+        assert all("hypothesis_id" in p for p in positions)
+        assert all("weight" in p for p in positions)
+        assert all("entry_price" in p for p in positions)
+
+    def test_get_paper_portfolio_empty(self, cio_api):
+        """get_paper_portfolio should return empty list when no positions."""
+        positions = cio_api.get_paper_portfolio()
+        assert positions == []
+
+
+class TestAgentInfrastructureAPI:
+    """Tests for agent token usage and checkpoint API methods."""
+
+    def test_log_token_usage(self, test_api):
+        """log_token_usage should insert token usage record."""
+        test_api.log_token_usage(
+            agent_type="SignalScientist",
+            run_id="run-001",
+            input_tokens=1000,
+            output_tokens=500,
+        )
+
+        row = test_api._db.fetchone(
+            "SELECT agent_type, input_tokens, output_tokens FROM agent_token_usage WHERE run_id = ?",
+            ("run-001",),
+        )
+        assert row is not None
+        assert row[0] == "SignalScientist"
+        assert row[1] == 1000
+        assert row[2] == 500
+
+    def test_save_agent_checkpoint(self, test_api):
+        """save_agent_checkpoint should upsert a checkpoint."""
+        test_api.save_agent_checkpoint(
+            agent_type="MLScientist",
+            run_id="run-002",
+            state_json='{"step": 1}',
+            input_tokens=500,
+            output_tokens=200,
+            completed=False,
+        )
+
+        row = test_api._db.fetchone(
+            "SELECT state_json, completed FROM agent_checkpoints WHERE run_id = ?",
+            ("run-002",),
+        )
+        assert row is not None
+        assert row[0] == '{"step": 1}'
+        assert row[1] == False
+
+    def test_save_agent_checkpoint_upsert(self, test_api):
+        """save_agent_checkpoint should update existing checkpoint."""
+        test_api.save_agent_checkpoint(
+            agent_type="MLScientist",
+            run_id="run-003",
+            state_json='{"step": 1}',
+            input_tokens=500,
+            output_tokens=200,
+        )
+        test_api.save_agent_checkpoint(
+            agent_type="MLScientist",
+            run_id="run-003",
+            state_json='{"step": 2}',
+            input_tokens=1000,
+            output_tokens=400,
+        )
+
+        row = test_api._db.fetchone(
+            "SELECT state_json, input_tokens FROM agent_checkpoints WHERE run_id = ?",
+            ("run-003",),
+        )
+        assert row[0] == '{"step": 2}'
+        assert row[1] == 1000
+
+    def test_complete_agent_checkpoint(self, test_api):
+        """complete_agent_checkpoint should mark checkpoint as completed."""
+        test_api.save_agent_checkpoint(
+            agent_type="MLScientist",
+            run_id="run-004",
+            state_json='{"step": 3}',
+            input_tokens=500,
+            output_tokens=200,
+        )
+
+        test_api.complete_agent_checkpoint(
+            agent_type="MLScientist",
+            run_id="run-004",
+        )
+
+        row = test_api._db.fetchone(
+            "SELECT completed FROM agent_checkpoints WHERE run_id = ?",
+            ("run-004",),
+        )
+        assert row[0] == True
+
+
+@pytest.fixture
+def ingestion_api(test_api):
+    """Create data_sources entries needed for ingestion_log FK constraints."""
+    test_api._db.execute("""
+        INSERT INTO data_sources (source_id, source_type, api_name, status)
+        VALUES
+            ('prices', 'market_data', 'yfinance', 'active'),
+            ('features', 'computed', 'internal', 'active')
+        ON CONFLICT DO NOTHING
+    """)
+    return test_api
+
+
+class TestIngestionLogAPI:
+    """Tests for ingestion log API methods."""
+
+    def test_log_job_start(self, ingestion_api):
+        """log_job_start should create a running log entry and return log_id."""
+        log_id = ingestion_api.log_job_start("prices")
+
+        assert log_id is not None
+        assert isinstance(log_id, int)
+
+        row = ingestion_api._db.fetchone(
+            "SELECT source_id, status FROM ingestion_log WHERE log_id = ?",
+            (log_id,),
+        )
+        assert row[0] == "prices"
+        assert row[1] == "running"
+
+    def test_log_job_success(self, ingestion_api):
+        """log_job_success should update log entry with completed status."""
+        log_id = ingestion_api.log_job_start("prices")
+        ingestion_api.log_job_success(log_id, records_fetched=100, records_inserted=95)
+
+        row = ingestion_api._db.fetchone(
+            "SELECT status, records_fetched, records_inserted FROM ingestion_log WHERE log_id = ?",
+            (log_id,),
+        )
+        assert row[0] == "completed"
+        assert row[1] == 100
+        assert row[2] == 95
+
+    def test_log_job_failure_with_log_id(self, ingestion_api):
+        """log_job_failure should update existing entry when log_id provided."""
+        log_id = ingestion_api.log_job_start("prices")
+        result = ingestion_api.log_job_failure("Connection timeout", log_id=log_id)
+
+        assert result == log_id
+
+        row = ingestion_api._db.fetchone(
+            "SELECT status, error_message FROM ingestion_log WHERE log_id = ?",
+            (log_id,),
+        )
+        assert row[0] == "failed"
+        assert row[1] == "Connection timeout"
+
+    def test_log_job_failure_without_log_id(self, ingestion_api):
+        """log_job_failure should create new entry when no log_id."""
+        result = ingestion_api.log_job_failure("Startup error", job_id="features")
+
+        assert result is not None
+        assert isinstance(result, int)
+
+        row = ingestion_api._db.fetchone(
+            "SELECT source_id, status, error_message FROM ingestion_log WHERE log_id = ?",
+            (result,),
+        )
+        assert row[0] == "features"
+        assert row[1] == "failed"
+        assert row[2] == "Startup error"
+
+    def test_purge_ingestion_logs(self, ingestion_api):
+        """purge_ingestion_logs should delete matching entries."""
+        ingestion_api.log_job_start("prices")
+        ingestion_api.log_job_start("prices")
+        ingestion_api.log_job_start("features")
+
+        deleted = ingestion_api.purge_ingestion_logs(job_id="prices")
+        assert deleted == 2
+
+        row = ingestion_api._db.fetchone(
+            "SELECT COUNT(*) FROM ingestion_log WHERE source_id = 'features'"
+        )
+        assert row[0] == 1
+
+    def test_purge_ingestion_logs_by_status(self, ingestion_api):
+        """purge_ingestion_logs should filter by status."""
+        log_id = ingestion_api.log_job_start("prices")
+        ingestion_api.log_job_success(log_id, 10, 10)
+        ingestion_api.log_job_start("prices")  # still running
+
+        deleted = ingestion_api.purge_ingestion_logs(status="completed")
+        assert deleted == 1
+
+    def test_purge_ingestion_logs_no_matches(self, ingestion_api):
+        """purge_ingestion_logs should return 0 when no matches."""
+        deleted = ingestion_api.purge_ingestion_logs(job_id="nonexistent")
+        assert deleted == 0
+
+
+class TestHypothesisMetadataAPI:
+    """Tests for hypothesis with metadata API methods."""
+
+    def test_get_hypothesis_with_metadata(self, test_api):
+        """get_hypothesis_with_metadata should return hypothesis including metadata."""
+        hyp_id = test_api.create_hypothesis(
+            title="Test Hyp",
+            thesis="Test thesis",
+            prediction="Test prediction",
+            falsification="Test falsification",
+            actor="user",
+        )
+        test_api.update_hypothesis(
+            hyp_id, metadata={"key": "value"}, actor="user"
+        )
+
+        result = test_api.get_hypothesis_with_metadata(hyp_id)
+
+        assert result is not None
+        assert result["hypothesis_id"] == hyp_id
+        assert result["metadata"]["key"] == "value"
+
+    def test_get_hypothesis_with_metadata_not_found(self, test_api):
+        """get_hypothesis_with_metadata returns None for nonexistent."""
+        result = test_api.get_hypothesis_with_metadata("HYP-9999-999")
+        assert result is None
+
+    def test_list_hypotheses_with_metadata(self, test_api):
+        """list_hypotheses_with_metadata should filter by status."""
+        test_api.create_hypothesis(
+            title="Draft 1",
+            thesis="T",
+            prediction="P",
+            falsification="F",
+            actor="user",
+        )
+        test_api.create_hypothesis(
+            title="Draft 2",
+            thesis="T",
+            prediction="P",
+            falsification="F",
+            actor="user",
+        )
+
+        result = test_api.list_hypotheses_with_metadata(status="draft")
+        assert len(result) == 2
+        assert all(h["status"] == "draft" for h in result)
+
+    def test_list_hypotheses_with_metadata_exclude(self, test_api):
+        """list_hypotheses_with_metadata should support metadata_exclude."""
+        hyp_id = test_api.create_hypothesis(
+            title="Reviewed",
+            thesis="T",
+            prediction="P",
+            falsification="F",
+            actor="user",
+        )
+        test_api.update_hypothesis(
+            hyp_id, metadata={"risk_manager_review": True}, actor="user"
+        )
+
+        test_api.create_hypothesis(
+            title="Not reviewed",
+            thesis="T",
+            prediction="P",
+            falsification="F",
+            actor="user",
+        )
+
+        result = test_api.list_hypotheses_with_metadata(
+            status="draft",
+            metadata_exclude="%risk_manager_review%",
+        )
+        assert len(result) == 1
+        assert result[0]["title"] == "Not reviewed"

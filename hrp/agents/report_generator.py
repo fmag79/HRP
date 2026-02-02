@@ -20,7 +20,6 @@ from loguru import logger
 
 from hrp.agents.sdk_agent import SDKAgent, SDKAgentConfig
 from hrp.api.platform import PlatformAPI
-from hrp.data.db import get_db
 from hrp.research.lineage import EventType
 
 
@@ -184,23 +183,17 @@ class ReportGenerator(SDKAgent):
     def _gather_experiment_data(self) -> dict[str, Any]:
         """Gather MLflow experiment data."""
         try:
-            db = get_db()
-
             # Get recent experiments from lineage
             lookback = 7 if self.report_type == "daily" else 30
             start_date = (date.today() - timedelta(days=lookback)).isoformat()
 
-            experiments = db.fetchall(
-                """
-                SELECT DISTINCT hypothesis_id, experiment_id, timestamp
-                FROM lineage
-                WHERE event_type = 'experiment_completed'
-                  AND timestamp >= ?
-                ORDER BY timestamp DESC
-                LIMIT 20
-                """,
-                (start_date,),
-            )
+            all_events = self.api.get_lineage(limit=200)
+            experiments = [
+                (e["hypothesis_id"], e["experiment_id"], e["timestamp"])
+                for e in all_events
+                if e["event_type"] == "experiment_completed"
+                and e.get("timestamp") and str(e["timestamp"]) >= start_date
+            ][:20]
 
             top_experiments = []
             model_performance = {}
@@ -247,24 +240,18 @@ class ReportGenerator(SDKAgent):
     def _gather_signal_data(self) -> dict[str, Any]:
         """Gather signal discovery data from lineage."""
         try:
-            db = get_db()
-
             lookback = 1 if self.report_type == "daily" else 7
             start_date = (date.today() - timedelta(days=lookback)).isoformat()
 
             # Get Signal Scientist run events
-            signal_events = db.fetchall(
-                """
-                SELECT lineage_id, actor, timestamp, details
-                FROM lineage
-                WHERE event_type = 'agent_run_complete'
-                  AND actor = 'agent:signal-scientist'
-                  AND timestamp >= ?
-                ORDER BY timestamp DESC
-                LIMIT 5
-                """,
-                (start_date,),
-            )
+            all_events = self.api.get_lineage(limit=200)
+            signal_events = [
+                (e["lineage_id"], e["actor"], e["timestamp"], e["details"])
+                for e in all_events
+                if e["event_type"] == "agent_run_complete"
+                and e.get("actor") == "agent:signal-scientist"
+                and e.get("timestamp") and str(e["timestamp"]) >= start_date
+            ][:5]
 
             recent_discoveries = []
             for event in signal_events:
@@ -315,8 +302,6 @@ class ReportGenerator(SDKAgent):
     def _gather_agent_activity(self) -> dict[str, Any]:
         """Gather recent agent activity from lineage."""
         try:
-            db = get_db()
-
             lookback = 1 if self.report_type == "daily" else 1  # Check recent activity
             start_date = (date.today() - timedelta(days=lookback)).isoformat()
 
@@ -328,21 +313,18 @@ class ReportGenerator(SDKAgent):
                 "validation_analyst": "agent:validation-analyst",
             }
 
+            all_events = self.api.get_lineage(limit=200)
+
             activity = {}
             for name, actor in agents.items():
                 # Check for recent successful runs
-                result = db.fetchone(
-                    """
-                    SELECT timestamp, details
-                    FROM lineage
-                    WHERE event_type = 'agent_run_complete'
-                      AND actor = ?
-                      AND timestamp >= ?
-                    ORDER BY timestamp DESC
-                    LIMIT 1
-                    """,
-                    (actor, start_date),
-                )
+                matching = [
+                    e for e in all_events
+                    if e["event_type"] == "agent_run_complete"
+                    and e.get("actor") == actor
+                    and e.get("timestamp") and str(e["timestamp"]) >= start_date
+                ]
+                result = (matching[0]["timestamp"], matching[0]["details"]) if matching else None
 
                 if result:
                     timestamp, details_json = result

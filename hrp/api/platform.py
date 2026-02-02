@@ -1413,6 +1413,423 @@ class PlatformAPI:
             },
         )
 
+    # =========================================================================
+    # CIO / Paper Portfolio Operations
+    # =========================================================================
+
+    def log_cio_decision(
+        self,
+        hypothesis_id: str,
+        decision: str,
+        score_total: float,
+        score_statistical: float,
+        score_risk: float,
+        score_economic: float,
+        score_cost: float,
+        rationale: str,
+    ) -> str:
+        """Record a CIO scoring decision. Returns decision_id."""
+        import uuid
+
+        decision_id = f"CIO-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+
+        max_id_result = self._db.fetchone(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM cio_decisions"
+        )
+        next_id = max_id_result[0]
+
+        self._db.execute(
+            """
+            INSERT INTO cio_decisions
+            (id, decision_id, report_date, hypothesis_id, decision,
+             score_total, score_statistical, score_risk, score_economic, score_cost,
+             rationale, approved)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                next_id,
+                decision_id,
+                date.today(),
+                hypothesis_id,
+                decision,
+                round(score_total, 2),
+                round(score_statistical, 2),
+                round(score_risk, 2),
+                round(score_economic, 2),
+                round(score_cost, 2),
+                rationale,
+                False,
+            ),
+        )
+
+        logger.info(f"Logged CIO decision {decision_id} for {hypothesis_id}")
+        return decision_id
+
+    def add_paper_position(
+        self, hypothesis_id: str, weight: float, entry_price: float
+    ) -> None:
+        """Add a position to the paper portfolio."""
+        self._db.execute(
+            """
+            INSERT INTO paper_portfolio
+            (hypothesis_id, weight, entry_price, entry_date, current_price, unrealized_pnl)
+            VALUES (?, ?, ?, ?, ?, 0)
+            """,
+            (hypothesis_id, weight, entry_price, date.today(), entry_price),
+        )
+        logger.debug(f"Added paper position for {hypothesis_id}")
+
+    def remove_paper_position(self, hypothesis_id: str) -> None:
+        """Remove a position from the paper portfolio."""
+        self._db.execute(
+            "DELETE FROM paper_portfolio WHERE hypothesis_id = ?",
+            (hypothesis_id,),
+        )
+        logger.debug(f"Removed paper position for {hypothesis_id}")
+
+    def log_paper_trade(
+        self,
+        hypothesis_id: str,
+        action: str,
+        weight_before: float,
+        weight_after: float,
+        price: float,
+    ) -> None:
+        """Log a paper portfolio trade (ADD/REMOVE/REBALANCE)."""
+        self._db.execute(
+            """
+            INSERT INTO paper_portfolio_trades
+            (hypothesis_id, action, weight_before, weight_after, price)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (hypothesis_id, action, weight_before, weight_after, price),
+        )
+        logger.debug(f"Logged paper trade: {action} for {hypothesis_id}")
+
+    def get_paper_portfolio(self) -> list[dict]:
+        """Get all current paper portfolio positions."""
+        result = self._db.fetchall(
+            """
+            SELECT hypothesis_id, weight, entry_price, entry_date,
+                   current_price, unrealized_pnl
+            FROM paper_portfolio
+            ORDER BY entry_date DESC
+            """
+        )
+        return [
+            {
+                "hypothesis_id": row[0],
+                "weight": row[1],
+                "entry_price": row[2],
+                "entry_date": row[3],
+                "current_price": row[4],
+                "unrealized_pnl": row[5],
+            }
+            for row in result
+        ]
+
+    # =========================================================================
+    # Agent Infrastructure Operations
+    # =========================================================================
+
+    def log_token_usage(
+        self,
+        agent_type: str,
+        run_id: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        """Log agent token usage."""
+        self._db.execute(
+            """
+            INSERT INTO agent_token_usage (
+                agent_type, run_id, timestamp, input_tokens, output_tokens
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (agent_type, run_id, datetime.now(), input_tokens, output_tokens),
+        )
+
+    def save_agent_checkpoint(
+        self,
+        agent_type: str,
+        run_id: str,
+        state_json: str,
+        input_tokens: int,
+        output_tokens: int,
+        completed: bool = False,
+    ) -> None:
+        """Save or update an agent checkpoint (upsert)."""
+        self._db.execute(
+            """
+            INSERT OR REPLACE INTO agent_checkpoints (
+                agent_type, run_id, created_at, state_json,
+                input_tokens, output_tokens, completed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                agent_type,
+                run_id,
+                datetime.now(),
+                state_json,
+                input_tokens,
+                output_tokens,
+                completed,
+            ),
+        )
+
+    def complete_agent_checkpoint(self, agent_type: str, run_id: str) -> None:
+        """Mark an agent checkpoint as completed."""
+        self._db.execute(
+            """
+            UPDATE agent_checkpoints
+            SET completed = 1
+            WHERE agent_type = ? AND run_id = ?
+            """,
+            (agent_type, run_id),
+        )
+
+    # =========================================================================
+    # Ingestion Log Operations
+    # =========================================================================
+
+    def log_job_start(self, job_id: str) -> Optional[int]:
+        """Log ingestion job start. Returns log_id."""
+        with self._db.connection() as conn:
+            result = conn.execute(
+                """
+                INSERT INTO ingestion_log (log_id, source_id, started_at, status)
+                VALUES (
+                    (SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log),
+                    ?, CURRENT_TIMESTAMP, 'running'
+                )
+                RETURNING log_id
+                """,
+                (job_id,),
+            ).fetchone()
+            return result[0] if result else None
+
+    def log_job_success(
+        self, log_id: int, records_fetched: int, records_inserted: int
+    ) -> None:
+        """Log successful job completion."""
+        with self._db.connection() as conn:
+            conn.execute(
+                """
+                UPDATE ingestion_log
+                SET completed_at = CURRENT_TIMESTAMP,
+                    status = 'completed',
+                    records_fetched = ?,
+                    records_inserted = ?,
+                    error_message = NULL
+                WHERE log_id = ?
+                """,
+                (records_fetched, records_inserted, log_id),
+            )
+
+    def log_job_failure(
+        self,
+        error_msg: str,
+        job_id: Optional[str] = None,
+        log_id: Optional[int] = None,
+    ) -> Optional[int]:
+        """Log job failure. Creates new entry if no log_id, updates existing if log_id provided.
+
+        Returns log_id of the created/updated entry.
+        """
+        with self._db.connection() as conn:
+            if log_id is None:
+                # Create a new failure entry
+                result = conn.execute(
+                    """
+                    INSERT INTO ingestion_log (log_id, source_id, started_at, status, error_message)
+                    VALUES (
+                        (SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log),
+                        ?, CURRENT_TIMESTAMP, 'failed', ?
+                    )
+                    RETURNING log_id
+                    """,
+                    (job_id, error_msg),
+                ).fetchone()
+                return result[0] if result else None
+            else:
+                # Update existing entry
+                conn.execute(
+                    """
+                    UPDATE ingestion_log
+                    SET completed_at = CURRENT_TIMESTAMP,
+                        status = 'failed',
+                        error_message = ?
+                    WHERE log_id = ?
+                    """,
+                    (error_msg, log_id),
+                )
+                return log_id
+
+    def purge_ingestion_logs(
+        self,
+        job_id: Optional[str] = None,
+        before: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        """Delete ingestion log entries matching filters. Returns count deleted."""
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if job_id:
+            conditions.append("source_id = ?")
+            params.append(job_id)
+        if before:
+            conditions.append("started_at < ?")
+            params.append(before)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        with self._db.connection() as conn:
+            rows_deleted = conn.execute(
+                f"SELECT COUNT(*) FROM ingestion_log WHERE {where_clause}", params
+            ).fetchone()[0]
+            conn.execute(
+                f"DELETE FROM ingestion_log WHERE {where_clause}", params
+            )
+
+        logger.info(f"Purged {rows_deleted} ingestion log entries")
+        return rows_deleted
+
+    # =========================================================================
+    # Feature Registry Operations
+    # =========================================================================
+
+    def get_available_features(self) -> list[dict]:
+        """List all available features from the feature store."""
+        from hrp.data.features.registry import FeatureRegistry
+
+        registry = FeatureRegistry()
+        features = registry.list_all_features(active_only=True)
+
+        return [
+            {
+                "feature_name": f["feature_name"],
+                "version": f["version"],
+                "description": f.get("description", "No description"),
+            }
+            for f in features
+        ]
+
+    # =========================================================================
+    # Hypothesis Operations (extended)
+    # =========================================================================
+
+    def get_hypothesis_with_metadata(self, hypothesis_id: str) -> Optional[Dict]:
+        """
+        Get a hypothesis including its metadata field.
+
+        Args:
+            hypothesis_id: The hypothesis ID
+
+        Returns:
+            Hypothesis dict with metadata, or None if not found
+        """
+        Validator.not_empty(hypothesis_id, "hypothesis_id")
+
+        query = """
+            SELECT hypothesis_id, title, thesis, testable_prediction,
+                   falsification_criteria, status, created_at, created_by,
+                   updated_at, outcome, confidence_score, metadata
+            FROM hypotheses
+            WHERE hypothesis_id = ?
+        """
+
+        row = self._db.fetchone(query, (hypothesis_id,))
+
+        if not row:
+            return None
+
+        metadata = row[11]
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+
+        return {
+            "hypothesis_id": row[0],
+            "title": row[1],
+            "thesis": row[2],
+            "prediction": row[3],
+            "falsification": row[4],
+            "status": row[5],
+            "created_at": row[6],
+            "created_by": row[7],
+            "updated_at": row[8],
+            "outcome": row[9],
+            "confidence_score": row[10],
+            "metadata": metadata or {},
+        }
+
+    def list_hypotheses_with_metadata(
+        self,
+        status: Optional[str] = None,
+        metadata_filter: Optional[str] = None,
+        metadata_exclude: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
+        """
+        List hypotheses with metadata, optionally filtering by metadata content.
+
+        Args:
+            status: Optional status filter
+            metadata_filter: Optional LIKE pattern the metadata must match
+            metadata_exclude: Optional LIKE pattern the metadata must NOT match
+            limit: Maximum results
+
+        Returns:
+            List of hypothesis dicts with parsed metadata
+        """
+        query = """
+            SELECT hypothesis_id, title, thesis, status, metadata
+            FROM hypotheses
+            WHERE 1=1
+        """
+        params: list[Any] = []
+
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        if metadata_filter:
+            query += " AND metadata LIKE ?"
+            params.append(metadata_filter)
+
+        if metadata_exclude:
+            query += " AND (metadata NOT LIKE ? OR metadata IS NULL)"
+            params.append(metadata_exclude)
+
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        result = self._db.fetchall(query, tuple(params))
+
+        hypotheses = []
+        for row in result:
+            metadata = row[4]
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except json.JSONDecodeError:
+                    metadata = {}
+            hypotheses.append({
+                "hypothesis_id": row[0],
+                "title": row[1],
+                "thesis": row[2],
+                "status": row[3],
+                "metadata": metadata or {},
+            })
+
+        return hypotheses
+
     # === ML Drift Monitoring Methods ===
 
     def check_model_drift(

@@ -3451,31 +3451,19 @@ class RiskManager(ResearchAgent):
         """
         if self.hypothesis_ids:
             # Specific hypotheses requested
-            placeholders = ",".join(["?" for _ in self.hypothesis_ids])
-            query = f"""
-                SELECT hypothesis_id, title, thesis, status, metadata
-                FROM hypotheses
-                WHERE hypothesis_id IN ({placeholders})
-            """
-            params = self.hypothesis_ids
+            hypotheses = []
+            for hid in self.hypothesis_ids:
+                hyp = self.api.get_hypothesis_with_metadata(hid)
+                if hyp:
+                    hypotheses.append(hyp)
+            return hypotheses
         else:
             # All validated hypotheses not yet risk-assessed
-            query = """
-                SELECT hypothesis_id, title, thesis, status, metadata
-                FROM hypotheses
-                WHERE status = 'validated'
-                  AND (metadata NOT LIKE '%risk_manager_review%'
-                       OR metadata IS NULL)
-                ORDER BY created_at DESC
-            """
-            params = []
-
-        result = self.api._db.fetchdf(query, params)
-
-        if result.empty:
-            return []
-
-        return result.to_dict(orient="records")
+            return self.api.list_hypotheses_with_metadata(
+                status='validated',
+                metadata_exclude='%risk_manager_review%',
+                limit=10,
+            )
 
     def _assess_hypothesis_risk(
         self, hypothesis: dict[str, Any]
@@ -3711,15 +3699,10 @@ class RiskManager(ResearchAgent):
         """
         # Get existing paper portfolio
         try:
-            portfolio = self.api._db.execute(
-                """
-                SELECT hypothesis_id, weight
-                FROM paper_portfolio
-                WHERE weight > 0
-                """
-            ).fetchdf()
+            portfolio_positions = self.api.get_paper_portfolio()
+            portfolio_positions = [p for p in portfolio_positions if p.get("weight", 0) > 0]
 
-            if portfolio.empty:
+            if not portfolio_positions:
                 return None
 
             # For now, correlation check is a placeholder
@@ -3801,16 +3784,10 @@ class RiskManager(ResearchAgent):
         """
         # Get current portfolio state
         try:
-            portfolio = self.api._db.execute(
-                """
-                SELECT COUNT(*) as num_positions, COALESCE(SUM(weight), 0) as total_weight
-                FROM paper_portfolio
-                WHERE weight > 0
-                """
-            ).fetchdf()
-
-            current_positions = portfolio.iloc[0]["num_positions"]
-            current_weight = portfolio.iloc[0]["total_weight"]
+            portfolio_positions = self.api.get_paper_portfolio()
+            active = [p for p in portfolio_positions if p.get("weight", 0) > 0]
+            current_positions = len(active)
+            current_weight = sum(p.get("weight", 0) for p in active)
         except Exception:
             current_positions = 0
             current_weight = 0.0
@@ -4161,47 +4138,21 @@ class QuantDeveloper(ResearchAgent):
         Returns:
             List of hypothesis dicts
         """
-        import json
-
         if self.hypothesis_ids:
             # Specific hypotheses requested
-            placeholders = ",".join(["?" for _ in self.hypothesis_ids])
-            query = f"""
-                SELECT hypothesis_id, title, thesis, status, metadata
-                FROM hypotheses
-                WHERE hypothesis_id IN ({placeholders})
-            """
-            params = self.hypothesis_ids
+            hypotheses = []
+            for hid in self.hypothesis_ids:
+                hyp = self.api.get_hypothesis_with_metadata(hid)
+                if hyp:
+                    hypotheses.append(hyp)
+            return hypotheses
         else:
             # All hypotheses that passed ML audit but not yet backtested
-            query = """
-                SELECT hypothesis_id, title, thesis, status, metadata
-                FROM hypotheses
-                WHERE status = 'audited'
-                  AND (metadata NOT LIKE '%quant_developer_backtest%'
-                   OR metadata IS NULL)
-                ORDER BY created_at DESC
-            """
-            params = []
-
-        result = self.api._db.fetchdf(query, params)
-
-        if result.empty:
-            return []
-
-        # Parse JSON metadata
-        hypotheses = result.to_dict(orient="records")
-        for hyp in hypotheses:
-            metadata_str = hyp.get("metadata")
-            if metadata_str and isinstance(metadata_str, str):
-                try:
-                    hyp["metadata"] = json.loads(metadata_str)
-                except json.JSONDecodeError:
-                    hyp["metadata"] = {}
-            else:
-                hyp["metadata"] = {}
-
-        return hypotheses
+            return self.api.list_hypotheses_with_metadata(
+                status='audited',
+                metadata_exclude='%quant_developer_backtest%',
+                limit=10,
+            )
 
     def _extract_ml_config(self, hypothesis: dict[str, Any]) -> dict[str, Any]:
         """

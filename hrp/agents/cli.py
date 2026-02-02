@@ -13,6 +13,7 @@ from loguru import logger
 
 from hrp.agents.jobs import FeatureComputationJob, PriceIngestionJob, UniverseUpdateJob
 from hrp.agents.scheduler import IngestionScheduler
+from hrp.api.platform import PlatformAPI
 from hrp.data.db import get_db
 from hrp.data.ingestion.prices import TEST_SYMBOLS
 
@@ -181,33 +182,12 @@ def clear_job_history(
     Returns:
         Number of records deleted
     """
-    db = get_db()
-
-    # Build dynamic query
-    conditions = []
-    params = []
-
-    if job_id:
-        conditions.append("source_id = ?")
-        params.append(job_id)
-
-    if before:
-        conditions.append("started_at < ?")
-        params.append(before.isoformat())
-
-    if status:
-        conditions.append("status = ?")
-        params.append(status)
-
-    where_clause = " AND ".join(conditions) if conditions else "1=1"
-    count_query = f"SELECT COUNT(*) FROM ingestion_log WHERE {where_clause}"
-    delete_query = f"DELETE FROM ingestion_log WHERE {where_clause}"
-
-    with db.connection() as conn:
-        # Count rows to delete first (DuckDB rowcount is unreliable)
-        rows_deleted = conn.execute(count_query, params).fetchone()[0]
-        conn.execute(delete_query, params)
-
+    api = PlatformAPI()
+    rows_deleted = api.purge_ingestion_logs(
+        job_id=job_id,
+        before=before.isoformat() if before else None,
+        status=status,
+    )
     logger.info(f"Deleted {rows_deleted} records from ingestion_log")
     return rows_deleted
 

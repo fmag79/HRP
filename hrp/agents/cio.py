@@ -268,38 +268,15 @@ class CIOAgent(SDKAgent):
 
     def _fetch_validated_hypotheses(self) -> list[dict]:
         """Fetch hypotheses with 'validated' status."""
-        result = self.api._db.fetchdf(
-            """
-            SELECT hypothesis_id, title, thesis, status, metadata
-            FROM hypotheses
-            WHERE status = 'validated'
-            ORDER BY created_at DESC
-            """
-        )
-
-        if result.empty:
-            return []
-
-        return result.to_dict(orient="records")
+        return self.api.list_hypotheses(status='validated')
 
     def _get_experiment_data(self, hypothesis_id: str) -> dict | None:
         """Get experiment metrics for a hypothesis from ML Scientist results."""
-        import json
-
-        hyp = self.api.get_hypothesis(hypothesis_id)
-        if not hyp:
+        hyp_with_meta = self.api.get_hypothesis_with_metadata(hypothesis_id)
+        if not hyp_with_meta:
             return None
 
-        # Metadata is stored in the hypothesis record fetched by _fetch_validated_hypotheses
-        # but get_hypothesis doesn't return it — re-fetch from DB
-        row = self.api._db.fetchone(
-            "SELECT metadata FROM hypotheses WHERE hypothesis_id = ?",
-            (hypothesis_id,),
-        )
-        if not row or not row[0]:
-            return None
-
-        metadata = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        metadata = hyp_with_meta.get("metadata", {})
         ml_results = metadata.get("ml_scientist_results", {})
         if not ml_results:
             return None
@@ -381,40 +358,15 @@ class CIOAgent(SDKAgent):
         self, hypothesis_id: str, score: "CIOScore", rationale: str
     ) -> None:
         """Save CIO decision to database."""
-        from datetime import date
-
-        import uuid
-
-        decision_id = f"CIO-{date.today().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
-
-        # Get next id value
-        max_id_result = self.api._db.fetchdf(
-            "SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM cio_decisions"
-        )
-        next_id = int(max_id_result.iloc[0]["next_id"])
-
-        self.api._db.execute(
-            """
-            INSERT INTO cio_decisions
-            (id, decision_id, report_date, hypothesis_id, decision,
-             score_total, score_statistical, score_risk, score_economic, score_cost,
-             rationale, approved)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                next_id,
-                decision_id,
-                date.today(),
-                hypothesis_id,
-                score.decision,
-                round(score.total, 2),
-                round(score.statistical, 2),
-                round(score.risk, 2),
-                round(score.economic, 2),
-                round(score.cost, 2),
-                rationale,
-                False,  # Requires manual approval
-            ),
+        self.api.log_cio_decision(
+            hypothesis_id=hypothesis_id,
+            decision=score.decision,
+            score_total=score.total,
+            score_statistical=score.statistical,
+            score_risk=score.risk,
+            score_economic=score.economic,
+            score_cost=score.cost,
+            rationale=rationale,
         )
 
     def _maybe_stage_model(
@@ -1221,16 +1173,7 @@ Be generous - most quant strategies have at least "moderate" strength if they ha
             weight: Position weight (0-1)
             entry_price: Entry price per share
         """
-        from datetime import date
-
-        self.api._db.execute(
-            """
-            INSERT INTO paper_portfolio
-            (hypothesis_id, weight, entry_price, entry_date, current_price, unrealized_pnl)
-            VALUES (?, ?, ?, ?, ?, 0)
-            """,
-            (hypothesis_id, weight, entry_price, date.today(), entry_price),
-        )
+        self.api.add_paper_position(hypothesis_id, weight, entry_price)
 
     def _remove_paper_position(self, hypothesis_id: str):
         """
@@ -1239,10 +1182,7 @@ Be generous - most quant strategies have at least "moderate" strength if they ha
         Args:
             hypothesis_id: The hypothesis being removed
         """
-        self.api._db.execute(
-            "DELETE FROM paper_portfolio WHERE hypothesis_id = ?",
-            (hypothesis_id,),
-        )
+        self.api.remove_paper_position(hypothesis_id)
 
     def _log_paper_trade(
         self,
@@ -1262,11 +1202,4 @@ Be generous - most quant strategies have at least "moderate" strength if they ha
             weight_after: Weight after trade
             price: Execution price
         """
-        self.api._db.execute(
-            """
-            INSERT INTO paper_portfolio_trades
-            (hypothesis_id, action, weight_before, weight_after, price)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (hypothesis_id, action, weight_before, weight_after, price),
-        )
+        self.api.log_paper_trade(hypothesis_id, action, weight_before, weight_after, price)

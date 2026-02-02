@@ -75,11 +75,11 @@ class LineageEventWatcher:
     def _init_last_lineage_id(self) -> None:
         """Initialize last_lineage_id from database to avoid reprocessing old events."""
         try:
-            from hrp.data.db import get_db
+            from hrp.api.platform import PlatformAPI
 
-            db = get_db()
-            result = db.fetchone("SELECT COALESCE(MAX(lineage_id), 0) FROM lineage")
-            self._last_lineage_id = result[0] if result else 0
+            api = PlatformAPI(read_only=True)
+            events = api.get_lineage(limit=1)
+            self._last_lineage_id = events[0]["lineage_id"] if events else 0
             logger.debug(f"LineageEventWatcher initialized at lineage_id={self._last_lineage_id}")
         except Exception as e:
             logger.warning(f"Failed to initialize last_lineage_id: {e}")
@@ -139,34 +139,21 @@ class LineageEventWatcher:
             return 0
 
         try:
-            from hrp.data.db import get_db
+            from hrp.api.platform import PlatformAPI
 
-            db = get_db()
+            api = PlatformAPI(read_only=True)
 
-            # Get events newer than last processed
-            query = """
-                SELECT lineage_id, event_type, timestamp, actor,
-                       hypothesis_id, experiment_id, details, parent_lineage_id
-                FROM lineage
-                WHERE lineage_id > ?
-                ORDER BY lineage_id ASC
-                LIMIT 100
-            """
-            rows = db.fetchall(query, (self._last_lineage_id,))
+            # Get recent events and filter to those newer than last processed
+            all_events = api.get_lineage(limit=200)
+            # get_lineage returns DESC order; we need ASC and only > last_lineage_id
+            rows = sorted(
+                [e for e in all_events if e["lineage_id"] > self._last_lineage_id],
+                key=lambda e: e["lineage_id"],
+            )[:100]
 
             events_processed = 0
 
-            for row in rows:
-                event = {
-                    "lineage_id": row[0],
-                    "event_type": row[1],
-                    "timestamp": row[2],
-                    "actor": row[3],
-                    "hypothesis_id": row[4],
-                    "experiment_id": row[5],
-                    "details": row[6],
-                    "parent_lineage_id": row[7],
-                }
+            for event in rows:
 
                 # Update last processed ID
                 self._last_lineage_id = event["lineage_id"]

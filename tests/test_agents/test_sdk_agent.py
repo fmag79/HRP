@@ -220,11 +220,12 @@ class TestSDKAgentTrackCost:
         assert agent.token_usage.output_tokens == 50
         assert agent.token_usage.total_tokens == 150
 
+    @patch("hrp.agents.sdk_agent.PlatformAPI")
     @patch("hrp.agents.sdk_agent.get_db")
-    def test_track_cost_logs_to_db(self, mock_get_db):
-        """Should log usage to database."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
+    def test_track_cost_logs_to_db(self, mock_get_db, mock_platform_api_cls):
+        """Should log usage to database via PlatformAPI."""
+        mock_api = MagicMock()
+        mock_platform_api_cls.return_value = mock_api
 
         agent = ConcreteSDKAgent(
             job_id="test-job",
@@ -234,9 +235,7 @@ class TestSDKAgentTrackCost:
 
         agent.track_cost(100, 50)
 
-        mock_db.execute.assert_called_once()
-        call_args = mock_db.execute.call_args
-        assert "agent_token_usage" in call_args[0][0]
+        mock_api.log_token_usage.assert_called_once()
 
     @patch("hrp.agents.sdk_agent.get_db")
     def test_track_cost_handles_db_error(self, mock_get_db):
@@ -450,11 +449,12 @@ class TestSDKAgentCheckpoint:
         assert call_kwargs["details"]["checkpoint"] is True
 
     @patch("hrp.agents.sdk_agent.log_event")
+    @patch("hrp.agents.sdk_agent.PlatformAPI")
     @patch("hrp.agents.sdk_agent.get_db")
-    def test_checkpoint_saves_to_db(self, mock_get_db, mock_log_event):
-        """Should save checkpoint to database."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
+    def test_checkpoint_saves_to_db(self, mock_get_db, mock_platform_api_cls, mock_log_event):
+        """Should save checkpoint to database via PlatformAPI."""
+        mock_api = MagicMock()
+        mock_platform_api_cls.return_value = mock_api
 
         agent = ConcreteSDKAgent(
             job_id="test-job",
@@ -464,10 +464,8 @@ class TestSDKAgentCheckpoint:
 
         agent.checkpoint({"step": 5})
 
-        # Verify DB insert was called
-        assert mock_db.execute.called
-        call_args = mock_db.execute.call_args
-        assert "agent_checkpoints" in call_args[0][0]
+        # Verify PlatformAPI save was called
+        mock_api.save_agent_checkpoint.assert_called_once()
 
     def test_checkpoint_disabled(self):
         """Should skip checkpointing when disabled."""
@@ -566,11 +564,12 @@ class TestSDKAgentMarkComplete:
     """Tests for SDKAgent.mark_checkpoint_complete."""
 
     @patch("hrp.agents.sdk_agent.log_event")
+    @patch("hrp.agents.sdk_agent.PlatformAPI")
     @patch("hrp.agents.sdk_agent.get_db")
-    def test_mark_checkpoint_complete(self, mock_get_db, mock_log_event):
-        """Should mark checkpoint as complete."""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
+    def test_mark_checkpoint_complete(self, mock_get_db, mock_platform_api_cls, mock_log_event):
+        """Should mark checkpoint as complete via PlatformAPI."""
+        mock_api = MagicMock()
+        mock_platform_api_cls.return_value = mock_api
 
         agent = ConcreteSDKAgent(
             job_id="test-job",
@@ -586,11 +585,8 @@ class TestSDKAgentMarkComplete:
 
         assert agent._checkpoint.completed is True
 
-        # Verify update query was executed
-        update_calls = [
-            c for c in mock_db.execute.call_args_list if "UPDATE" in c[0][0].upper()
-        ]
-        assert len(update_calls) == 1
+        # Verify PlatformAPI was called
+        mock_api.complete_agent_checkpoint.assert_called_once()
 
     def test_mark_complete_no_checkpoint(self):
         """Should handle no checkpoint gracefully."""
@@ -658,7 +654,8 @@ class TestSDKAgentRun:
 
     @patch("hrp.agents.sdk_agent.log_event")
     @patch("hrp.agents.sdk_agent.get_db")
-    def test_run_marks_checkpoint_complete(self, mock_get_db, mock_log_event):
+    @patch("hrp.agents.sdk_agent.PlatformAPI")
+    def test_run_marks_checkpoint_complete(self, mock_platform_api_cls, mock_get_db, mock_log_event):
         """Should mark checkpoint complete on success."""
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db

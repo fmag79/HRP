@@ -204,21 +204,18 @@ class TestGetAvailableFeatures:
 
     def test_get_available_features(self, mock_api):
         """List available features."""
-        with patch("hrp.data.features.registry.FeatureRegistry") as MockRegistry:
-            mock_registry = MagicMock()
-            mock_registry.list_all_features.return_value = [
-                {
-                    "feature_name": "momentum_20d",
-                    "version": "v1",
-                    "description": "20-day momentum",
-                }
-            ]
-            MockRegistry.return_value = mock_registry
+        mock_api.get_available_features.return_value = [
+            {
+                "feature_name": "momentum_20d",
+                "version": "v1",
+                "description": "20-day momentum",
+            }
+        ]
 
-            result = call_tool(research_server.get_available_features)
+        result = call_tool(research_server.get_available_features)
 
-            assert result["success"] is True
-            assert len(result["data"]) == 1
+        assert result["success"] is True
+        assert len(result["data"]) == 1
 
 
 class TestIsTradingDay:
@@ -334,23 +331,23 @@ class TestRunQualityChecks:
 
     def test_run_quality_checks_success(self, mock_api):
         """Run quality checks."""
-        with patch("hrp.data.quality.report.QualityReportGenerator") as MockGenerator:
-            mock_report = MagicMock()
-            mock_report.report_date = date(2026, 1, 15)
-            mock_report.health_score = 95.0
-            mock_report.passed = True
-            mock_report.checks_run = 5
-            mock_report.checks_passed = 5
-            mock_report.critical_issues = 0
-            mock_report.warning_issues = 1
-            mock_report.get_summary_text.return_value = "All checks passed"
-            MockGenerator.return_value.generate_report.return_value = mock_report
+        mock_api.run_quality_checks.return_value = {
+            "health_score": 95.0,
+            "passed": True,
+            "critical_issues": 0,
+            "warning_issues": 1,
+            "results": [
+                {"check_name": "c1", "passed": True},
+                {"check_name": "c2", "passed": True},
+            ],
+            "generated_at": "2026-01-15T12:00:00",
+        }
 
-            result = call_tool(research_server.run_quality_checks)
+        result = call_tool(research_server.run_quality_checks)
 
-            assert result["success"] is True
-            assert result["data"]["health_score"] == 95.0
-            assert result["data"]["passed"] is True
+        assert result["success"] is True
+        assert result["data"]["health_score"] == 95.0
+        assert result["data"]["passed"] is True
 
 
 class TestGetHealthStatus:

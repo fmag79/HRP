@@ -13,6 +13,7 @@ from typing import Any
 
 from loguru import logger
 
+from hrp.api.platform import PlatformAPI
 from hrp.data.db import get_db
 from hrp.data.ingestion.features import compute_features
 from hrp.data.ingestion.fundamentals import ingest_fundamentals
@@ -146,6 +147,7 @@ class IngestionJob(ABC):
         self.retry_backoff = retry_backoff
         self.dependencies = dependencies or []
         self.data_requirements = data_requirements or []
+        self.api = PlatformAPI()
         self._status = JobStatus.PENDING
         self.log_id: int | None = None
         self.retry_count = 0
@@ -346,26 +348,11 @@ class IngestionJob(ABC):
     def _log_start(self) -> None:
         """Log job start to ingestion_log table."""
         try:
-            db = get_db()
-            with db.connection() as conn:
-                result = conn.execute(
-                    """
-                    INSERT INTO ingestion_log (log_id, source_id, started_at, status)
-                    VALUES (
-                        (SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log),
-                        ?, CURRENT_TIMESTAMP, 'running'
-                    )
-                    RETURNING log_id
-                    """,
-                    (self.job_id,),
-                ).fetchone()
-
-                if result:
-                    self.log_id = result[0]
-                    logger.debug(f"Created ingestion log entry {self.log_id} for job {self.job_id}")
-                else:
-                    logger.error(f"INSERT returned no result for job {self.job_id}")
-                    self.log_id = None
+            self.log_id = self.api.log_job_start(self.job_id)
+            if self.log_id:
+                logger.debug(f"Created ingestion log entry {self.log_id} for job {self.job_id}")
+            else:
+                logger.error(f"INSERT returned no result for job {self.job_id}")
         except Exception as e:
             logger.error(f"Failed to create ingestion log for {self.job_id}: {e}")
             self.log_id = None
@@ -381,25 +368,12 @@ class IngestionJob(ABC):
             logger.warning(f"No log_id for job {self.job_id}, cannot update log")
             return
 
-        db = get_db()
-        with db.connection() as conn:
-            conn.execute(
-                """
-                UPDATE ingestion_log
-                SET completed_at = CURRENT_TIMESTAMP,
-                    status = 'completed',
-                    records_fetched = ?,
-                    records_inserted = ?,
-                    error_message = NULL
-                WHERE log_id = ?
-                """,
-                (
-                    result.get("records_fetched", 0),
-                    result.get("records_inserted", 0),
-                    self.log_id,
-                ),
-            )
-            logger.debug(f"Updated ingestion log {self.log_id} with success status")
+        self.api.log_job_success(
+            log_id=self.log_id,
+            records_fetched=result.get("records_fetched", 0),
+            records_inserted=result.get("records_inserted", 0),
+        )
+        logger.debug(f"Updated ingestion log {self.log_id} with success status")
 
     def _log_failure(self, error_msg: str) -> None:
         """
@@ -409,37 +383,11 @@ class IngestionJob(ABC):
             error_msg: Error message to log
         """
         if self.log_id is None:
-            # Create a new log entry if we don't have one
-            db = get_db()
-            with db.connection() as conn:
-                result = conn.execute(
-                    """
-                    INSERT INTO ingestion_log (log_id, source_id, started_at, status, error_message)
-                    VALUES (
-                        (SELECT COALESCE(MAX(log_id), 0) + 1 FROM ingestion_log),
-                        ?, CURRENT_TIMESTAMP, 'failed', ?
-                    )
-                    RETURNING log_id
-                    """,
-                    (self.job_id, error_msg),
-                ).fetchone()
-                if result:
-                    self.log_id = result[0]
+            self.log_id = self.api.log_job_failure(error_msg, job_id=self.job_id)
             return
 
-        db = get_db()
-        with db.connection() as conn:
-            conn.execute(
-                """
-                UPDATE ingestion_log
-                SET completed_at = CURRENT_TIMESTAMP,
-                    status = 'failed',
-                    error_message = ?
-                WHERE log_id = ?
-                """,
-                (error_msg, self.log_id),
-            )
-            logger.debug(f"Updated ingestion log {self.log_id} with failure status")
+        self.api.log_job_failure(error_msg, log_id=self.log_id)
+        logger.debug(f"Updated ingestion log {self.log_id} with failure status")
 
     def _send_failure_notification(self, error_msg: str) -> None:
         """

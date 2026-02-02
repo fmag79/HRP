@@ -106,31 +106,28 @@ class TestPortfolioOperations:
 
     def test_add_position_to_portfolio(self, agent):
         """Test adding a position to paper portfolio."""
-        with patch.object(agent.api._db, "execute") as mock_execute:
-            agent._add_paper_position(
-                hypothesis_id="HYP-001",
-                weight=0.042,
-                entry_price=150.0,
-            )
+        agent._add_paper_position(
+            hypothesis_id="HYP-001",
+            weight=0.042,
+            entry_price=150.0,
+        )
 
-            mock_execute.assert_called_once()
+        agent.api.add_paper_position.assert_called_once_with("HYP-001", 0.042, 150.0)
 
     def test_remove_position_from_portfolio(self, agent):
         """Test removing a position from paper portfolio."""
-        with patch.object(agent.api._db, "execute") as mock_execute:
-            agent._remove_paper_position(hypothesis_id="HYP-001")
+        agent._remove_paper_position(hypothesis_id="HYP-001")
 
-            mock_execute.assert_called_once()
+        agent.api.remove_paper_position.assert_called_once_with("HYP-001")
 
     def test_log_paper_trade(self, agent):
         """Test logging a simulated trade."""
-        with patch.object(agent.api._db, "execute") as mock_execute:
-            agent._log_paper_trade(
-                hypothesis_id="HYP-001",
-                action="ADD",
-                weight_before=0.0,
-                weight_after=0.042,
-                price=150.0,
-            )
+        agent._log_paper_trade(
+            hypothesis_id="HYP-001",
+            action="ADD",
+            weight_before=0.0,
+            weight_after=0.042,
+            price=150.0,
+        )
 
-            mock_execute.assert_called_once()
+        agent.api.log_paper_trade.assert_called_once_with("HYP-001", "ADD", 0.0, 0.042, 150.0)

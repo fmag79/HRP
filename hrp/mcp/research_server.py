@@ -355,20 +355,8 @@ def get_available_features() -> dict[str, Any]:
     Returns:
         List of feature definitions with names, descriptions, and versions
     """
-    from hrp.data.features.registry import FeatureRegistry
-
-    registry = FeatureRegistry()
-    features = registry.list_all_features(active_only=True)
-
-    # Format output
-    formatted = [
-        {
-            "feature_name": f["feature_name"],
-            "version": f["version"],
-            "description": f.get("description", "No description"),
-        }
-        for f in features
-    ]
+    api = get_api()
+    formatted = api.get_available_features()
 
     return format_response(
         success=True,
@@ -852,26 +840,23 @@ def run_quality_checks(as_of_date: Optional[str] = None) -> dict[str, Any]:
     Returns:
         Quality report with health score, issues found, and recommendations
     """
-    from hrp.data.quality.report import QualityReportGenerator
-
+    api = get_api()
     target_date = parse_date(as_of_date) or date.today()
-
-    generator = QualityReportGenerator()
-    report = generator.generate_report(target_date)
+    result = api.run_quality_checks(as_of_date=target_date)
 
     return format_response(
         success=True,
         data={
-            "report_date": str(report.report_date),
-            "health_score": report.health_score,
-            "passed": report.passed,
-            "checks_run": report.checks_run,
-            "checks_passed": report.checks_passed,
-            "critical_issues": report.critical_issues,
-            "warning_issues": report.warning_issues,
-            "summary": report.get_summary_text(),
+            "report_date": str(target_date),
+            "health_score": result["health_score"],
+            "passed": result["passed"],
+            "checks_run": len(result.get("results", [])),
+            "checks_passed": sum(1 for r in result.get("results", []) if r.get("passed")),
+            "critical_issues": result["critical_issues"],
+            "warning_issues": result["warning_issues"],
+            "summary": f"Health score: {result['health_score']:.0f}/100, {result['critical_issues']} critical, {result['warning_issues']} warnings",
         },
-        message=f"Health score: {report.health_score:.0f}/100",
+        message=f"Health score: {result['health_score']:.0f}/100",
     )
 
 

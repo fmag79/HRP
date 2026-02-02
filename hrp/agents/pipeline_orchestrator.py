@@ -300,45 +300,22 @@ class PipelineOrchestrator(IngestionJob):
         Returns:
             List of hypothesis dicts
         """
-        import json
-
         if self.hypothesis_ids:
-            placeholders = ",".join(["?" for _ in self.hypothesis_ids])
-            query = f"""
-                SELECT hypothesis_id, title, thesis, status, metadata
-                FROM hypotheses
-                WHERE hypothesis_id IN ({placeholders})
-            """
-            params = self.hypothesis_ids
+            hypotheses = []
+            for hid in self.hypothesis_ids:
+                hyp = self.api.get_hypothesis_with_metadata(hid)
+                if hyp:
+                    hypotheses.append(hyp)
         else:
             # Hypotheses with Quant Developer backtests but no orchestration
-            query = """
-                SELECT hypothesis_id, title, thesis, status, metadata
-                FROM hypotheses
-                WHERE status IN ('audited', 'validated')
-                  AND metadata LIKE '%quant_developer_backtest%'
-                  AND (metadata NOT LIKE '%pipeline_orchestrator%'
-                   OR metadata IS NULL)
-                ORDER BY created_at DESC
-                LIMIT 10
-            """
-            params = []
-
-        result = self.api._db.fetchdf(query, params)
-
-        if result.empty:
-            return []
-
-        hypotheses = result.to_dict(orient="records")
-        for hyp in hypotheses:
-            metadata_str = hyp.get("metadata")
-            if metadata_str and isinstance(metadata_str, str):
-                try:
-                    hyp["metadata"] = json.loads(metadata_str)
-                except json.JSONDecodeError:
-                    hyp["metadata"] = {}
-            else:
-                hyp["metadata"] = {}
+            hypotheses = []
+            for status in ('audited', 'validated'):
+                hypotheses.extend(self.api.list_hypotheses_with_metadata(
+                    status=status,
+                    metadata_filter='%quant_developer_backtest%',
+                    metadata_exclude='%pipeline_orchestrator%',
+                    limit=10,
+                ))
 
         return hypotheses
 

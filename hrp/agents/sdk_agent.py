@@ -15,6 +15,7 @@ from typing import Any
 from loguru import logger
 
 from hrp.agents.research_agents import ResearchAgent
+from hrp.api.platform import PlatformAPI
 from hrp.data.db import get_db
 from hrp.research.lineage import EventType, log_event
 
@@ -113,6 +114,7 @@ class SDKAgent(ResearchAgent):
             dependencies=dependencies or [],
         )
         self.config = config or SDKAgentConfig()
+        self._platform_api = PlatformAPI()
         self._token_usage = TokenUsage()
         self._run_id: str | None = None
         self._checkpoint: AgentCheckpoint | None = None
@@ -287,20 +289,11 @@ class SDKAgent(ResearchAgent):
     def _log_token_usage(self, input_tokens: int, output_tokens: int) -> None:
         """Log token usage to database."""
         try:
-            db = get_db()
-            db.execute(
-                """
-                INSERT INTO agent_token_usage (
-                    agent_type, run_id, timestamp, input_tokens, output_tokens
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    self.__class__.__name__,
-                    self._run_id or "unknown",
-                    datetime.now(),
-                    input_tokens,
-                    output_tokens,
-                ),
+            self._platform_api.log_token_usage(
+                agent_type=self.__class__.__name__,
+                run_id=self._run_id or "unknown",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
         except Exception as e:
             # Table may not exist yet
@@ -370,23 +363,13 @@ class SDKAgent(ResearchAgent):
             return
 
         try:
-            db = get_db()
-            db.execute(
-                """
-                INSERT OR REPLACE INTO agent_checkpoints (
-                    agent_type, run_id, created_at, state_json,
-                    input_tokens, output_tokens, completed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    self._checkpoint.agent_type,
-                    self._checkpoint.run_id,
-                    self._checkpoint.created_at,
-                    json.dumps(self._checkpoint.state),
-                    self._checkpoint.token_usage.input_tokens,
-                    self._checkpoint.token_usage.output_tokens,
-                    self._checkpoint.completed,
-                ),
+            self._platform_api.save_agent_checkpoint(
+                agent_type=self._checkpoint.agent_type,
+                run_id=self._checkpoint.run_id,
+                state_json=json.dumps(self._checkpoint.state),
+                input_tokens=self._checkpoint.token_usage.input_tokens,
+                output_tokens=self._checkpoint.token_usage.output_tokens,
+                completed=self._checkpoint.completed,
             )
         except Exception as e:
             logger.debug(f"Failed to save checkpoint to DB: {e}")
@@ -455,14 +438,9 @@ class SDKAgent(ResearchAgent):
             return
 
         try:
-            db = get_db()
-            db.execute(
-                """
-                UPDATE agent_checkpoints
-                SET completed = 1
-                WHERE agent_type = ? AND run_id = ?
-                """,
-                (self.__class__.__name__, self._run_id),
+            self._platform_api.complete_agent_checkpoint(
+                agent_type=self.__class__.__name__,
+                run_id=self._run_id,
             )
             self._checkpoint.completed = True
         except Exception as e:
