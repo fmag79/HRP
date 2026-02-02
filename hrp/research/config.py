@@ -61,9 +61,25 @@ class CostModel:
     spread_bps: float = 5.0
     slippage_bps: float = 5.0
 
-    def total_cost_pct(self) -> float:
-        """Total estimated cost as percentage (one-way)."""
-        return (self.spread_bps + self.slippage_bps) / 10000
+    def total_cost_pct(self, avg_share_price: float = 50.0) -> float:
+        """
+        Total estimated cost as percentage (one-way).
+
+        Includes spread, slippage, and IBKR tiered commission.
+        Commission = commission_per_share / avg_share_price, capped at commission_max_pct.
+
+        Args:
+            avg_share_price: Average share price for commission estimation.
+                Defaults to $50 (approximate S&P 500 median).
+        """
+        spread_slippage_pct = (self.spread_bps + self.slippage_bps) / 10000
+
+        # IBKR tiered: $0.005/share, max 1% of trade value
+        # Per-share commission as fraction of share price
+        commission_pct = self.commission_per_share / avg_share_price
+        commission_pct = min(commission_pct, self.commission_max_pct)
+
+        return spread_slippage_pct + commission_pct
 
 
 @dataclass
