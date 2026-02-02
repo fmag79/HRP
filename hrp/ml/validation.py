@@ -87,8 +87,8 @@ class WalkForwardConfig:
         hyperparameters: Model-specific hyperparameters
         feature_selection: Whether to apply feature selection per fold
         max_features: Maximum features to select per fold
-        purge_days: Days between train and test (prevents temporal leakage)
-        embargo_days: Days excluded from test after training period
+        purge_days: Days gap between train end and test start (prevents temporal leakage)
+        embargo_days: Initial days of test period excluded from metric computation
     """
 
     model_type: str
@@ -126,9 +126,9 @@ class WalkForwardConfig:
             raise ValueError(f"purge_days must be >= 0, got {self.purge_days}")
         if self.embargo_days < 0:
             raise ValueError(f"embargo_days must be >= 0, got {self.embargo_days}")
-        if self.purge_days + self.embargo_days > self.min_train_periods:
+        if self.purge_days > self.min_train_periods:
             raise ValueError(
-                f"purge_days + embargo_days ({self.purge_days + self.embargo_days}) "
+                f"purge_days ({self.purge_days}) "
                 f"cannot exceed min_train_periods ({self.min_train_periods})"
             )
 
@@ -226,11 +226,11 @@ def generate_folds(
     # Filter dates to config range
     dates = [d for d in available_dates if config.start_date <= d <= config.end_date]
 
-    # Account for purge/embargo periods in validation
+    # Account for purge periods in validation
+    # Note: embargo_days are *within* the test period (excluded from metrics, not from data)
     required_dates = (
         config.min_train_periods
         + config.purge_days
-        + config.embargo_days
         + config.n_folds
     )
     if len(dates) < required_dates:
@@ -244,8 +244,8 @@ def generate_folds(
     n_dates = len(dates)
     n_folds = config.n_folds
 
-    # Calculate test period size (divide remaining dates after min_train + purge + embargo)
-    reserved_dates = config.min_train_periods + config.purge_days + config.embargo_days
+    # Calculate test period size (divide remaining dates after min_train + purge)
+    reserved_dates = config.min_train_periods + config.purge_days
     test_dates_total = n_dates - reserved_dates
     test_period_size = test_dates_total // n_folds
 
@@ -255,15 +255,20 @@ def generate_folds(
             f"Reduce n_folds, min_train_periods, purge_days, or embargo_days."
         )
 
+    if config.embargo_days >= test_period_size:
+        raise ValueError(
+            f"embargo_days ({config.embargo_days}) must be less than "
+            f"test_period_size ({test_period_size}). "
+            f"No test dates would remain for metric evaluation."
+        )
+
     folds = []
 
     for fold_idx in range(n_folds):
-        # Test period: fixed size, non-overlapping
-        # Add purge_days and embargo_days gap before test
+        # Test period starts after train + purge gap (embargo is within test)
         test_start_idx = (
             config.min_train_periods
             + config.purge_days
-            + config.embargo_days
             + fold_idx * test_period_size
         )
         test_end_idx = test_start_idx + test_period_size - 1
@@ -291,10 +296,15 @@ def generate_folds(
 
         folds.append((train_start, train_end, test_start, test_end))
 
+        embargo_note = ""
+        if config.embargo_days > 0:
+            embargo_end = dates[test_start_idx + config.embargo_days - 1]
+            embargo_note = f", embargo [{test_start} to {embargo_end}] (excluded from metrics)"
+
         logger.debug(
             f"Fold {fold_idx}: train [{train_start} to {train_end}], "
             f"purge={config.purge_days}d, "
-            f"test [{test_start} to {test_end}]"
+            f"test [{test_start} to {test_end}]{embargo_note}"
         )
 
     return folds
@@ -620,8 +630,18 @@ def _process_fold(
     # Predict on test
     y_pred = model.predict(X_test)
 
-    # Compute metrics
-    metrics = compute_fold_metrics(y_test, y_pred)
+    # Exclude embargo period from metric computation.
+    # Embargo = first N days of the test set, excluded from evaluation
+    # (model still predicts on them, but they don't affect scores).
+    if config.embargo_days > 0 and len(y_test) > config.embargo_days:
+        y_test_eval = y_test.iloc[config.embargo_days:]
+        y_pred_eval = y_pred[config.embargo_days:]
+    else:
+        y_test_eval = y_test
+        y_pred_eval = y_pred
+
+    # Compute metrics (on post-embargo test data only)
+    metrics = compute_fold_metrics(y_test_eval, y_pred_eval)
 
     return FoldResult(
         fold_index=fold_idx,
