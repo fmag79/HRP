@@ -964,7 +964,7 @@ Be generous - most quant strategies have at least "moderate" strength if they ha
 
         try:
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-latest",
                 max_tokens=200,
                 messages=[{"role": "user", "content": prompt}],
             )
