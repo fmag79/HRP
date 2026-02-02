@@ -169,10 +169,11 @@ class StructuralRegimeClassifier:
         returns = prices["close"].pct_change().dropna()
         volatility = returns.rolling(20).std().dropna()
 
-        # Align both to same length (minimum of both)
-        min_len = min(len(returns), len(volatility))
-        returns = returns.iloc[:min_len]
-        volatility = volatility.iloc[:min_len]
+        # Align by index intersection (not positional slicing) to prevent
+        # returns and volatility having misaligned dates
+        common_idx = returns.index.intersection(volatility.index)
+        returns = returns.loc[common_idx]
+        volatility = volatility.loc[common_idx]
 
         # Fit HMMs
         self.vol_hmm.fit(volatility.values)
@@ -197,10 +198,10 @@ class StructuralRegimeClassifier:
         returns = prices["close"].pct_change().dropna()
         volatility = returns.rolling(20).std().dropna()
 
-        # Align both to same length
-        min_len = min(len(returns), len(volatility))
-        returns = returns.iloc[:min_len]
-        volatility = volatility.iloc[:min_len]
+        # Align by index intersection (not positional slicing)
+        common_idx = returns.index.intersection(volatility.index)
+        returns = returns.loc[common_idx]
+        volatility = volatility.loc[common_idx]
 
         # Predict regimes
         vol_regimes = self.vol_hmm.predict(volatility.values)
@@ -229,13 +230,13 @@ class StructuralRegimeClassifier:
         import itertools
 
         structural = self.predict(prices)
-        dates = prices.index.tolist()
 
-        # Align dates with structural (may be shorter due to rolling windows)
-        # We need to account for the 20-day warmup for volatility
-        warmup = 20  # Days lost due to rolling window
-        if len(dates) > len(structural):
-            dates = dates[warmup:warmup + len(structural)]
+        # predict() returns results aligned to the common index of returns
+        # and volatility, so we use the same alignment logic to get dates
+        returns = prices["close"].pct_change().dropna()
+        volatility = returns.rolling(20).std().dropna()
+        common_idx = returns.index.intersection(volatility.index)
+        dates = list(common_idx)
 
         # Group consecutive dates by regime
         periods: dict[StructuralRegime, list[tuple]] = {
