@@ -276,7 +276,7 @@ class CIOAgent(SDKAgent):
         if not hyp_with_meta:
             return None
 
-        metadata = hyp_with_meta.get("metadata", {})
+        metadata = hyp_with_meta.get("metadata") or {}
         ml_results = metadata.get("ml_scientist_results", {})
         if not ml_results:
             return None
@@ -306,7 +306,9 @@ class CIOAgent(SDKAgent):
         import json
 
         metadata = hypothesis.get("metadata")
-        if isinstance(metadata, str):
+        if metadata is None:
+            metadata = {}
+        elif isinstance(metadata, str):
             try:
                 metadata = json.loads(metadata)
             except:
@@ -962,7 +964,7 @@ Be generous - most quant strategies have at least "moderate" strength if they ha
 
         try:
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-latest",
                 max_tokens=200,
                 messages=[{"role": "user", "content": prompt}],
             )
