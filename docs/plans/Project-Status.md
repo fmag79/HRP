@@ -26,7 +26,7 @@
 - Platform API: Single entry point, 35+ public methods (`hrp/api/platform.py`)
 - Backtest engine: VectorBT with split/dividend adjustment, trailing stops, benchmark comparison
 - Experiment tracking: MLflow integration
-- Hypothesis registry: Full lifecycle (draft → testing → validated/rejected → deployed)
+- Hypothesis registry: Full lifecycle (draft → testing → validated/rejected → deployed), validation guard enforced at API layer
 - Lineage system: Complete audit trail with actor tracking
 - Trading calendar: NYSE calendar via `exchange_calendars`
 - Corporate actions: Split + dividend adjustment
@@ -63,7 +63,7 @@
 ### ML Framework
 
 - Models: Ridge, Lasso, ElasticNet, RandomForest, LightGBM
-- Walk-forward validation: Expanding/rolling windows, purge/embargo periods, parallel fold processing
+- Walk-forward validation: Expanding/rolling windows, purge/embargo periods, parallel fold processing, MLflow run ID propagation
 - Feature selection: Mutual information, correlation filtering, caching
 - Signal generation: Rank-based, threshold, z-score methods
 - Model registry: Versioning, stage management (staging/production), lineage tracking

@@ -58,6 +58,8 @@ api.create_hypothesis(title, thesis, prediction, falsification, actor='user')
 api.get_prices(['AAPL'], start_date, end_date)
 api.get_features(['AAPL'], ['momentum_20d'], date)
 api.run_quality_checks(as_of_date, send_alerts=True)
+api.link_experiment(hypothesis_id, experiment_id)  # Link MLflow run to hypothesis
+api.update_hypothesis(hypothesis_id, status, outcome, actor)  # Guards: validated requires experiments
 
 # ML operations
 api.register_model(model, model_name, model_type, features, target, metrics, ...)

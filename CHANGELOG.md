@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [1.8.2] - 2026-02-01
+
+### Fixed
+- **Hypotheses validated without experiments**: `_log_to_mlflow()` now returns the MLflow run ID and attaches it to `WalkForwardResult.mlflow_run_id`. ML Scientist agent links experiments to hypotheses via `api.link_experiment()`. `PlatformAPI.update_hypothesis()` blocks `testing→validated` when no experiments are linked.
+
+### Changed
+- **`link_experiment()` public API**: Renamed from `_link_experiment_to_hypothesis()` to `link_experiment()` on `PlatformAPI` for agent access.
+
+### Testing
+- 2,668 tests passing (3 new validation guard tests)
+
 ## [1.8.1] - 2026-01-31
 
 ### Fixed
