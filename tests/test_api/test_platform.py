@@ -1125,7 +1125,7 @@ class TestPlatformAPILineage:
 class TestPlatformAPIExperimentLinking:
     """Tests for experiment-hypothesis linking."""
 
-    def test_link_experiment_to_hypothesis(self, test_api):
+    def testlink_experiment(self, test_api):
         """Test linking an experiment to a hypothesis."""
         hyp_id = test_api.create_hypothesis(
             title="Test",
@@ -1134,7 +1134,7 @@ class TestPlatformAPIExperimentLinking:
             falsification="Test",
             actor="user",
         )
-        test_api._link_experiment_to_hypothesis(hyp_id, "exp-123")
+        test_api.link_experiment(hyp_id, "exp-123")
 
         experiments = test_api.get_experiments_for_hypothesis(hyp_id)
         assert "exp-123" in experiments
@@ -1148,9 +1148,9 @@ class TestPlatformAPIExperimentLinking:
             falsification="Test",
             actor="user",
         )
-        test_api._link_experiment_to_hypothesis(hyp_id, "exp-1")
-        test_api._link_experiment_to_hypothesis(hyp_id, "exp-2")
-        test_api._link_experiment_to_hypothesis(hyp_id, "exp-3")
+        test_api.link_experiment(hyp_id, "exp-1")
+        test_api.link_experiment(hyp_id, "exp-2")
+        test_api.link_experiment(hyp_id, "exp-3")
 
         experiments = test_api.get_experiments_for_hypothesis(hyp_id)
         assert len(experiments) == 3
@@ -1164,8 +1164,8 @@ class TestPlatformAPIExperimentLinking:
             falsification="Test",
             actor="user",
         )
-        test_api._link_experiment_to_hypothesis(hyp_id, "exp-123")
-        test_api._link_experiment_to_hypothesis(hyp_id, "exp-123")  # Duplicate
+        test_api.link_experiment(hyp_id, "exp-123")
+        test_api.link_experiment(hyp_id, "exp-123")  # Duplicate
 
         experiments = test_api.get_experiments_for_hypothesis(hyp_id)
         assert len(experiments) == 1
@@ -1181,6 +1181,54 @@ class TestPlatformAPIExperimentLinking:
         )
         experiments = test_api.get_experiments_for_hypothesis(hyp_id)
         assert experiments == []
+
+
+class TestPlatformAPIValidationGuards:
+    """Tests for hypothesis validation guards."""
+
+    def test_cannot_validate_without_experiments(self, test_api):
+        """Promoting testing -> validated must fail with no linked experiments."""
+        hyp_id = test_api.create_hypothesis(
+            title="Test guard",
+            thesis="Test",
+            prediction="Test",
+            falsification="Test",
+            actor="user",
+        )
+        test_api.update_hypothesis(hyp_id, status="testing", actor="user")
+
+        with pytest.raises(ValueError, match="no linked experiments"):
+            test_api.update_hypothesis(hyp_id, status="validated", actor="user")
+
+    def test_can_validate_with_experiments(self, test_api):
+        """Promoting testing -> validated succeeds when experiments are linked."""
+        hyp_id = test_api.create_hypothesis(
+            title="Test guard pass",
+            thesis="Test",
+            prediction="Test",
+            falsification="Test",
+            actor="user",
+        )
+        test_api.update_hypothesis(hyp_id, status="testing", actor="user")
+        test_api.link_experiment(hyp_id, "exp-001")
+
+        test_api.update_hypothesis(hyp_id, status="validated", actor="user")
+        hyp = test_api.get_hypothesis(hyp_id)
+        assert hyp["status"] == "validated"
+
+    def test_reject_without_experiments_allowed(self, test_api):
+        """Rejecting a hypothesis should work without experiments."""
+        hyp_id = test_api.create_hypothesis(
+            title="Test reject",
+            thesis="Test",
+            prediction="Test",
+            falsification="Test",
+            actor="user",
+        )
+        test_api.update_hypothesis(hyp_id, status="testing", actor="user")
+        test_api.update_hypothesis(hyp_id, status="rejected", actor="user")
+        hyp = test_api.get_hypothesis(hyp_id)
+        assert hyp["status"] == "rejected"
 
 
 class TestPlatformAPIExceptions:
@@ -1316,7 +1364,7 @@ class TestPlatformAPIIntegration:
         # Simulate running experiments
         for i in range(3):
             exp_id = f"exp-{i}"
-            test_api._link_experiment_to_hypothesis(hyp_id, exp_id)
+            test_api.link_experiment(hyp_id, exp_id)
             test_api.log_event(
                 event_type="backtest_run",
                 actor="user",

@@ -477,6 +477,15 @@ class PlatformAPI:
         if not existing:
             raise NotFoundError(f"Hypothesis {hypothesis_id} not found")
 
+        # Guard: cannot validate without linked experiments
+        if status == "validated" and existing["status"] == "testing":
+            experiments = self.get_experiments_for_hypothesis(hypothesis_id)
+            if not experiments:
+                raise ValueError(
+                    f"Cannot validate {hypothesis_id}: no linked experiments. "
+                    "Run walk-forward validation or backtest first."
+                )
+
         # Use current status if none provided
         effective_status = status if status is not None else existing["status"]
 
@@ -660,7 +669,7 @@ class PlatformAPI:
 
         # Link to hypothesis if provided
         if hypothesis_id:
-            self._link_experiment_to_hypothesis(hypothesis_id, experiment_id)
+            self.link_experiment(hypothesis_id, experiment_id)
 
         # Log to lineage
         self.log_event(
@@ -958,7 +967,7 @@ class PlatformAPI:
 
         return f"HYP-{year}-{count:03d}"
 
-    def _link_experiment_to_hypothesis(
+    def link_experiment(
         self,
         hypothesis_id: str,
         experiment_id: str,

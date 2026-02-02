@@ -1419,6 +1419,12 @@ class MLScientist(ResearchAgent):
             for fold in result.fold_results:
                 fold_results.append(fold.metrics)
 
+            mlflow_run_id = result.mlflow_run_id or ""
+
+            # Link experiment to hypothesis so validation guards work
+            if mlflow_run_id and hypothesis_id:
+                self.api.link_experiment(hypothesis_id, mlflow_run_id)
+
             return ModelExperimentResult(
                 hypothesis_id=hypothesis_id,
                 model_type=model_type,
@@ -1430,7 +1436,7 @@ class MLScientist(ResearchAgent):
                 is_stable=result.is_stable,
                 n_folds=len(result.fold_results),
                 fold_results=fold_results,
-                mlflow_run_id="",  # TODO: capture from walk_forward_validate
+                mlflow_run_id=mlflow_run_id,
                 training_time_seconds=training_time,
             )
 

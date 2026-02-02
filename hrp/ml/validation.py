@@ -185,6 +185,7 @@ class WalkForwardResult:
     aggregate_metrics: dict[str, float]
     stability_score: float
     symbols: list[str]
+    mlflow_run_id: str | None = None
 
     @property
     def is_stable(self) -> bool:
@@ -516,7 +517,7 @@ def walk_forward_validate(
     )
 
     if log_to_mlflow:
-        _log_to_mlflow(result)
+        result.mlflow_run_id = _log_to_mlflow(result)
 
     return result
 
@@ -635,8 +636,12 @@ def _process_fold(
     )
 
 
-def _log_to_mlflow(result: WalkForwardResult) -> None:
-    """Log walk-forward results to MLflow."""
+def _log_to_mlflow(result: WalkForwardResult) -> str | None:
+    """Log walk-forward results to MLflow.
+
+    Returns:
+        The MLflow run ID if logging succeeded, None otherwise.
+    """
     try:
         import mlflow
         from hrp.research.mlflow_utils import setup_mlflow
@@ -645,7 +650,9 @@ def _log_to_mlflow(result: WalkForwardResult) -> None:
         experiment_name = f"hrp_walkforward_{result.config.model_type}"
         mlflow.set_experiment(experiment_name)
 
-        with mlflow.start_run(run_name=f"wf_{result.config.n_folds}folds"):
+        with mlflow.start_run(run_name=f"wf_{result.config.n_folds}folds") as run:
+            run_id = run.info.run_id
+
             # Log user-provided tags (e.g. hypothesis_id)
             if result.config.tags:
                 mlflow.set_tags(result.config.tags)
@@ -672,9 +679,12 @@ def _log_to_mlflow(result: WalkForwardResult) -> None:
                     mlflow.log_param("n_train_samples", fold.n_train_samples)
                     mlflow.log_param("n_test_samples", fold.n_test_samples)
 
-        logger.info(f"Logged walk-forward results to MLflow: {experiment_name}")
+        logger.info(f"Logged walk-forward results to MLflow: {experiment_name} (run_id={run_id})")
+        return run_id
 
     except ImportError:
         logger.warning("MLflow not installed, skipping logging")
+        return None
     except Exception as e:
         logger.error(f"Failed to log to MLflow: {e}")
+        return None
