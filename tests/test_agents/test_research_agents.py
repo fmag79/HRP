@@ -129,7 +129,7 @@ class TestResearchAgentBase:
 
         agent = ConcreteAgent(job_id="test_research_agent", actor="agent:test")
 
-        with patch("hrp.agents.research_agents.log_event") as mock_log:
+        with patch("hrp.agents.base.log_event") as mock_log:
             mock_log.return_value = 1
 
             lineage_id = agent._log_agent_event(

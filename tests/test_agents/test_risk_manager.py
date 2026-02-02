@@ -135,7 +135,7 @@ class TestPortfolioRiskAssessment:
 class TestRiskManagerExecute:
     """Test RiskManager execute method."""
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_execute_no_hypotheses(self, mock_api_class):
         """Test execute returns early when no hypotheses to assess."""
         mock_api = Mock()
@@ -149,7 +149,7 @@ class TestRiskManagerExecute:
         assert result["status"] == "no_hypotheses"
         assert result["assessments"] == []
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_execute_with_hypotheses(self, mock_api_class, tmp_path):
         """Test execute processes hypotheses."""
         mock_api = Mock()
@@ -188,7 +188,7 @@ class TestRiskManagerExecute:
 class TestRiskManagerCheckDrawdown:
     """Test drawdown risk checking."""
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_drawdown_pass(self, mock_api_class):
         """Test drawdown check passes when within limits."""
         agent = RiskManager(max_drawdown=0.20)
@@ -200,7 +200,7 @@ class TestRiskManagerCheckDrawdown:
 
         assert veto is None
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_drawdown_veto(self, mock_api_class):
         """Test drawdown veto when exceeding limits."""
         agent = RiskManager(max_drawdown=0.20)
@@ -219,7 +219,7 @@ class TestRiskManagerCheckDrawdown:
 class TestRiskManagerCheckConcentration:
     """Test concentration risk checking."""
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_concentration_pass(self, mock_api_class):
         """Test concentration check passes with good diversification."""
         agent = RiskManager()
@@ -232,7 +232,7 @@ class TestRiskManagerCheckConcentration:
 
         assert len(vetos) == 0
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_concentration_veto_few_positions(self, mock_api_class):
         """Test concentration veto for too few positions."""
         agent = RiskManager()
@@ -247,7 +247,7 @@ class TestRiskManagerCheckConcentration:
         assert vetos[0].veto_type == "concentration"
         assert "5 positions" in vetos[0].veto_reason
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_concentration_veto_sector_exposure(self, mock_api_class):
         """Test concentration veto for high sector exposure."""
         agent = RiskManager(max_sector_exposure=0.30)
@@ -269,7 +269,7 @@ class TestRiskManagerCheckConcentration:
 class TestRiskManagerCheckRiskLimits:
     """Test risk limits checking."""
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_risk_limits_pass(self, mock_api_class):
         """Test risk limits pass for reasonable values."""
         agent = RiskManager()
@@ -283,7 +283,7 @@ class TestRiskManagerCheckRiskLimits:
         critical_vetos = [v for v in vetos if v.severity == "critical"]
         assert len(critical_vetos) == 0
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_risk_limits_warning_high_volatility(self, mock_api_class):
         """Test risk limits warning for high volatility."""
         agent = RiskManager()
@@ -297,7 +297,7 @@ class TestRiskManagerCheckRiskLimits:
         assert any(v.veto_type == "limits" for v in vetos)
         assert any(v.severity == "warning" for v in vetos)
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_check_risk_limits_warning_high_turnover(self, mock_api_class):
         """Test risk limits warning for high turnover."""
         agent = RiskManager()
@@ -314,7 +314,7 @@ class TestRiskManagerCheckRiskLimits:
 class TestRiskManagerCalculatePortfolioImpact:
     """Test portfolio impact calculation."""
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_calculate_impact_empty_portfolio(self, mock_api_class):
         """Test portfolio impact calculation with empty portfolio."""
         mock_api = Mock()
@@ -335,7 +335,7 @@ class TestRiskManagerCalculatePortfolioImpact:
         assert impact["new_positions"] == 1
         assert impact["weight_increase"] == 0.05
 
-    @patch("hrp.agents.research_agents.PlatformAPI")
+    @patch("hrp.agents.base.PlatformAPI")
     def test_calculate_impact_existing_positions(self, mock_api_class):
         """Test portfolio impact calculation with existing positions."""
         mock_api = Mock()

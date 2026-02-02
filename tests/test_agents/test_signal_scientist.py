@@ -455,7 +455,7 @@ class TestHypothesisCreation:
             end_date=date(2024, 1, 1),
         )
 
-        with patch("hrp.agents.research_agents.PlatformAPI") as MockAPI:
+        with patch("hrp.agents.base.PlatformAPI") as MockAPI:
             mock_api = MagicMock()
             MockAPI.return_value = mock_api
 
@@ -493,7 +493,7 @@ class TestHypothesisCreation:
             end_date=date(2024, 1, 1),
         )
 
-        with patch("hrp.agents.research_agents.PlatformAPI") as MockAPI:
+        with patch("hrp.agents.base.PlatformAPI") as MockAPI:
             mock_api = MagicMock()
             MockAPI.return_value = mock_api
 
@@ -597,7 +597,7 @@ class TestMLflowLogging:
             )
         ]
 
-        with patch("hrp.agents.research_agents.mlflow") as mock_mlflow:
+        with patch("hrp.agents.signal_scientist.mlflow") as mock_mlflow:
             mock_mlflow.start_run.return_value.__enter__ = MagicMock(
                 return_value=MagicMock(info=MagicMock(run_id="test_run_123"))
             )
@@ -643,7 +643,7 @@ class TestEmailNotification:
             )
         ]
 
-        with patch("hrp.agents.research_agents.EmailNotifier") as MockNotifier:
+        with patch("hrp.agents.signal_scientist.EmailNotifier") as MockNotifier:
             mock_notifier = MagicMock()
             MockNotifier.return_value = mock_notifier
 
@@ -694,7 +694,7 @@ class TestEmailNotification:
             ),
         ]
 
-        with patch("hrp.agents.research_agents.EmailNotifier") as MockNotifier:
+        with patch("hrp.agents.signal_scientist.EmailNotifier") as MockNotifier:
             mock_notifier = MagicMock()
             MockNotifier.return_value = mock_notifier
 
