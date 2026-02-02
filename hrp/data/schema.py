@@ -436,11 +436,20 @@ TABLES = {
             details JSON,
             parent_lineage_id INTEGER,
             CHECK (event_type IN (
-                   'hypothesis_created', 'hypothesis_updated', 'hypothesis_deleted',
-                   'experiment_started', 'experiment_completed', 'experiment_run', 'experiment_linked',
-                   'backtest_run', 'validation_passed', 'validation_failed',
-                   'deployment_requested', 'deployment_approved', 'deployment_rejected',
-                   'data_ingested', 'data_ingestion', 'feature_computed',
+                   'hypothesis_created', 'hypothesis_updated', 'hypothesis_deleted', 'hypothesis_flagged',
+                   'experiment_run', 'experiment_linked', 'experiment_completed',
+                   'validation_passed', 'validation_failed',
+                   'deployment_approved', 'deployment_rejected',
+                   'agent_run_complete', 'agent_run_start',
+                   'ml_quality_sentinel_audit', 'alpha_researcher_review', 'validation_analyst_review',
+                   'risk_review_complete', 'risk_veto',
+                   'quant_developer_backtest_complete', 'alpha_researcher_complete',
+                   'pipeline_orchestrator_complete', 'kill_gate_triggered',
+                   'data_ingestion', 'system_error',
+                   'code_materializer_complete', 'cio_agent_decision',
+                   'validation_analyst_complete', 'risk_manager_assessment',
+                   'experiment_started', 'backtest_run', 'deployment_requested',
+                   'data_ingested', 'feature_computed', 'universe_update', 'other'))
                    'universe_update', 'agent_run_complete', 'system_error', 'other'))
         )
     """,
