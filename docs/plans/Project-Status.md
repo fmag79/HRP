@@ -26,7 +26,7 @@
 - Platform API: Single entry point, 35+ public methods (`hrp/api/platform.py`)
 - Backtest engine: VectorBT with split/dividend adjustment, trailing stops, benchmark comparison
 - Experiment tracking: MLflow integration
-- Hypothesis registry: Full lifecycle (draft → testing → validated/rejected → deployed), validation guard enforced at API layer
+- Hypothesis registry: Full lifecycle (draft → testing → validated/rejected → deployed), validation guard enforced at API layer, MAX-based ID generation (gap-safe)
 - Lineage system: Complete audit trail with actor tracking
 - Trading calendar: NYSE calendar via `exchange_calendars`
 - Corporate actions: Split + dividend adjustment

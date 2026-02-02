@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [1.8.3] - 2026-02-02
+
+### Fixed
+- **Duplicate hypothesis ID generation**: `PlatformAPI._generate_hypothesis_id()` used `COUNT(*)` which produced duplicates when rows were hard-deleted (gaps in sequence). Now uses MAX-based approach to find the highest existing ID and increment, matching `hrp/research/hypothesis.py`.
+
+### Testing
+- 2,706 tests passing (1 skipped)
+
 ## [1.8.2] - 2026-02-01
 
 ### Fixed
