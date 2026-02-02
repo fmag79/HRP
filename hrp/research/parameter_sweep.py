@@ -384,30 +384,19 @@ def _evaluate_single_combination(
     """
     Evaluate a single parameter combination on one fold.
 
-    This is a placeholder that should be connected to actual backtest logic.
-    Returns mock metrics for now.
+    NOT YET IMPLEMENTED — returns mock data. Do not use for research decisions.
+
+    TODO: Wire to real backtest engine:
+    1. Generate signals using the strategy with given params
+    2. Run backtest on the fold's train/test split
+    3. Return train and test metrics
     """
-    # In a real implementation, this would:
-    # 1. Generate signals using the strategy with given params
-    # 2. Run backtest on the fold's train/test split
-    # 3. Return train and test metrics
-
-    # Mock implementation for testing
-    np.random.seed(hash(str(params)) % (2**32) + fold_idx)
-
-    # Simulate some relationship between params and performance
-    base_sharpe = 0.5
-    noise = np.random.randn() * 0.3
-
-    train_sharpe = base_sharpe + noise + 0.2  # Train typically higher
-    test_sharpe = base_sharpe + noise  # Test slightly lower (some overfitting)
-
-    return {
-        "train_sharpe": train_sharpe,
-        "test_sharpe": test_sharpe,
-        "train_return": train_sharpe * 0.1,
-        "test_return": test_sharpe * 0.1,
-    }
+    raise NotImplementedError(
+        "Parameter sweep evaluation is not yet implemented. "
+        "_evaluate_single_combination() currently has no connection to the "
+        "backtest engine. Do not use parallel_parameter_sweep() for research "
+        "decisions until this is wired up."
+    )
 
 
 def parallel_parameter_sweep(

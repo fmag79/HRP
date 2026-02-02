@@ -377,7 +377,12 @@ class TestComputeSharpeDiffAnalysis:
 
 
 class TestParallelParameterSweep:
-    """Tests for parallel_parameter_sweep function."""
+    """Tests for parallel_parameter_sweep function.
+
+    Note: _evaluate_single_combination is not yet implemented (raises
+    NotImplementedError). These tests verify the error is raised until
+    the module is wired to the real backtest engine.
+    """
 
     @pytest.fixture
     def sample_config(self):
@@ -392,37 +397,13 @@ class TestParallelParameterSweep:
             n_folds=3,
         )
 
-    def test_parallel_execution(self, sample_config):
-        """Test parallel parameter sweep runs successfully."""
-        result = parallel_parameter_sweep(sample_config)
+    def test_parallel_execution_raises_not_implemented(self, sample_config):
+        """parallel_parameter_sweep raises NotImplementedError (not yet wired to backtest)."""
+        with pytest.raises(NotImplementedError, match="not yet implemented"):
+            parallel_parameter_sweep(sample_config)
 
-        assert isinstance(result, SweepResult)
-        assert len(result.results_df) == 3  # 3 alpha values
-        assert result.constraint_violations == 0
-
-    def test_returns_best_params(self, sample_config):
-        """Test sweep returns best parameters."""
-        result = parallel_parameter_sweep(sample_config)
-
-        assert "alpha" in result.best_params
-        assert result.best_params["alpha"] in [0.1, 0.5, 1.0]
-
-    def test_sharpe_matrices_shape(self, sample_config):
-        """Test train/test Sharpe matrices have correct shape."""
-        result = parallel_parameter_sweep(sample_config)
-
-        # 3 param combos, 3 folds
-        assert len(result.train_sharpe_matrix) == 3
-        assert len(result.test_sharpe_matrix) == 3
-
-    def test_generalization_score_range(self, sample_config):
-        """Test generalization score is between 0 and 1."""
-        result = parallel_parameter_sweep(sample_config)
-
-        assert 0.0 <= result.generalization_score <= 1.0
-
-    def test_integrates_with_overfitting_guard(self):
-        """Test sweep tracks constraint violations."""
+    def test_with_constraints_raises_not_implemented(self):
+        """Constrained sweep also raises NotImplementedError."""
         config = SweepConfig(
             strategy_type="momentum",
             param_ranges={
@@ -438,13 +419,8 @@ class TestParallelParameterSweep:
             n_folds=2,
         )
 
-        result = parallel_parameter_sweep(config)
-
-        # Some combinations should violate the constraint
-        assert result.constraint_violations > 0
-        # Only valid combinations should be in results
-        for _, row in result.results_df.iterrows():
-            assert row["slow_period"] - row["fast_period"] >= 10
+        with pytest.raises(NotImplementedError, match="not yet implemented"):
+            parallel_parameter_sweep(config)
 
 
 class TestModuleExports:
