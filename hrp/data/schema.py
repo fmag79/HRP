@@ -446,11 +446,10 @@ TABLES = {
                    'quant_developer_backtest_complete', 'alpha_researcher_complete',
                    'pipeline_orchestrator_complete', 'kill_gate_triggered',
                    'data_ingestion', 'system_error',
-                   'code_materializer_complete', 'cio_agent_decision',
+                   'cio_agent_decision',
                    'validation_analyst_complete', 'risk_manager_assessment',
                    'experiment_started', 'backtest_run', 'deployment_requested',
                    'data_ingested', 'feature_computed', 'universe_update', 'other'))
-                   'universe_update', 'agent_run_complete', 'system_error', 'other'))
         )
     """,
     "agent_checkpoints": """

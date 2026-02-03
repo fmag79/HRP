@@ -12,7 +12,6 @@ from hrp.agents.alpha_researcher import (
     StrategySpec,
 )
 from hrp.agents.cio import CIOAgent, CIODecision, CIOReport, CIOScore
-from hrp.agents.code_materializer import CodeMaterializer, CodeMaterializerConfig
 from hrp.agents.jobs import (
     FeatureComputationJob,
     FundamentalsIngestionJob,
@@ -114,9 +113,6 @@ __all__ = [
     "AlphaResearcherConfig",
     "AlphaResearcherReport",
     "HypothesisAnalysis",
-    # Code Materializer
-    "CodeMaterializer",
-    "CodeMaterializerConfig",
     # CIO Agent
     "CIOAgent",
     "CIOScore",
