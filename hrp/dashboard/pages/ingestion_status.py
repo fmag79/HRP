@@ -80,7 +80,7 @@ def get_ingestion_statistics() -> dict[str, Any]:
 
     # Success count
     success_result = api.fetchone_readonly(
-        "SELECT COUNT(*) FROM ingestion_log WHERE status = 'success'"
+        "SELECT COUNT(*) FROM ingestion_log WHERE status = 'completed'"
     )
     success_count = success_result[0] if success_result else 0
 
@@ -92,7 +92,7 @@ def get_ingestion_statistics() -> dict[str, Any]:
 
     # Total records inserted
     records_result = api.fetchone_readonly(
-        "SELECT SUM(records_inserted) FROM ingestion_log WHERE status = 'success'"
+        "SELECT SUM(records_inserted) FROM ingestion_log WHERE status = 'completed'"
     )
     total_records = records_result[0] if records_result and records_result[0] else 0
 
@@ -101,7 +101,7 @@ def get_ingestion_statistics() -> dict[str, Any]:
         """
         SELECT MAX(completed_at)
         FROM ingestion_log
-        WHERE status = 'success'
+        WHERE status = 'completed'
         """
     )
     last_success = last_success_result[0] if last_success_result and last_success_result[0] else None
@@ -148,7 +148,7 @@ def get_source_statistics() -> pd.DataFrame:
         SELECT
             source_id,
             COUNT(*) as total_runs,
-            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_runs,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as success_runs,
             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_runs,
             SUM(records_inserted) as total_records,
             MAX(completed_at) as last_run
@@ -343,8 +343,8 @@ def render() -> None:
             if status is None:
                 return "❓ Unknown"
             status_lower = str(status).lower()
-            if status_lower == "success":
-                return "✅ Success"
+            if status_lower == "completed":
+                return "✅ Completed"
             elif status_lower == "failed":
                 return "❌ Failed"
             elif status_lower == "running":
