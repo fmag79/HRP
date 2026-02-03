@@ -180,7 +180,7 @@ class ValidationAnalyst(ResearchAgent):
                 failed_count += 1
                 self._update_hypothesis_status(
                     validation.hypothesis_id,
-                    "validation_failed",
+                    "testing",
                     validation,
                 )
 
