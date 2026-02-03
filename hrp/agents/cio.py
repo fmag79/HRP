@@ -571,11 +571,19 @@ class CIOAgent(SDKAgent):
         # ══════════════════════════════════════════════════════════════════════
         parts.append("## Executive Summary\n")
 
-        # Determine verdict based on statistical significance and decisions
+        # Determine verdict based on statistical significance, deflated Sharpe, and decisions
+        # IMPORTANT: "STRONG ALPHA" requires deflated Sharpe > 0, meaning alpha beyond
+        # what's expected from data snooping / multiple testing
+        avg_deflated_sharpe = np.mean(all_deflated_sharpes) if all_deflated_sharpes else 0
+        has_positive_deflated_alpha = avg_deflated_sharpe > 0.1  # Meaningful positive alpha
+
         if total == 0:
             verdict = "⚪ **NO HYPOTHESES TO REVIEW** — Pipeline empty"
+        elif significant_count == total and continue_count == total and has_positive_deflated_alpha:
+            verdict = "🟢 **STRONG ALPHA DETECTED** — All strategies show statistically significant edge after multiple testing adjustment"
         elif significant_count == total and continue_count == total:
-            verdict = "🟢 **STRONG ALPHA DETECTED** — All strategies show statistically significant edge"
+            # All significant but deflated Sharpe near zero - likely data snooping
+            verdict = "🟡 **STATISTICAL SIGNIFICANCE BUT NO DEFLATED ALPHA** — Strategies appear significant but expected under null hypothesis given multiple testing"
         elif significant_count >= total * 0.6 and continue_count >= total * 0.5:
             verdict = "🟢 **POSITIVE OUTLOOK** — Majority of strategies show real signal"
         elif continue_count >= total * 0.5:
