@@ -169,8 +169,7 @@ print(f"Model is stable: {result.is_stable}")
 
 - [Project Status](docs/plans/Project-Status.md)
 - [Cookbook](docs/operations/cookbook.md) - Practical guide with examples
-- [Agent Pipeline](docs/agents/agent-interaction-diagram.md) - Research agent architecture
-- [Decision Pipeline](docs/agents/decision-pipeline.md) - Signal-to-deployment flow
+- [Decision Pipeline](docs/agents/decision-pipeline.md) - Agent architecture and signal-to-deployment flow
 - [Deployment Guide](docs/operations/deployment.md) - Scheduler & service setup
 
 ## Development Status

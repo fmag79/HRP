@@ -136,11 +136,9 @@ weight = target_risk_contribution / volatility
 | Table | Purpose |
 |-------|---------|
 | `paper_portfolio` | Current allocations |
-| `paper_portfolio_history` | Daily NAV tracking |
 | `paper_portfolio_trades` | Simulated trade log |
 | `cio_decisions` | Decision records with approval status |
 | `model_cemetery` | Killed strategies archive |
-| `cio_threshold_history` | Adaptive threshold tracking |
 
 ---
 
