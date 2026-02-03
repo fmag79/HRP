@@ -135,13 +135,15 @@ class TestPortfolioRiskAssessment:
 class TestRiskManagerExecute:
     """Test RiskManager execute method."""
 
+    @patch("hrp.agents.jobs.PlatformAPI")
     @patch("hrp.agents.base.PlatformAPI")
-    def test_execute_no_hypotheses(self, mock_api_class):
+    def test_execute_no_hypotheses(self, mock_api_class_base, mock_api_class_jobs):
         """Test execute returns early when no hypotheses to assess."""
         mock_api = Mock()
         mock_api.list_hypotheses_with_metadata.return_value = []
         mock_api.get_paper_portfolio.return_value = []
-        mock_api_class.return_value = mock_api
+        mock_api_class_base.return_value = mock_api
+        mock_api_class_jobs.return_value = mock_api
 
         agent = RiskManager()
         result = agent.run()
@@ -149,8 +151,9 @@ class TestRiskManagerExecute:
         assert result["status"] == "no_hypotheses"
         assert result["assessments"] == []
 
+    @patch("hrp.agents.jobs.PlatformAPI")
     @patch("hrp.agents.base.PlatformAPI")
-    def test_execute_with_hypotheses(self, mock_api_class, tmp_path):
+    def test_execute_with_hypotheses(self, mock_api_class_base, mock_api_class_jobs, tmp_path):
         """Test execute processes hypotheses."""
         mock_api = Mock()
 
@@ -168,16 +171,18 @@ class TestRiskManagerExecute:
         # Mock get_paper_portfolio for _calculate_portfolio_impact
         mock_api.get_paper_portfolio.return_value = []
 
-        mock_api_class.return_value = mock_api
+        mock_api_class_base.return_value = mock_api
+        mock_api_class_jobs.return_value = mock_api
 
         # Use tmp_path for research note output
         research_dir = tmp_path / "research"
         research_dir.mkdir()
 
-        agent = RiskManager()
+        agent = RiskManager(send_alerts=False)
 
-        with patch("hrp.utils.config.get_config") as mock_config:
-            mock_config.return_value.data.research_dir = research_dir
+        # Mock _write_research_note and _log_agent_event to avoid DB access
+        with patch.object(agent, "_write_research_note"), \
+             patch.object(agent, "_log_agent_event", return_value=1):
             result = agent.run()
 
         # Result should contain assessments

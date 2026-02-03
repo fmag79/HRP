@@ -259,7 +259,7 @@ class TestWeeklyResearchSequence:
         execution_order = []
 
         # Step 1: Signal Scientist
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             signal_scientist = SignalScientist(symbols=test_symbols)
 
             # Mock run to track execution
@@ -295,7 +295,7 @@ class TestWeeklyResearchSequence:
                 alpha_result = alpha_researcher.run()
 
         # Step 3: ML Scientist
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             ml_scientist = MLScientist(hypothesis_ids=['HYP-2026-SEQ-001'])
 
             def mock_ml_run(self):
@@ -309,7 +309,7 @@ class TestWeeklyResearchSequence:
                 ml_result = ml_scientist.run()
 
         # Step 4: ML Quality Sentinel
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             quality_sentinel = MLQualitySentinel(
                 hypothesis_ids=['HYP-2026-SEQ-001']
             )
@@ -351,7 +351,7 @@ class TestWeeklyResearchSequence:
         hypothesis_id = 'HYP-2026-FLOW-001'
 
         # Signal Scientist creates hypothesis
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             mock_platform_api.create_hypothesis.return_value = hypothesis_id
 
             signal_scientist = SignalScientist(symbols=test_symbols)
@@ -378,7 +378,7 @@ class TestWeeklyResearchSequence:
             assert result is True
 
         # ML Scientist runs experiment
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             experiment_id = 'EXP-2026-FLOW-001'
             mock_platform_api.run_backtest.return_value = experiment_id
 
@@ -391,7 +391,7 @@ class TestWeeklyResearchSequence:
             assert result == experiment_id
 
         # Quality Sentinel audits experiment
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             mock_platform_api.get_experiment.return_value = {
                 'id': experiment_id,
                 'metrics': {'sharpe': 1.5},
@@ -428,13 +428,13 @@ class TestAgentReports:
         """
         report_path = report_output_dir / "signal_scan_report.json"
 
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             signal_scientist = SignalScientist(symbols=test_symbols)
 
             # Mock report generation
             report = SignalScanReport(
                 scan_date=test_date,
-                total_features_scanned=44,
+                total_features_scanned=45,
                 promising_signals=[],
                 hypotheses_created=['HYP-2026-RPT-001', 'HYP-2026-RPT-002'],
                 mlflow_run_id='mlflow-run-123',
@@ -443,7 +443,7 @@ class TestAgentReports:
 
             # Verify report structure
             assert report.scan_date == test_date
-            assert report.total_features_scanned == 44
+            assert report.total_features_scanned == 45
             assert len(report.hypotheses_created) == 2
             assert report.duration_seconds > 0
 
@@ -519,7 +519,7 @@ class TestAgentReports:
         """
         report_path = report_output_dir / "ml_scientist_report.json"
 
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             ml_scientist = MLScientist(hypothesis_ids=['HYP-2026-RPT-001'])
 
             # Mock report generation
@@ -565,7 +565,7 @@ class TestAgentReports:
         """
         report_path = report_output_dir / "quality_sentinel_report.json"
 
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             sentinel = MLQualitySentinel(hypothesis_ids=['HYP-2026-RPT-001'])
 
             # Mock report generation
@@ -827,7 +827,7 @@ class TestCompleteWorkflows:
         workflow_results = {}
 
         # Step 1: Signal discovery
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             signal_scientist = SignalScientist(symbols=test_symbols)
             workflow_results['signal_scientist'] = {
                 'status': 'success',
@@ -845,7 +845,7 @@ class TestCompleteWorkflows:
             }
 
         # Step 3: ML validation
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             ml_scientist = MLScientist(hypothesis_ids=['HYP-2026-WK-001'])
             workflow_results['ml_scientist'] = {
                 'status': 'success',
@@ -853,7 +853,7 @@ class TestCompleteWorkflows:
             }
 
         # Step 4: Quality audit
-        with patch('hrp.agents.research_agents.PlatformAPI', return_value=mock_platform_api):
+        with patch('hrp.agents.base.PlatformAPI', return_value=mock_platform_api):
             quality_sentinel = MLQualitySentinel(
                 hypothesis_ids=['HYP-2026-WK-001']
             )

@@ -260,7 +260,7 @@ class TestSignalScanReport:
 
         report = SignalScanReport(
             scan_date=date(2024, 6, 1),
-            total_features_scanned=44,
+            total_features_scanned=45,
             promising_signals=results,
             hypotheses_created=["HYP-2025-001"],
             mlflow_run_id="abc123",
@@ -268,7 +268,7 @@ class TestSignalScanReport:
         )
 
         assert report.scan_date == date(2024, 6, 1)
-        assert report.total_features_scanned == 44
+        assert report.total_features_scanned == 45
         assert len(report.promising_signals) == 1
         assert report.hypotheses_created == ["HYP-2025-001"]
         assert report.mlflow_run_id == "abc123"
