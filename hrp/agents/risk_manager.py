@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
+import numpy as np
 from loguru import logger
 
 from hrp.agents.base import ResearchAgent
@@ -40,6 +41,7 @@ class PortfolioRiskAssessment:
     warnings: list[str]
     portfolio_impact: dict[str, Any]
     assessment_date: date
+    metrics: dict[str, Any] | None = None  # Store metrics for reporting
 
 
 @dataclass
@@ -299,6 +301,7 @@ class RiskManager(ResearchAgent):
             warnings=warnings,
             portfolio_impact=portfolio_impact,
             assessment_date=date.today(),
+            metrics=experiment_data,  # Store for reporting
         )
 
         # Update hypothesis with risk assessment
@@ -533,6 +536,25 @@ class RiskManager(ResearchAgent):
 
         return vetos
 
+    def _get_hypothesis_context(self, hypothesis_id: str) -> dict[str, Any]:
+        """
+        Get hypothesis title and thesis for report context.
+
+        Args:
+            hypothesis_id: Hypothesis ID to look up
+
+        Returns:
+            Dict with title and thesis fields
+        """
+        try:
+            hyp = self.api.get_hypothesis_with_metadata(hypothesis_id)
+            return {
+                "title": hyp.get("title", "") if hyp else "",
+                "thesis": hyp.get("thesis", "") if hyp else "",
+            }
+        except Exception:
+            return {"title": "", "thesis": ""}
+
     def _calculate_portfolio_impact(
         self, hypothesis_id: str, metrics: dict[str, Any], metadata: dict[str, Any]
     ) -> dict[str, Any]:
@@ -600,93 +622,359 @@ class RiskManager(ResearchAgent):
             logger.warning(f"Failed to update hypothesis {assessment.hypothesis_id}: {e}")
 
     def _write_research_note(self, report: RiskManagerReport) -> None:
-        """Write per-run risk assessment report to output/research/."""
-        from pathlib import Path
-        from hrp.utils.config import get_config
+        """
+        Write institutional-grade risk assessment report.
+
+        Generates a comprehensive research report with:
+        - Executive summary with verdict based on veto rate
+        - Statistical distribution of risk metrics
+        - Veto analysis with reason breakdown
+        - Detailed per-hypothesis sections
+        - Recommendations based on patterns observed
+        """
         from hrp.agents.report_formatting import (
             render_header, render_footer, render_kpi_dashboard,
             render_alert_banner, render_health_gauges, render_risk_limits,
-            render_veto_section, render_section_divider, render_progress_bar,
+            render_section_divider, render_progress_bar, format_metric,
         )
-
         from hrp.agents.output_paths import research_note_path
 
         report_date = report.report_date.isoformat()
         filepath = research_note_path("08-risk-manager")
 
+        # ══════════════════════════════════════════════════════════════════════
+        # AGGREGATE STATISTICS
+        # ══════════════════════════════════════════════════════════════════════
+        total = report.hypotheses_assessed
+        passed_count = report.hypotheses_passed
+        vetoed_count = report.hypotheses_vetoed
+        total_warnings = sum(len(a.warnings) for a in report.assessments)
+        total_vetos = sum(len(a.vetos) for a in report.assessments)
+
+        # Collect metrics from all assessments for distribution analysis
+        all_sharpes = []
+        all_drawdowns = []
+        all_volatilities = []
+        all_turnovers = []
+
+        for assessment in report.assessments:
+            if assessment.metrics:
+                if assessment.metrics.get("sharpe") is not None:
+                    all_sharpes.append(assessment.metrics["sharpe"])
+                if assessment.metrics.get("max_drawdown") is not None:
+                    all_drawdowns.append(assessment.metrics["max_drawdown"])
+                if assessment.metrics.get("volatility") is not None:
+                    all_volatilities.append(assessment.metrics["volatility"])
+                if assessment.metrics.get("turnover") is not None:
+                    all_turnovers.append(assessment.metrics["turnover"])
+
+        # Veto reason breakdown
+        veto_reasons: dict[str, int] = {}
+        veto_by_category: dict[str, int] = {}
+        for assessment in report.assessments:
+            for veto in assessment.vetos:
+                veto_reasons[veto.veto_reason] = veto_reasons.get(veto.veto_reason, 0) + 1
+                veto_by_category[veto.veto_type] = veto_by_category.get(veto.veto_type, 0) + 1
+
         parts = []
 
-        # ── Header ──
+        # ══════════════════════════════════════════════════════════════════════
+        # HEADER
+        # ══════════════════════════════════════════════════════════════════════
+        veto_rate = (vetoed_count / max(total, 1)) * 100
         parts.append(render_header(
             title="Risk Manager Report",
             report_type="risk-manager",
             date_str=report_date,
+            subtitle=f"🛡️ {total} hypotheses | {passed_count} approved | {vetoed_count} vetoed",
         ))
 
-        # ── KPI Dashboard ──
+        # ══════════════════════════════════════════════════════════════════════
+        # EXECUTIVE SUMMARY
+        # ══════════════════════════════════════════════════════════════════════
+        parts.append("## Executive Summary\n")
+
+        if veto_rate == 0:
+            verdict = "✅ **ALL HYPOTHESES APPROVED** — Full portfolio proceeding to CIO review"
+        elif veto_rate < 25:
+            verdict = "🟢 **LOW VETO RATE** — Majority of strategies meet risk standards"
+        elif veto_rate < 50:
+            verdict = "🟡 **MODERATE VETO RATE** — Mixed risk profile across hypothesis pool"
+        elif veto_rate < 75:
+            verdict = "🟠 **HIGH VETO RATE** — Significant risk concerns identified"
+        elif veto_rate < 100:
+            verdict = "🔴 **CRITICAL VETO RATE** — Majority fail risk assessment"
+        else:
+            verdict = "🚫 **ALL HYPOTHESES VETOED** — No strategies meet risk thresholds"
+
+        parts.append(f"{verdict}\n")
+
+        # KPI Dashboard (5 metrics)
         parts.append(render_kpi_dashboard([
-            {"icon": "📋", "label": "Assessed", "value": report.hypotheses_assessed, "detail": "hypotheses"},
-            {"icon": "✅", "label": "Passed", "value": report.hypotheses_passed, "detail": "approved"},
-            {"icon": "🚫", "label": "Vetoed", "value": report.hypotheses_vetoed, "detail": "blocked"},
+            {"icon": "📋", "label": "Assessed", "value": total, "detail": "hypotheses"},
+            {"icon": "✅", "label": "Approved", "value": passed_count, "detail": f"{100 - veto_rate:.0f}% pass rate"},
+            {"icon": "🚫", "label": "Vetoed", "value": vetoed_count, "detail": f"{veto_rate:.0f}% blocked"},
+            {"icon": "⚠️", "label": "Warnings", "value": total_warnings, "detail": "flagged issues"},
+            {"icon": "🔒", "label": "Veto Count", "value": total_vetos, "detail": "individual vetos"},
         ]))
 
-        # ── Alert banner ──
-        if report.hypotheses_vetoed > 0:
-            veto_pct = report.hypotheses_vetoed / max(report.hypotheses_assessed, 1) * 100
+        # Alert banner
+        if vetoed_count > 0:
             parts.append(render_alert_banner(
-                [f"{report.hypotheses_vetoed} of {report.hypotheses_assessed} hypotheses VETOED ({veto_pct:.0f}%)",
-                 "📌 Review risk limits and drawdown thresholds if veto rate is excessive"],
-                severity="critical" if veto_pct > 50 else "warning",
+                [f"Veto Rate: {veto_rate:.1f}% ({vetoed_count}/{total} hypotheses blocked)",
+                 f"Total Vetos: {total_vetos} | Warnings: {total_warnings}"],
+                severity="critical" if veto_rate >= 50 else "warning",
             ))
-        elif report.hypotheses_assessed > 0:
+        elif total > 0:
             parts.append(render_alert_banner(
-                [f"All {report.hypotheses_assessed} hypotheses passed risk assessment ✅"],
+                [f"All {total} hypotheses passed risk assessment ✅",
+                 "Strategies cleared for CIO review and potential deployment"],
                 severity="info",
             ))
 
-        # ── Health Gauges ──
-        pass_rate = (report.hypotheses_passed / max(report.hypotheses_assessed, 1)) * 100
-        parts.append(render_health_gauges([
-            {"label": "Risk Pass Rate", "value": pass_rate, "max_val": 100,
-             "trend": "up" if report.hypotheses_vetoed == 0 else "down"},
-            {"label": "Portfolio Safety", "value": 100 - (report.hypotheses_vetoed * 10), "max_val": 100,
-             "trend": "stable"},
-        ]))
+        # ══════════════════════════════════════════════════════════════════════
+        # STATISTICAL DISTRIBUTION
+        # ══════════════════════════════════════════════════════════════════════
+        if any([all_sharpes, all_drawdowns, all_volatilities]):
+            parts.append(render_section_divider("📊 Statistical Distribution"))
 
-        # ── Risk Limits ──
+            parts.append("### Risk Metrics Distribution\n")
+            parts.append("| Statistic | Sharpe Ratio | Max Drawdown | Volatility | Turnover |")
+            parts.append("|-----------|--------------|--------------|------------|----------|")
+
+            sharpe_arr = np.array(all_sharpes) if all_sharpes else np.array([0])
+            dd_arr = np.array(all_drawdowns) if all_drawdowns else np.array([0])
+            vol_arr = np.array(all_volatilities) if all_volatilities else np.array([0])
+            turn_arr = np.array(all_turnovers) if all_turnovers else np.array([0])
+
+            parts.append(f"| **Mean** | {np.mean(sharpe_arr):.4f} | {np.mean(dd_arr):.2%} | {np.mean(vol_arr):.2%} | {np.mean(turn_arr):.2%} |")
+            parts.append(f"| **Std Dev** | {np.std(sharpe_arr):.4f} | {np.std(dd_arr):.2%} | {np.std(vol_arr):.2%} | {np.std(turn_arr):.2%} |")
+            parts.append(f"| **Min** | {np.min(sharpe_arr):.4f} | {np.min(dd_arr):.2%} | {np.min(vol_arr):.2%} | {np.min(turn_arr):.2%} |")
+            parts.append(f"| **Max** | {np.max(sharpe_arr):.4f} | {np.max(dd_arr):.2%} | {np.max(vol_arr):.2%} | {np.max(turn_arr):.2%} |")
+
+            if len(sharpe_arr) >= 4:
+                parts.append(f"| **25th %ile** | {np.percentile(sharpe_arr, 25):.4f} | {np.percentile(dd_arr, 25):.2%} | {np.percentile(vol_arr, 25):.2%} | {np.percentile(turn_arr, 25):.2%} |")
+                parts.append(f"| **Median** | {np.median(sharpe_arr):.4f} | {np.median(dd_arr):.2%} | {np.median(vol_arr):.2%} | {np.median(turn_arr):.2%} |")
+                parts.append(f"| **75th %ile** | {np.percentile(sharpe_arr, 75):.4f} | {np.percentile(dd_arr, 75):.2%} | {np.percentile(vol_arr, 75):.2%} | {np.percentile(turn_arr, 75):.2%} |")
+
+            parts.append(f"| **Count** | {len(all_sharpes)} | {len(all_drawdowns)} | {len(all_volatilities)} | {len(all_turnovers)} |")
+            parts.append("")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # VETO ANALYSIS
+        # ══════════════════════════════════════════════════════════════════════
+        parts.append(render_section_divider("⚔️ Veto Analysis"))
+
+        if veto_reasons:
+            parts.append("### Veto Reason Breakdown\n")
+            parts.append("| Reason | Count | % of Vetos |")
+            parts.append("|--------|-------|------------|")
+            for reason, count in sorted(veto_reasons.items(), key=lambda x: -x[1]):
+                pct = (count / total_vetos) * 100 if total_vetos > 0 else 0
+                parts.append(f"| {reason[:60]}{'...' if len(reason) > 60 else ''} | {count} | {pct:.1f}% |")
+            parts.append("")
+
+            parts.append("### Veto Type Distribution\n")
+            parts.append("| Category | Count | % of Vetos | Description |")
+            parts.append("|----------|-------|------------|-------------|")
+            category_descriptions = {
+                "drawdown": "Maximum drawdown exceeds risk tolerance",
+                "concentration": "Position sizing or sector exposure concerns",
+                "correlation": "Excessive correlation with existing positions",
+                "limits": "Risk limit violations (volatility, turnover)",
+                "other": "Other risk concerns",
+            }
+            for category, count in sorted(veto_by_category.items(), key=lambda x: -x[1]):
+                pct = (count / total_vetos) * 100 if total_vetos > 0 else 0
+                desc = category_descriptions.get(category, "Unknown")
+                parts.append(f"| `{category}` | {count} | {pct:.1f}% | {desc} |")
+            parts.append("")
+        else:
+            parts.append("*No vetos issued — all hypotheses passed risk assessment*\n")
+
+        # Risk Limits
+        parts.append("### Risk Thresholds\n")
         parts.append(render_risk_limits({
             "Max Drawdown": f"{self.max_drawdown:.1%}",
             "Max Correlation": f"{self.max_correlation:.2f}",
             "Max Sector Exposure": f"{self.max_sector_exposure:.1%}",
             "Min Diversification": f"{self.MIN_DIVERSIFICATION} positions",
+            "Target Positions": f"{self.TARGET_POSITIONS} positions",
         }))
 
-        # ── Per-hypothesis assessment ──
-        parts.append(render_section_divider("📊 Hypothesis Assessments"))
+        # Health Gauges
+        pass_rate = (passed_count / max(total, 1)) * 100
+        parts.append(render_health_gauges([
+            {"label": "Risk Pass Rate", "value": pass_rate, "max_val": 100,
+             "trend": "up" if vetoed_count == 0 else "down"},
+            {"label": "Portfolio Safety", "value": 100 - (vetoed_count * 10), "max_val": 100,
+             "trend": "stable" if pass_rate > 75 else "down"},
+        ]))
+
+        # ══════════════════════════════════════════════════════════════════════
+        # PER-HYPOTHESIS DETAILED ANALYSIS
+        # ══════════════════════════════════════════════════════════════════════
+        parts.append(render_section_divider("📋 Hypothesis Analysis"))
 
         for assessment in report.assessments:
-            status = "passed" if assessment.passed else "vetoed"
-            veto_data = []
+            status_emoji = "✅" if assessment.passed else "🔴"
+            status_label = "APPROVED" if assessment.passed else "VETOED"
+
+            parts.append(f"### {status_emoji} {assessment.hypothesis_id} — **{status_label}**\n")
+
+            # Hypothesis context
+            context = self._get_hypothesis_context(assessment.hypothesis_id)
+            if context["title"]:
+                parts.append(f"**{context['title']}**\n")
+            if context["thesis"]:
+                thesis_short = context["thesis"][:200] + "..." if len(context["thesis"]) > 200 else context["thesis"]
+                parts.append(f"> {thesis_short}\n")
+
+            # Metadata table
+            parts.append("| Attribute | Value |")
+            parts.append("|-----------|-------|")
+            parts.append(f"| **Assessment Result** | {status_label} |")
+            parts.append(f"| **Veto Count** | {len(assessment.vetos)} |")
+            parts.append(f"| **Warning Count** | {len(assessment.warnings)} |")
+            parts.append(f"| **Assessment Date** | {assessment.assessment_date.isoformat()} |")
+            parts.append("")
+
+            # Risk Metrics table
+            if assessment.metrics:
+                metrics = assessment.metrics
+                sharpe = metrics.get("sharpe", 0)
+                max_dd = metrics.get("max_drawdown", 0)
+                vol = metrics.get("volatility", 0)
+                turnover = metrics.get("turnover", 0)
+                num_pos = metrics.get("num_positions", self.TARGET_POSITIONS)
+
+                parts.append("#### Risk Metrics\n")
+                parts.append("| Metric | Value | Limit | Status |")
+                parts.append("|--------|-------|-------|--------|")
+
+                # Sharpe (no limit, just display)
+                sharpe_status = "✅ Good" if sharpe > 0.5 else "⚠️ Low" if sharpe > 0 else "❌ Negative"
+                parts.append(f"| Sharpe Ratio | {sharpe:+.4f} | — | {sharpe_status} |")
+
+                # Max Drawdown
+                dd_status = "✅" if max_dd <= self.max_drawdown else "❌"
+                parts.append(f"| Max Drawdown | {max_dd:.2%} | {self.max_drawdown:.1%} | {dd_status} |")
+
+                # Volatility
+                vol_status = "✅" if vol <= 0.25 else "⚠️"
+                parts.append(f"| Volatility | {vol:.2%} | 25.0% | {vol_status} |")
+
+                # Turnover
+                turn_status = "✅" if turnover <= 0.50 else "⚠️"
+                parts.append(f"| Turnover | {turnover:.2%} | 50.0% | {turn_status} |")
+
+                # Positions
+                pos_status = "✅" if num_pos >= self.MIN_DIVERSIFICATION else "❌"
+                parts.append(f"| Positions | {num_pos} | ≥{self.MIN_DIVERSIFICATION} | {pos_status} |")
+                parts.append("")
+
+                # Derived Risk Ratios
+                if max_dd > 0 and vol > 0:
+                    # Calmar ratio estimate: sharpe-based return estimate / max drawdown
+                    est_return = sharpe * vol  # Approximate return
+                    calmar_est = est_return / max_dd if max_dd > 0 else 0
+                    # Sortino estimate (assume downside vol ~ 70% of total vol)
+                    sortino_est = sharpe * 1.43 if sharpe > 0 else sharpe
+
+                    parts.append("**Derived Risk Ratios** (estimates)")
+                    parts.append(f"- Calmar Ratio: {calmar_est:.2f} {'✅' if calmar_est > 0.5 else '⚠️'}")
+                    parts.append(f"- Sortino Ratio: {sortino_est:.2f} {'✅' if sortino_est > 1.0 else '⚠️'}")
+                    parts.append(f"- Return/Vol Ratio: {sharpe:.2f}")
+                    parts.append("")
+
+            # Veto Details table
             if assessment.vetos:
+                parts.append("#### Veto Details\n")
+                parts.append("| Type | Severity | Reason |")
+                parts.append("|------|----------|--------|")
                 for veto in assessment.vetos:
-                    veto_data.append({
-                        "type": veto.veto_type,
-                        "reason": veto.veto_reason,
-                        "severity": veto.severity,
-                    })
+                    sev_emoji = "🚫" if veto.severity == "critical" else "⚠️"
+                    reason_short = veto.veto_reason[:80] + "..." if len(veto.veto_reason) > 80 else veto.veto_reason
+                    parts.append(f"| `{veto.veto_type}` | {sev_emoji} {veto.severity.upper()} | {reason_short} |")
+                parts.append("")
 
-            warning_data = list(assessment.warnings) if assessment.warnings else []
-            impact_data = assessment.portfolio_impact if assessment.portfolio_impact else None
+            # Warnings
+            if assessment.warnings:
+                parts.append("#### Warnings\n")
+                for warning in assessment.warnings:
+                    parts.append(f"- ⚠️ {warning}")
+                parts.append("")
 
-            parts.append(render_veto_section(
-                hypothesis_id=assessment.hypothesis_id,
-                status=status,
-                vetos=veto_data if veto_data else None,
-                warnings=warning_data if warning_data else None,
-                portfolio_impact=impact_data,
-            ))
+            # Portfolio Impact table
+            if assessment.portfolio_impact:
+                impact = assessment.portfolio_impact
+                parts.append("#### Portfolio Impact\n")
+                parts.append("| Metric | Current | After Addition | Change |")
+                parts.append("|--------|---------|----------------|--------|")
 
-        # ── Disclaimer ──
+                current_pos = impact.get("current_positions", 0)
+                new_pos = impact.get("new_positions", current_pos + 1)
+                current_weight = impact.get("current_weight", 0)
+                new_weight = impact.get("new_weight", current_weight)
+                weight_change = impact.get("weight_increase", new_weight - current_weight)
+                div_value = impact.get("diversification_value", "medium")
+
+                parts.append(f"| Positions | {current_pos} | {new_pos} | +1 |")
+                parts.append(f"| Total Weight | {current_weight:.1%} | {new_weight:.1%} | {weight_change:+.1%} |")
+                parts.append(f"| Diversification Value | — | {div_value.upper()} | — |")
+                parts.append("")
+
+            parts.append("─" * 70)
+            parts.append("")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # RECOMMENDATIONS
+        # ══════════════════════════════════════════════════════════════════════
+        parts.append(render_section_divider("💡 Recommendations"))
+
+        recommendations = []
+
+        if veto_rate == 0:
+            recommendations.append("- **Proceed to CIO review** — All strategies cleared risk assessment")
+            recommendations.append("- **Monitor portfolio correlation** — Ensure new additions maintain diversification")
+
+        if veto_rate == 100:
+            recommendations.append("- **Review hypothesis generation** — All strategies rejected suggests systematic issues")
+            recommendations.append("- **Consider relaxing thresholds** — Temporarily reduce drawdown limit for early-stage research")
+            recommendations.append("- **Audit data pipeline** — Validate input data quality and feature calculations")
+
+        if 0 < veto_rate < 100:
+            recommendations.append(f"- **{passed_count} hypotheses ready for CIO review** — Passed strategies meet risk criteria")
+
+        if veto_rate >= 50:
+            recommendations.append("- **High rejection rate** — Review common failure patterns for signal improvement")
+
+        if veto_rate >= 75:
+            recommendations.append("- **Critical attention needed** — Consider risk parameter review or hypothesis generation audit")
+
+        if "drawdown" in veto_by_category:
+            recommendations.append(f"- **{veto_by_category['drawdown']} drawdown vetos** — Strategies exceeding {self.max_drawdown:.0%} max DD limit")
+
+        if "concentration" in veto_by_category:
+            recommendations.append(f"- **{veto_by_category['concentration']} concentration vetos** — Review position sizing and sector allocation")
+
+        if "correlation" in veto_by_category:
+            recommendations.append(f"- **{veto_by_category['correlation']} correlation vetos** — Reduce overlap with existing portfolio")
+
+        if "limits" in veto_by_category:
+            recommendations.append(f"- **{veto_by_category['limits']} limit violations** — Address volatility/turnover constraints")
+
+        if total_warnings > 0:
+            recommendations.append(f"- **{total_warnings} warnings issued** — Review flagged issues before final approval")
+
+        for rec in recommendations:
+            parts.append(rec)
+
+        parts.append("")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # DISCLAIMER
+        # ══════════════════════════════════════════════════════════════════════
         parts.append("")
         parts.append("```")
         parts.append("⚖️  NOTICE: Risk Manager operates independently and can veto strategies")
@@ -695,7 +983,9 @@ class RiskManager(ResearchAgent):
         parts.append("```")
         parts.append("")
 
-        # ── Footer ──
+        # ══════════════════════════════════════════════════════════════════════
+        # FOOTER
+        # ══════════════════════════════════════════════════════════════════════
         parts.append(render_footer(
             agent_name="risk-manager",
             duration_seconds=report.duration_seconds,
