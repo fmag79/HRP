@@ -79,9 +79,18 @@ class EventType(str, Enum):
 
     # === Data events ===
     DATA_INGESTION = "data_ingestion"
+    DATA_INGESTED = "data_ingested"
+    FEATURE_COMPUTED = "feature_computed"
+    UNIVERSE_UPDATE = "universe_update"
 
     # === System events ===
     SYSTEM_ERROR = "system_error"
+
+    # === Additional events (in schema for compatibility) ===
+    EXPERIMENT_STARTED = "experiment_started"
+    BACKTEST_RUN = "backtest_run"
+    DEPLOYMENT_REQUESTED = "deployment_requested"
+    OTHER = "other"
 
 
 @dataclass

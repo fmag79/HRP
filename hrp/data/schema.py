@@ -123,6 +123,8 @@ def migrate_remove_cio_foreign_keys(db_path: Union[str, None] = None) -> None:
                     score_economic DECIMAL(4, 2),
                     score_cost DECIMAL(4, 2),
                     rationale TEXT,
+                    -- Human CIO approval workflow (reserved for future use)
+                    -- These fields will be populated when human CIO approves deployment
                     approved BOOLEAN DEFAULT FALSE,
                     approved_by VARCHAR,
                     approved_at TIMESTAMP,

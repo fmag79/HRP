@@ -52,7 +52,7 @@ class DeploymentResult:
         model_name: Name of the deployed model
         model_version: Version of the deployed model
         environment: Target environment ('staging', 'production', 'shadow')
-        status: Deployment status ('pending', 'success', 'failed')
+        status: Deployment status ('pending', 'active', 'rolled_back')
         validation_passed: Whether validation checks passed
         validation_results: Dict of validation check results
         timestamp: When deployment occurred
