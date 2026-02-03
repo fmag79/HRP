@@ -220,6 +220,7 @@ hrp/
 |----------|---------|
 | `docs/architecture/data-pipeline-diagram.md` | Data pipeline: sources → jobs → DuckDB → agents → outputs |
 | `docs/agents/decision-pipeline.md` | Agent decision workflow: 11 stages, kill gates, scoring, human approval |
+| `docs/agents/state-machine-transitions.md` | Complete state machine documentation: hypothesis states, pipeline stages, events, thresholds |
 | `docs/agents/01-*.md` through `docs/agents/10-*.md` | Individual agent specifications (numbered by pipeline order) |
 | `docs/plans/Project-Status.md` | Development roadmap and tier status |
 | `docs/setup/Scheduler-Configuration-Guide.md` | launchd job configuration |
