@@ -6,16 +6,14 @@ based on lineage events.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 import duckdb
 from loguru import logger
 
-
-# Database path
-DB_PATH = Path.home() / "hrp-data" / "hrp.duckdb"
+from hrp.data.db import get_db
 
 # Pipeline stage definitions ordered by progression
 PIPELINE_STAGES = [
@@ -112,9 +110,12 @@ LINEAGE_TO_STAGE = {
 STAGE_ORDER = [stage["key"] for stage in PIPELINE_STAGES]
 
 
-def _get_db_connection(read_only: bool = True) -> duckdb.DuckDBPyConnection:
-    """Get a database connection."""
-    return duckdb.connect(str(DB_PATH), read_only=read_only)
+@contextmanager
+def _get_db_connection() -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    """Get a database connection from the shared pool."""
+    db = get_db()
+    with db.connection() as con:
+        yield con
 
 
 def get_pipeline_stage_for_hypothesis(
@@ -133,111 +134,107 @@ def get_pipeline_stage_for_hypothesis(
     Returns:
         Dict with stage info: key, name, entered_at, last_event
     """
-    should_close = con is None
-    if con is None:
-        con = _get_db_connection()
+    # Handle terminal statuses (no DB access needed)
+    if status == "deployed":
+        return {
+            "key": "deployed",
+            "name": "Deployed",
+            "entered_at": None,
+            "last_event": None,
+        }
 
-    try:
-        # Handle terminal statuses
-        if status == "deployed":
-            return {
-                "key": "deployed",
-                "name": "Deployed",
-                "entered_at": None,
-                "last_event": None,
-            }
+    if status == "rejected":
+        return {
+            "key": "rejected",
+            "name": "Rejected",
+            "entered_at": None,
+            "last_event": None,
+        }
 
-        if status == "rejected":
-            return {
-                "key": "rejected",
-                "name": "Rejected",
-                "entered_at": None,
-                "last_event": None,
-            }
+    if status == "deleted":
+        return {
+            "key": "deleted",
+            "name": "Deleted",
+            "entered_at": None,
+            "last_event": None,
+        }
 
-        if status == "deleted":
-            return {
-                "key": "deleted",
-                "name": "Deleted",
-                "entered_at": None,
-                "last_event": None,
-            }
+    # Get relevant lineage events for this hypothesis
+    # Look for the most recent stage-transition event
+    relevant_events = [
+        "alpha_researcher_complete",
+        "ml_scientist_validation",
+        "ml_quality_sentinel_audit",
+        "quant_developer_complete",
+        "kill_gate_enforcer_complete",
+        "validation_analyst_complete",
+        "risk_manager_assessment",
+        "cio_agent_decision",
+    ]
 
-        # Get relevant lineage events for this hypothesis
-        # Look for the most recent stage-transition event
-        relevant_events = [
-            "alpha_researcher_complete",
-            "ml_scientist_validation",
-            "ml_quality_sentinel_audit",
-            "quant_developer_complete",
-            "kill_gate_enforcer_complete",
-            "validation_analyst_complete",
-            "risk_manager_assessment",
-            "cio_agent_decision",
-        ]
+    placeholders = ", ".join(["?" for _ in relevant_events])
+    query = f"""
+        SELECT event_type, timestamp, details
+        FROM lineage
+        WHERE hypothesis_id = ?
+          AND event_type IN ({placeholders})
+        ORDER BY timestamp DESC
+        LIMIT 1
+    """
 
-        placeholders = ", ".join(["?" for _ in relevant_events])
-        query = f"""
-            SELECT event_type, timestamp, details
-            FROM lineage
-            WHERE hypothesis_id = ?
-              AND event_type IN ({placeholders})
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """
-
+    # Use provided connection or get from pool
+    if con is not None:
         result = con.execute(query, [hypothesis_id] + relevant_events).fetchone()
+    else:
+        with _get_db_connection() as conn:
+            result = conn.execute(query, [hypothesis_id] + relevant_events).fetchone()
 
-        if result is None:
-            # No progression events - still in draft or early testing
-            if status == "draft":
-                return {
-                    "key": "draft",
-                    "name": "Draft",
-                    "entered_at": None,
-                    "last_event": None,
-                }
-            else:
-                # In testing but no ML Scientist event yet
-                return {
-                    "key": "testing",
-                    "name": "Testing",
-                    "entered_at": None,
-                    "last_event": None,
-                }
-
-        event_type, timestamp, details = result
-
-        # Find the NEXT stage after the completed event
-        completed_stage = LINEAGE_TO_STAGE.get(event_type)
-        if completed_stage:
-            stage_idx = STAGE_ORDER.index(completed_stage)
-            # Move to next stage if not at end
-            if stage_idx + 1 < len(STAGE_ORDER):
-                next_stage_key = STAGE_ORDER[stage_idx + 1]
-                next_stage = next(s for s in PIPELINE_STAGES if s["key"] == next_stage_key)
-                return {
-                    "key": next_stage_key,
-                    "name": next_stage["name"],
-                    "entered_at": timestamp,
-                    "last_event": {
-                        "event_type": event_type,
-                        "timestamp": timestamp,
-                        "details": details,
-                    },
-                }
-
-        # Fallback to current stage based on status
+    if result is None:
+        # No progression events - still in draft or early testing
         if status == "draft":
-            return {"key": "draft", "name": "Draft", "entered_at": None, "last_event": None}
-        elif status == "testing":
-            return {"key": "testing", "name": "Testing", "entered_at": None, "last_event": None}
+            return {
+                "key": "draft",
+                "name": "Draft",
+                "entered_at": None,
+                "last_event": None,
+            }
         else:
-            return {"key": "validated", "name": "Validated", "entered_at": None, "last_event": None}
+            # In testing but no ML Scientist event yet
+            return {
+                "key": "testing",
+                "name": "Testing",
+                "entered_at": None,
+                "last_event": None,
+            }
 
-    finally:
-        if should_close:
-            con.close()
+    event_type, timestamp, details = result
+
+    # Find the NEXT stage after the completed event
+    completed_stage = LINEAGE_TO_STAGE.get(event_type)
+    if completed_stage:
+        stage_idx = STAGE_ORDER.index(completed_stage)
+        # Move to next stage if not at end
+        if stage_idx + 1 < len(STAGE_ORDER):
+            next_stage_key = STAGE_ORDER[stage_idx + 1]
+            next_stage = next(s for s in PIPELINE_STAGES if s["key"] == next_stage_key)
+            return {
+                "key": next_stage_key,
+                "name": next_stage["name"],
+                "entered_at": timestamp,
+                "last_event": {
+                    "event_type": event_type,
+                    "timestamp": timestamp,
+                    "details": details,
+                },
+            }
+
+    # Fallback to current stage based on status
+    if status == "draft":
+        return {"key": "draft", "name": "Draft", "entered_at": None, "last_event": None}
+    elif status == "testing":
+        return {"key": "testing", "name": "Testing", "entered_at": None, "last_event": None}
+    else:
+        return {"key": "validated", "name": "Validated", "entered_at": None, "last_event": None}
 
 
 def get_hypothesis_pipeline_stages(
@@ -252,30 +249,28 @@ def get_hypothesis_pipeline_stages(
     Returns:
         List of hypothesis dicts with pipeline stage info
     """
-    con = _get_db_connection()
+    # Build status filter
+    if exclude_terminal:
+        status_filter = "AND status NOT IN ('rejected', 'deleted')"
+    else:
+        status_filter = ""
 
-    try:
-        # Build status filter
-        if exclude_terminal:
-            status_filter = "AND status NOT IN ('rejected', 'deleted')"
-        else:
-            status_filter = ""
+    # Get all hypotheses with metadata
+    query = f"""
+        SELECT
+            hypothesis_id,
+            title,
+            thesis,
+            status,
+            created_at,
+            updated_at,
+            metadata
+        FROM hypotheses
+        WHERE 1=1 {status_filter}
+        ORDER BY created_at DESC
+    """
 
-        # Get all hypotheses with metadata
-        query = f"""
-            SELECT
-                hypothesis_id,
-                title,
-                thesis,
-                status,
-                created_at,
-                updated_at,
-                metadata
-            FROM hypotheses
-            WHERE 1=1 {status_filter}
-            ORDER BY created_at DESC
-        """
-
+    with _get_db_connection() as con:
         rows = con.execute(query).fetchall()
 
         results = []
@@ -284,7 +279,7 @@ def get_hypothesis_pipeline_stages(
         for row in rows:
             hypothesis_id, title, thesis, status, created_at, updated_at, metadata = row
 
-            # Get pipeline stage
+            # Get pipeline stage (pass connection for efficiency)
             stage_info = get_pipeline_stage_for_hypothesis(hypothesis_id, status, con)
 
             # Calculate time in stage
@@ -336,10 +331,7 @@ def get_hypothesis_pipeline_stages(
                 "updated_at": updated_at,
             })
 
-        return results
-
-    finally:
-        con.close()
+    return results
 
 
 def get_hypotheses_by_stage(stage_key: str) -> list[dict[str, Any]]:

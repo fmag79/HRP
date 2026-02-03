@@ -42,7 +42,7 @@ def get_api() -> Any:
         try:
             from hrp.api.platform import PlatformAPI
 
-            st.session_state.api = PlatformAPI(read_only=True)
+            st.session_state.api = PlatformAPI()  # Use default read-write mode
             st.session_state.db_error = None
             logger.info("PlatformAPI initialized for dashboard")
         except Exception as e:
