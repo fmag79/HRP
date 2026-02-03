@@ -80,6 +80,7 @@ class MLScientist(ResearchAgent):
     IC_THRESHOLD_PROMISING = 0.02
     STABILITY_THRESHOLD_VALIDATED = 1.0
     STABILITY_THRESHOLD_PROMISING = 1.5
+    IC_SUSPICIOUS_THRESHOLD = 0.15  # Flag as potential data leakage
 
     # Trial limits
     MAX_TRIALS_PER_HYPOTHESIS = 50
@@ -139,6 +140,7 @@ class MLScientist(ResearchAgent):
         max_trials_per_hypothesis: int | None = None,
         skip_hyperparameter_search: bool = False,
         parallel_folds: bool = True,
+        purge_days: int | None = None,
     ):
         """
         Initialize the ML Scientist agent.
@@ -155,6 +157,7 @@ class MLScientist(ResearchAgent):
             max_trials_per_hypothesis: Max trials per hypothesis (default: 50)
             skip_hyperparameter_search: Use default params only
             parallel_folds: Run folds in parallel (default: True)
+            purge_days: Gap between train/test to prevent leakage (None = auto from target)
         """
         super().__init__(
             job_id=self.DEFAULT_JOB_ID,
@@ -172,6 +175,7 @@ class MLScientist(ResearchAgent):
         self.max_trials = max_trials_per_hypothesis or self.MAX_TRIALS_PER_HYPOTHESIS
         self.skip_hyperparameter_search = skip_hyperparameter_search
         self.parallel_folds = parallel_folds
+        self.purge_days = purge_days
 
     def execute(self) -> dict[str, Any]:
         """
@@ -225,7 +229,7 @@ class MLScientist(ResearchAgent):
                     self._log_agent_event(
                         event_type=EventType.EXPERIMENT_COMPLETED,
                         hypothesis_id=hypothesis.get("hypothesis_id"),
-                        experiment_id=best.experiment_id if best else None,
+                        experiment_id=best.mlflow_run_id if best else None,
                         details={
                             "status": status,
                             "trials": len(hyp_results),
@@ -348,6 +352,14 @@ class MLScientist(ResearchAgent):
                         )
 
                         if result:
+                            # Filter suspicious IC values (potential data leakage)
+                            if result.mean_ic > self.IC_SUSPICIOUS_THRESHOLD:
+                                logger.warning(
+                                    f"Suspicious IC={result.mean_ic:.4f} for {hypothesis_id} "
+                                    f"with features {result.features} — possible data leakage"
+                                )
+                                continue
+
                             results.append(result)
                             try:
                                 counter.log_trial(
@@ -360,7 +372,7 @@ class MLScientist(ResearchAgent):
                                 logger.warning(f"Failed to log trial: {e}")
 
                             # Early stopping if we find excellent result
-                            if result.mean_ic > 0.05 and result.is_stable:
+                            if result.mean_ic > 0.05 and result.mean_ic <= self.IC_SUSPICIOUS_THRESHOLD and result.is_stable:
                                 logger.info(
                                     f"Excellent result found for {hypothesis_id}, stopping early"
                                 )
@@ -386,6 +398,13 @@ class MLScientist(ResearchAgent):
         try:
             start_time = time.time()
 
+            # Derive purge days from target horizon to prevent temporal leakage
+            if self.purge_days is not None:
+                purge_days = self.purge_days
+            else:
+                digits = "".join(filter(str.isdigit, self.target))
+                purge_days = int(digits) if digits else 20
+
             config = WalkForwardConfig(
                 model_type=model_type,
                 target=self.target,
@@ -396,6 +415,8 @@ class MLScientist(ResearchAgent):
                 window_type=self.window_type,
                 n_jobs=-1 if self.parallel_folds else 1,
                 hyperparameters=model_params,
+                purge_days=purge_days,
+                embargo_days=5,
                 tags={"hypothesis_id": hypothesis_id},
             )
 
