@@ -854,6 +854,13 @@ def _get_status_color(status: str) -> str:
     return colors.get(status, "gray")
 
 
+def render_pipeline_progress() -> None:
+    """Render the Pipeline Progress page."""
+    from hrp.dashboard.pages import pipeline_progress
+
+    pipeline_progress.render()
+
+
 def render_agents_monitor() -> None:
     """Render the Agents Monitor page."""
     from hrp.dashboard.pages import agents_monitor_page
@@ -903,7 +910,7 @@ def render_sidebar() -> str:
 
         page = st.selectbox(
             "Select Page",
-            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Agents Monitor", "Job Health"],
+            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Pipeline Progress", "Agents Monitor", "Job Health"],
             label_visibility="collapsed",
         )
 
@@ -1020,6 +1027,8 @@ def main() -> None:
         render_hypotheses()
     elif page == "Experiments":
         render_experiments()
+    elif page == "Pipeline Progress":
+        render_pipeline_progress()
     elif page == "Agents Monitor":
         render_agents_monitor()
     elif page == "Job Health":

@@ -1205,6 +1205,364 @@ def run_report_generator(
 
 
 # =============================================================================
+# Signal Scientist Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_signal_scientist() -> dict[str, Any]:
+    """
+    Run Signal Scientist to scan for predictive signals and create draft hypotheses.
+
+    The Signal Scientist performs systematic IC (Information Coefficient) analysis
+    across all features to identify those with predictive power for forward returns.
+    When promising signals are found, it creates draft hypotheses for review.
+
+    Features analyzed:
+    - Single-factor IC analysis across all 44+ features
+    - Two-factor combination scanning (momentum + value, etc.)
+    - Multi-horizon testing (5, 10, 20 day returns)
+    - Rolling IC calculation for robust signal detection
+
+    Returns:
+        Summary of signals found and hypotheses created
+    """
+    from hrp.agents.signal_scientist import SignalScientist
+
+    agent = SignalScientist()
+    result = agent.run()
+
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "signals_found": result.get("signals_found", 0),
+            "hypotheses_created": result.get("hypotheses_created", []),
+            "features_scanned": result.get("features_scanned", 0),
+            "scan_date": result.get("scan_date"),
+        },
+        message=(
+            f"Scanned {result.get('features_scanned', 0)} features, "
+            f"found {result.get('signals_found', 0)} signals, "
+            f"created {len(result.get('hypotheses_created', []))} hypotheses"
+        ),
+    )
+
+
+# =============================================================================
+# ML Scientist Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_ml_scientist(
+    hypothesis_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    Run ML Scientist to train and validate ML models for hypotheses in testing status.
+
+    The ML Scientist takes hypotheses created by the Signal Scientist (or manually)
+    and systematically trains ML models using walk-forward validation. It identifies
+    the best model/feature combinations and updates hypothesis status based on
+    statistical rigor.
+
+    Features:
+    - Multi-model type testing (ridge, lasso, lightgbm)
+    - Walk-forward validation with stability scoring
+    - Feature combination search
+    - Hyperparameter optimization with trial budget
+    - Automatic hypothesis status updates (testing -> validated/rejected)
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to process (optional).
+                       If not provided, processes all hypotheses in "testing" status.
+
+    Returns:
+        Summary of hypotheses validated and experiments run
+    """
+    from hrp.agents.ml_scientist import MLScientist
+
+    agent = MLScientist(hypothesis_ids=hypothesis_ids)
+    result = agent.run()
+
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "hypotheses_validated": result.get("hypotheses_validated", 0),
+            "hypotheses_rejected": result.get("hypotheses_rejected", 0),
+            "experiments_run": result.get("total_trials", 0),
+            "hypotheses_processed": result.get("hypotheses_processed", 0),
+        },
+        message=(
+            f"Processed {result.get('hypotheses_processed', 0)} hypotheses, "
+            f"validated {result.get('hypotheses_validated', 0)}, "
+            f"rejected {result.get('hypotheses_rejected', 0)}"
+        ),
+    )
+
+
+# =============================================================================
+# Quant Developer Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_quant_developer(
+    hypothesis_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    Run Quant Developer to produce deployment-ready backtests for validated hypotheses.
+
+    The Quant Developer takes hypotheses that have passed ML validation and produces
+    comprehensive backtest packages including:
+    - Model retraining on full historical data
+    - ML-predicted signal generation (rank-based selection)
+    - VectorBT backtest with realistic IBKR costs
+    - Parameter variations (lookback, signal thresholds)
+    - Time period and regime split analysis
+    - Trade statistics for cost analysis
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to backtest (optional).
+                       If not provided, processes all hypotheses that passed ML audit.
+
+    Returns:
+        Summary of backtests completed
+    """
+    from hrp.agents.quant_developer import QuantDeveloper
+
+    agent = QuantDeveloper(hypothesis_ids=hypothesis_ids)
+    result = agent.run()
+
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "backtests_completed": len(result.get("backtests", [])),
+            "backtests_failed": result.get("backtests_failed", 0),
+            "hypotheses_processed": result.get("hypotheses_processed", 0),
+        },
+        message=(
+            f"Completed {len(result.get('backtests', []))} backtests "
+            f"for {result.get('hypotheses_processed', 0)} hypotheses"
+        ),
+    )
+
+
+# =============================================================================
+# Kill Gate Enforcer Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_kill_gate_enforcer(
+    hypothesis_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    Run Kill Gate Enforcer to apply early termination gates and save compute.
+
+    The Kill Gate Enforcer applies hard quality thresholds to terminate unpromising
+    research early, saving compute resources for promising hypotheses.
+
+    Kill Gates Applied:
+    1. Baseline Sharpe - Must exceed equal-weight baseline (min 0.5)
+    2. Train Sharpe - Flags suspiciously high training Sharpe (>3.0)
+    3. Max Drawdown - Rejects if drawdown exceeds 30%
+    4. Feature Count - Flags >50 features (overfitting risk)
+    5. Instability - Flags high fold-to-fold variance
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to evaluate (optional).
+                       If not provided, evaluates all hypotheses ready for orchestration.
+
+    Returns:
+        Summary of hypotheses checked and gate pass/fail counts
+    """
+    from hrp.agents.kill_gate_enforcer import KillGateEnforcer, KillGateEnforcerConfig
+
+    config = KillGateEnforcerConfig(hypothesis_ids=hypothesis_ids)
+    agent = KillGateEnforcer(hypothesis_ids=hypothesis_ids, config=config)
+    result = agent.run()
+
+    report = result.get("report", {})
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "hypotheses_checked": report.get("hypotheses_processed", 0),
+            "gates_passed": report.get("hypotheses_processed", 0) - report.get("hypotheses_killed", 0),
+            "gates_failed": report.get("hypotheses_killed", 0),
+            "experiments_run": report.get("experiments_run", 0),
+            "time_saved_seconds": report.get("time_saved_seconds", 0),
+        },
+        message=(
+            f"Checked {report.get('hypotheses_processed', 0)} hypotheses, "
+            f"killed {report.get('hypotheses_killed', 0)} at gates"
+        ),
+    )
+
+
+# =============================================================================
+# Validation Analyst Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_validation_analyst(
+    hypothesis_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    Run Validation Analyst to stress test hypotheses before deployment approval.
+
+    The Validation Analyst performs pre-deployment stress testing including:
+    - Parameter sensitivity - Tests stability under parameter changes
+    - Time stability - Verifies consistent performance across periods
+    - Regime analysis - Checks performance in bull/bear/sideways markets
+    - Execution cost estimation - Calculates realistic transaction costs
+
+    Hypotheses that fail validation are demoted back to "testing" status.
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to validate (optional).
+                       If not provided, validates all hypotheses ready for final review.
+
+    Returns:
+        Summary of stress tests run and pass/fail counts
+    """
+    from hrp.agents.validation_analyst import ValidationAnalyst
+
+    agent = ValidationAnalyst(hypothesis_ids=hypothesis_ids, send_alerts=False)
+    result = agent.run()
+
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "stress_tests_run": result.get("hypotheses_validated", 0),
+            "passed": result.get("hypotheses_passed", 0),
+            "failed": result.get("hypotheses_failed", 0),
+            "validations": result.get("validations_summary", []),
+        },
+        message=(
+            f"Validated {result.get('hypotheses_validated', 0)} hypotheses, "
+            f"passed {result.get('hypotheses_passed', 0)}, "
+            f"failed {result.get('hypotheses_failed', 0)}"
+        ),
+    )
+
+
+# =============================================================================
+# Risk Manager Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_risk_manager(
+    hypothesis_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    Run Risk Manager to assess portfolio-level risk before deployment.
+
+    The Risk Manager provides independent portfolio risk oversight:
+    - Drawdown risk assessment - Max drawdown limits, duration
+    - Concentration risk - Position sizes, sector exposure, correlation
+    - Portfolio fit - Correlation with existing positions, diversification value
+    - Risk limits validation - Position limits, turnover, leverage
+
+    Can veto strategies but CANNOT approve deployment (only human CIO can approve).
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to assess (optional).
+                       If not provided, assesses all hypotheses awaiting risk review.
+
+    Returns:
+        Summary of assessments made and vetoes issued
+    """
+    from hrp.agents.risk_manager import RiskManager
+
+    agent = RiskManager(hypothesis_ids=hypothesis_ids, send_alerts=False)
+    result = agent.run()
+
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "assessments_made": result.get("hypotheses_assessed", 0),
+            "vetoes_issued": result.get("hypotheses_vetoed", 0),
+            "hypotheses_passed": result.get("hypotheses_passed", 0),
+        },
+        message=(
+            f"Assessed {result.get('hypotheses_assessed', 0)} hypotheses, "
+            f"vetoed {result.get('hypotheses_vetoed', 0)}"
+        ),
+    )
+
+
+# =============================================================================
+# CIO Agent
+# =============================================================================
+
+
+@mcp.tool()
+@handle_api_error
+def run_cio_agent(
+    hypothesis_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """
+    Run CIO Agent to score hypotheses across 4 dimensions and make strategic decisions.
+
+    The CIO Agent acts as Chief Investment Officer, making strategic decisions about
+    research lines. It scores each hypothesis across 4 dimensions:
+    - Statistical quality (Sharpe, stability, IC)
+    - Risk profile (drawdown, correlation, concentration)
+    - Economic rationale (why the signal might work)
+    - Cost realism (transaction costs, capacity)
+
+    Decisions: CONTINUE (>=0.75), CONDITIONAL (0.50-0.74), KILL (<0.50), PIVOT (critical failure)
+
+    NOTE: CIO Agent is advisory only - only human CIO can approve deployment.
+
+    Args:
+        hypothesis_ids: Specific hypothesis IDs to review (optional).
+                       If not provided, reviews all validated hypotheses awaiting CIO review.
+
+    Returns:
+        Summary of decisions made and counts by decision type
+    """
+    from hrp.agents.cio import CIOAgent
+
+    agent = CIOAgent(
+        job_id="cio_agent_review",
+        actor="agent:cio",
+    )
+    result = agent.run()
+
+    decisions = result.get("decisions", [])
+    continue_count = sum(1 for d in decisions if d.get("decision") == "CONTINUE")
+    kill_count = sum(1 for d in decisions if d.get("decision") == "KILL")
+    conditional_count = sum(1 for d in decisions if d.get("decision") == "CONDITIONAL")
+    pivot_count = sum(1 for d in decisions if d.get("decision") == "PIVOT")
+
+    return format_response(
+        success=result.get("status") != "failed",
+        data={
+            "decisions_made": len(decisions),
+            "continue_count": continue_count,
+            "conditional_count": conditional_count,
+            "kill_count": kill_count,
+            "pivot_count": pivot_count,
+            "report_path": result.get("report_path"),
+        },
+        message=(
+            f"Made {len(decisions)} decisions: "
+            f"{continue_count} CONTINUE, {conditional_count} CONDITIONAL, "
+            f"{kill_count} KILL, {pivot_count} PIVOT"
+        ),
+    )
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
