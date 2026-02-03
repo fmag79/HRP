@@ -309,7 +309,7 @@ class PipelineOrchestrator(IngestionJob):
         else:
             # Hypotheses with Quant Developer backtests but no orchestration
             hypotheses = []
-            for status in ('audited', 'validated'):
+            for status in ('backtested',):
                 hypotheses.extend(self.api.list_hypotheses_with_metadata(
                     status=status,
                     metadata_filter='%quant_developer_backtest%',

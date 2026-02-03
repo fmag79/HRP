@@ -813,14 +813,16 @@ class QuantDeveloper(ResearchAgent):
                     "total_return": getattr(backtest_result, "total_return", 0),
                     "volatility": getattr(backtest_result, "volatility", 0),
                     "win_rate": getattr(backtest_result, "win_rate", 0),
-                },
-                "param_experiments": {
-                    v.variation_name: {
-                        "sharpe": v.sharpe,
-                        "max_drawdown": v.max_drawdown,
-                        "total_return": v.total_return,
-                    }
-                    for v in param_results
+                    "parameter_variations": [
+                        {
+                            "variation_name": v.variation_name,
+                            "params": v.params,
+                            "sharpe": v.sharpe,
+                            "max_drawdown": v.max_drawdown,
+                            "total_return": v.total_return,
+                        }
+                        for v in param_results
+                    ],
                 },
                 "period_metrics": time_metrics,
                 "regime_metrics": regime_metrics,
