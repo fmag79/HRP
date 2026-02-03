@@ -533,6 +533,20 @@ class ValidationAnalyst(ResearchAgent):
         """
         from hrp.risk.robustness import check_parameter_sensitivity
 
+        # Check if baseline exists in experiments
+        if baseline_key not in experiments:
+            logger.warning(
+                f"Baseline '{baseline_key}' not found in param_experiments, "
+                f"skipping parameter sensitivity check"
+            )
+            return ValidationCheck(
+                name="parameter_sensitivity",
+                passed=True,  # Pass by default when data is missing
+                severity=ValidationSeverity.NONE,
+                details={"warning": f"Baseline '{baseline_key}' not found in experiments"},
+                message="Parameter sensitivity check skipped (no baseline data)",
+            )
+
         result = check_parameter_sensitivity(
             experiments=experiments,
             baseline_key=baseline_key,

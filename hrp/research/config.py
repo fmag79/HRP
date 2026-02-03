@@ -151,3 +151,11 @@ class BacktestResult:
     @property
     def max_drawdown(self) -> float:
         return self.metrics.get("max_drawdown", 0.0)
+
+    @property
+    def volatility(self) -> float:
+        return self.metrics.get("volatility", 0.0)
+
+    @property
+    def win_rate(self) -> float:
+        return self.metrics.get("win_rate", 0.0)
