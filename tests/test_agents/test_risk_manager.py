@@ -21,7 +21,7 @@ class TestRiskManagerInit:
 
         assert agent.DEFAULT_JOB_ID == "risk_manager_review"
         assert agent.ACTOR == "agent:risk-manager"
-        assert agent.max_drawdown == 0.20
+        assert agent.max_drawdown == 0.25  # Relaxed for research phase
         assert agent.max_correlation == 0.70
         assert agent.max_sector_exposure == 0.30
         assert agent.hypothesis_ids is None

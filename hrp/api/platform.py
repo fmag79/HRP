@@ -467,6 +467,20 @@ class PlatformAPI:
         Validator.not_empty(falsification, "falsification")
         Validator.not_empty(actor, "actor")
 
+        # Check for existing hypothesis with same title (avoid duplicates)
+        existing = self._db.fetchone(
+            """
+            SELECT hypothesis_id, status FROM hypotheses
+            WHERE title = ? AND status NOT IN ('deleted', 'rejected')
+            """,
+            (title,)
+        )
+        if existing:
+            logger.warning(
+                f"Hypothesis with title '{title}' already exists: {existing[0]} ({existing[1]})"
+            )
+            return existing[0]  # Return existing instead of creating duplicate
+
         hypothesis_id = self._generate_hypothesis_id()
 
         # Build metadata JSON if strategy_class provided

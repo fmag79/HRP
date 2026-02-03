@@ -506,6 +506,7 @@ class TestGetLineage:
                 event_type=EventType.DATA_INGESTION.value,
                 actor="system",
                 details={"batch": i},
+                dedupe_window_seconds=0,  # Disable deduplication for test
             )
 
         events = get_lineage(actor="system", limit=5)
@@ -697,12 +698,14 @@ class TestGetRecentEvents:
             event_type=EventType.DATA_INGESTION.value,
             actor="system",
             details={"order": 1},
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
         time.sleep(0.01)
         log_event(
             event_type=EventType.DATA_INGESTION.value,
             actor="system",
             details={"order": 2},
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         events = get_recent_events(hours=1, actor="system")
@@ -755,6 +758,7 @@ class TestGetAgentActivity:
                 event_type=EventType.AGENT_RUN_COMPLETE.value,
                 actor="agent:scheduler",
                 details={"run": i},
+                dedupe_window_seconds=0,  # Disable deduplication for test
             )
 
         activity = get_agent_activity("scheduler", days=7)
@@ -1262,46 +1266,57 @@ class TestIntegration:
                 "title": "Momentum predicts returns",
                 "thesis": "High momentum stocks outperform",
             },
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         # Step 2: Run initial experiment
-        exp1_id = create_child_event(
-            parent_lineage_id=created_id,
+        exp1_id = log_event(
             event_type=EventType.EXPERIMENT_RUN.value,
             actor="user",
+            hypothesis_id=hyp_id,
             details={"experiment_id": "EXP-001", "sharpe": 0.8},
+            parent_lineage_id=created_id,
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         # Step 3: Agent runs validation
-        val1_id = create_child_event(
-            parent_lineage_id=exp1_id,
+        val1_id = log_event(
             event_type=EventType.VALIDATION_FAILED.value,
             actor="agent:validator",
+            hypothesis_id=hyp_id,
             details={"reason": "Sharpe below threshold"},
+            parent_lineage_id=exp1_id,
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         # Step 4: User adjusts and re-runs
-        exp2_id = create_child_event(
-            parent_lineage_id=val1_id,
+        exp2_id = log_event(
             event_type=EventType.EXPERIMENT_RUN.value,
             actor="user",
+            hypothesis_id=hyp_id,
             details={"experiment_id": "EXP-002", "sharpe": 1.5},
+            parent_lineage_id=val1_id,
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         # Step 5: Validation passes
-        val2_id = create_child_event(
-            parent_lineage_id=exp2_id,
+        val2_id = log_event(
             event_type=EventType.VALIDATION_PASSED.value,
             actor="agent:validator",
+            hypothesis_id=hyp_id,
             details={"all_checks": "passed"},
+            parent_lineage_id=exp2_id,
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         # Step 6: User approves deployment
-        deploy_id = create_child_event(
-            parent_lineage_id=val2_id,
+        deploy_id = log_event(
             event_type=EventType.DEPLOYMENT_APPROVED.value,
             actor="user",
+            hypothesis_id=hyp_id,
             details={"notes": "Approved for paper trading"},
+            parent_lineage_id=val2_id,
+            dedupe_window_seconds=0,  # Disable deduplication for test
         )
 
         # Verify complete chain
@@ -1332,6 +1347,7 @@ class TestIntegration:
                 actor="user",
                 hypothesis_id=hyp_a,
                 details={"hyp": "A", "run": i},
+                dedupe_window_seconds=0,  # Disable deduplication for test
             )
 
         # Create events for hypothesis B
@@ -1341,6 +1357,7 @@ class TestIntegration:
                 actor="user",
                 hypothesis_id=hyp_b,
                 details={"hyp": "B", "run": i},
+                dedupe_window_seconds=0,  # Disable deduplication for test
             )
 
         # Query each hypothesis
@@ -1365,6 +1382,7 @@ class TestIntegration:
                     event_type=EventType.AGENT_RUN_COMPLETE.value,
                     actor=f"agent:{agent}",
                     details={"run": i, "success": True},
+                    dedupe_window_seconds=0,  # Disable deduplication for test
                 )
 
         # Query each agent's activity

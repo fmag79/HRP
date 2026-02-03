@@ -159,6 +159,7 @@ def log_event(
     experiment_id: str | None = None,
     parent_lineage_id: int | None = None,
     db=None,
+    dedupe_window_seconds: int = 60,
 ) -> int:
     """
     Log a lineage event to the database.
@@ -170,9 +171,11 @@ def log_event(
         hypothesis_id: Associated hypothesis ID if applicable
         experiment_id: Associated experiment ID if applicable
         parent_lineage_id: ID of parent event for creating chains
+        dedupe_window_seconds: Time window to check for duplicates (default 60s).
+            Set to 0 to disable deduplication.
 
     Returns:
-        lineage_id: The ID of the newly created event
+        lineage_id: The ID of the newly created event, or existing event if duplicate
 
     Raises:
         ValueError: If event_type is not a valid EventType
@@ -186,9 +189,35 @@ def log_event(
         )
 
     db = db or get_db()
-    lineage_id = _get_next_lineage_id()
     timestamp = datetime.now(timezone.utc)
     details_json = json.dumps(details or {})
+
+    # Check for duplicate event within time window (idempotency)
+    if dedupe_window_seconds > 0:
+        cutoff = timestamp - timedelta(seconds=dedupe_window_seconds)
+        dedupe_query = """
+            SELECT lineage_id FROM lineage
+            WHERE event_type = ?
+              AND actor = ?
+              AND (hypothesis_id = ? OR (hypothesis_id IS NULL AND ? IS NULL))
+              AND (experiment_id = ? OR (experiment_id IS NULL AND ? IS NULL))
+              AND timestamp >= ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """
+        existing = db.fetchone(
+            dedupe_query,
+            (event_type, actor, hypothesis_id, hypothesis_id,
+             experiment_id, experiment_id, cutoff)
+        )
+        if existing:
+            logger.debug(
+                f"Skipping duplicate lineage event: {event_type} by {actor} "
+                f"(existing lineage_id={existing[0]})"
+            )
+            return existing[0]
+
+    lineage_id = _get_next_lineage_id(db)
 
     query = """
         INSERT INTO lineage (

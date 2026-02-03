@@ -79,7 +79,7 @@ class RiskManager(ResearchAgent):
     ACTOR = "agent:risk-manager"
 
     # Portfolio risk limits (conservative institutional defaults)
-    MAX_MAX_DRAWDOWN = 0.20  # 20% maximum drawdown
+    MAX_MAX_DRAWDOWN = 0.25  # 25% maximum drawdown (relaxed for research phase)
     MAX_DRAWDOWN_DURATION_DAYS = 126  # 6 months to recover
     MAX_POSITION_CORRELATION = 0.70  # Max correlation with existing positions
     MAX_SECTOR_EXPOSURE = 0.30  # 30% max in any sector
