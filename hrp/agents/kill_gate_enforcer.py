@@ -336,7 +336,7 @@ class KillGateEnforcer(IngestionJob):
         else:
             # Hypotheses with Quant Developer backtests but no orchestration
             hypotheses = []
-            for status in ('backtested',):
+            for status in ('validated',):  # Quant Developer sets validated + pipeline_stage
                 hypotheses.extend(self.api.list_hypotheses_with_metadata(
                     status=status,
                     metadata_filter='%quant_developer_backtest%',
