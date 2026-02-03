@@ -599,7 +599,7 @@ class RiskManager(ResearchAgent):
         try:
             self.api.update_hypothesis(
                 hypothesis_id=assessment.hypothesis_id,
-                status="validated" if assessment.passed else "risk_vetoed",
+                status="validated",  # Always keep validated; veto tracked via lineage event
                 metadata={
                     "risk_manager_review": {
                         "date": assessment.assessment_date.isoformat(),
