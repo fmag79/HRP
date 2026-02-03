@@ -310,9 +310,18 @@ class QuantDeveloper(ResearchAgent):
             # Get feature list from model (if available)
             features = getattr(model, 'feature_names_in_', [])
 
+            # Pivot flat prices (symbol, date, open, ..., close) into
+            # MultiIndex columns (field, symbol) expected by strategies
+            if 'symbol' in prices.columns and 'date' in prices.columns:
+                pivoted = prices.pivot(index='date', columns='symbol')
+                pivoted.index = pd.to_datetime(pivoted.index)
+                pivoted = pivoted.sort_index()
+            else:
+                pivoted = prices
+
             # Generate ML-predicted signals
             signals = generate_ml_predicted_signals(
-                prices=prices,
+                prices=pivoted,
                 model_type=self._get_model_type_string(model),
                 features=features if features else None,
                 signal_method=self.signal_method,
@@ -364,9 +373,8 @@ class QuantDeveloper(ResearchAgent):
                 symbols=config.get("symbols", []),
                 start_date=config["start_date"],
                 end_date=config["end_date"],
-                initial_cash=1_000_000,
-                cost_model=CostModel(
-                    commission_bps=self.commission_bps,
+                costs=CostModel(
+                    spread_bps=self.commission_bps,
                     slippage_bps=self.slippage_bps,
                 ),
             )
