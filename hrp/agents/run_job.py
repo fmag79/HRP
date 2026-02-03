@@ -110,6 +110,18 @@ def run_fundamentals(dry_run: bool = False, source: str = "simfin") -> dict:
     return job.run()
 
 
+def run_fundamentals_backfill(dry_run: bool = False, days: int = 365) -> dict:
+    """Run comprehensive fundamentals backfill."""
+    from hrp.agents.jobs import ComprehensiveFundamentalsBackfillJob
+
+    if dry_run:
+        logger.info(f"[DRY RUN] Would run comprehensive fundamentals backfill ({days} days)")
+        return {"status": "dry_run", "job": "fundamentals-backfill", "days": days}
+
+    job = ComprehensiveFundamentalsBackfillJob(symbols=None, lookback_days=days)
+    return job.run()
+
+
 def run_signal_scan(
     dry_run: bool = False, ic_threshold: float = 0.03
 ) -> dict:
@@ -377,6 +389,7 @@ JOBS: dict[str, callable] = {
     "features": run_features,
     "backup": run_backup,
     "fundamentals": run_fundamentals,
+    "fundamentals-backfill": run_fundamentals_backfill,
     "signal-scan": run_signal_scan,
     "agent-pipeline": run_agent_pipeline,
     "daily-report": run_daily_report,
@@ -393,18 +406,19 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Available jobs:
-  prices             Daily price ingestion
-  universe           Daily universe update
-  features           Daily feature computation
-  backup             Daily database backup
-  fundamentals       Weekly fundamentals ingestion
-  signal-scan        Weekly signal discovery scan
-  agent-pipeline     Check lineage events, run downstream agents
-  daily-report       Generate daily research report
-  weekly-report      Generate weekly research report
-  quality-monitoring Daily data quality checks
-  quality-sentinel   ML Quality Sentinel audit
-  cio-review         Weekly CIO Agent review
+  prices               Daily price ingestion
+  universe             Daily universe update
+  features             Daily feature computation
+  backup               Daily database backup
+  fundamentals         Weekly fundamentals ingestion
+  fundamentals-backfill Comprehensive fundamentals backfill (--days N)
+  signal-scan          Weekly signal discovery scan
+  agent-pipeline       Check lineage events, run downstream agents
+  daily-report         Generate daily research report
+  weekly-report        Generate weekly research report
+  quality-monitoring   Daily data quality checks
+  quality-sentinel     ML Quality Sentinel audit
+  cio-review           Weekly CIO Agent review
 """,
     )
 
@@ -432,6 +446,12 @@ Available jobs:
         choices=["simfin", "yfinance"],
         help="Data source for fundamentals job (default: simfin)",
     )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Days of history for fundamentals-backfill job (default: 365)",
+    )
 
     args = parser.parse_args()
 
@@ -446,6 +466,8 @@ Available jobs:
             kwargs["ic_threshold"] = args.ic_threshold
         elif args.job == "fundamentals":
             kwargs["source"] = args.fundamentals_source
+        elif args.job == "fundamentals-backfill":
+            kwargs["days"] = args.days
 
         result = JOBS[args.job](**kwargs)
         logger.info(f"Job {args.job} completed: {result}")

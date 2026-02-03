@@ -769,8 +769,8 @@ class TestFeatureFunctionsRegistry:
 
     def test_registry_function_count(self):
         """FEATURE_FUNCTIONS should have expected count."""
-        # 39 technical + 5 fundamental = 44 features
-        assert len(FEATURE_FUNCTIONS) == 44
+        # 39 technical + 6 fundamental = 45 features
+        assert len(FEATURE_FUNCTIONS) == 45
 
 
 # =============================================================================

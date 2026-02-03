@@ -994,6 +994,26 @@ def compute_ev_ebitda(prices: pd.DataFrame) -> pd.DataFrame:
     return result.to_frame(name="ev_ebitda")
 
 
+def compute_shares_outstanding(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Shares outstanding passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="shares_outstanding")
+
+
 # Registry of feature computation functions
 FEATURE_FUNCTIONS: dict[str, Callable[[pd.DataFrame], pd.DataFrame]] = {
     "momentum_20d": compute_momentum_20d,
@@ -1041,6 +1061,7 @@ FEATURE_FUNCTIONS: dict[str, Callable[[pd.DataFrame], pd.DataFrame]] = {
     "pb_ratio": compute_pb_ratio,
     "dividend_yield": compute_dividend_yield,
     "ev_ebitda": compute_ev_ebitda,
+    "shares_outstanding": compute_shares_outstanding,
 }
 
 
@@ -1699,6 +1720,12 @@ def register_default_features(db_path: str | None = None) -> None:
             "version": "v1",
             "computation_fn": compute_ev_ebitda,
             "description": "Enterprise Value to EBITDA ratio. Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "shares_outstanding",
+            "version": "v1",
+            "computation_fn": compute_shares_outstanding,
+            "description": "Total shares outstanding. Ingested from Yahoo Finance.",
         },
     ]
 

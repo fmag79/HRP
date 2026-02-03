@@ -16,6 +16,16 @@ from hrp.data.db import get_db
 
 logger = logging.getLogger(__name__)
 
+# Valuation metrics to include in time-series (from snapshot fundamentals)
+VALUATION_METRICS = [
+    "market_cap",
+    "pe_ratio",
+    "pb_ratio",
+    "dividend_yield",
+    "ev_ebitda",
+    "shares_outstanding",
+]
+
 
 def backfill_fundamentals_timeseries(
     symbols: list[str],
@@ -26,6 +36,7 @@ def backfill_fundamentals_timeseries(
     source: str = "yfinance",
     progress_file: Optional[Path] = None,
     db_path: Optional[str] = None,
+    include_valuation_metrics: bool = False,
 ) -> dict[str, Any]:
     """
     Backfill daily fundamental time-series data.
@@ -46,6 +57,9 @@ def backfill_fundamentals_timeseries(
         source: Data source ('yfinance' or 'simfin')
         progress_file: Path to progress tracking file
         db_path: Optional database path
+        include_valuation_metrics: If True, also backfill valuation metrics
+            (ts_market_cap, ts_pe_ratio, ts_pb_ratio, ts_dividend_yield,
+            ts_ev_ebitda, ts_shares_outstanding) from snapshot fundamentals
 
     Returns:
         Dictionary with backfill statistics
@@ -62,6 +76,7 @@ def backfill_fundamentals_timeseries(
         "symbols_failed": 0,
         "rows_inserted": 0,
         "failed_symbols": [],
+        "valuation_rows_inserted": 0,
     }
 
     # Get trading days in range
@@ -149,5 +164,123 @@ def backfill_fundamentals_timeseries(
             logger.error(f"Failed to compute time-series for {symbol}: {e}")
             stats["symbols_failed"] += 1
             stats["failed_symbols"].append(symbol)
+
+    # Backfill valuation metrics if requested
+    if include_valuation_metrics:
+        valuation_stats = _backfill_valuation_timeseries(
+            db=db,
+            symbols=symbols,
+            trading_days=trading_days,
+        )
+        stats["valuation_rows_inserted"] = valuation_stats["rows_inserted"]
+        stats["rows_inserted"] += valuation_stats["rows_inserted"]
+
+    return stats
+
+
+def _backfill_valuation_timeseries(
+    db,
+    symbols: list[str],
+    trading_days: list,
+) -> dict[str, Any]:
+    """
+    Backfill valuation metrics as time-series from snapshot fundamentals.
+
+    For each symbol and trading day, fetches the most recent snapshot
+    fundamental value and stores it as ts_<metric> in the features table.
+
+    This provides daily coverage of valuation metrics for backtesting,
+    using the snapshot approach (current values replicated historically).
+
+    Args:
+        db: Database connection manager
+        symbols: List of stock symbols
+        trading_days: List of trading days to backfill
+
+    Returns:
+        Dictionary with backfill statistics
+    """
+    stats: dict[str, Any] = {
+        "rows_inserted": 0,
+        "symbols_processed": 0,
+    }
+
+    if not trading_days:
+        logger.warning("No trading days provided for valuation backfill")
+        return stats
+
+    logger.info(
+        f"Backfilling valuation time-series for {len(symbols)} symbols "
+        f"across {len(trading_days)} trading days"
+    )
+
+    # Get the latest snapshot fundamentals for all symbols
+    # Query the features table for the most recent snapshot values
+    symbols_str = ",".join(f"'{s}'" for s in symbols)
+    metrics_str = ",".join(f"'{m}'" for m in VALUATION_METRICS)
+
+    snapshot_query = f"""
+        SELECT f1.symbol, f1.feature_name, f1.value
+        FROM features f1
+        INNER JOIN (
+            SELECT symbol, feature_name, MAX(date) as max_date
+            FROM features
+            WHERE symbol IN ({symbols_str})
+              AND feature_name IN ({metrics_str})
+            GROUP BY symbol, feature_name
+        ) f2 ON f1.symbol = f2.symbol
+            AND f1.feature_name = f2.feature_name
+            AND f1.date = f2.max_date
+    """
+
+    snapshot_df = db.fetchdf(snapshot_query)
+
+    if snapshot_df.empty:
+        logger.warning("No snapshot fundamentals found for valuation backfill")
+        return stats
+
+    # Pivot to get metrics as columns per symbol
+    snapshot_pivot = snapshot_df.pivot(
+        index="symbol",
+        columns="feature_name",
+        values="value",
+    )
+
+    # Build time-series records for each symbol and trading day
+    all_rows = []
+    for symbol in snapshot_pivot.index:
+        for trading_day in trading_days:
+            for metric in VALUATION_METRICS:
+                if metric in snapshot_pivot.columns:
+                    value = snapshot_pivot.loc[symbol, metric]
+                    if pd.notna(value):
+                        all_rows.append({
+                            "symbol": symbol,
+                            "date": trading_day,
+                            "feature_name": f"ts_{metric}",
+                            "value": float(value),
+                        })
+
+        stats["symbols_processed"] += 1
+
+    if not all_rows:
+        logger.warning("No valuation time-series records to insert")
+        return stats
+
+    # Bulk insert using upsert pattern
+    for row in all_rows:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO features (symbol, date, feature_name, value, version, computed_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (row["symbol"], row["date"], row["feature_name"], row["value"], "v1"),
+        )
+
+    stats["rows_inserted"] = len(all_rows)
+    logger.info(
+        f"Inserted {stats['rows_inserted']} valuation time-series records "
+        f"for {stats['symbols_processed']} symbols"
+    )
 
     return stats

@@ -841,6 +841,83 @@ class SnapshotFundamentalsJob(IngestionJob):
         }
 
 
+class SnapshotFundamentalsBackfillJob(IngestionJob):
+    """
+    Job to backfill snapshot fundamentals across historical trading days.
+
+    Replicates current snapshot fundamental values (market_cap, pe_ratio, etc.)
+    across a date range to provide historical coverage for backtesting.
+
+    Note: This uses current values as an approximation for historical values.
+    For true point-in-time accuracy, use quarterly fundamentals.
+    """
+
+    def __init__(
+        self,
+        symbols: list[str] | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        job_id: str = "snapshot_fundamentals_backfill",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        dependencies: list[str] | None = None,
+    ):
+        """
+        Initialize snapshot fundamentals backfill job.
+
+        Args:
+            symbols: List of stock tickers (None = all universe symbols)
+            start_date: Start date for backfill (default: 365 days ago)
+            end_date: End date for backfill (default: today)
+            job_id: Unique identifier for this job
+            max_retries: Maximum number of retry attempts
+            retry_backoff: Exponential backoff multiplier (seconds)
+            dependencies: List of job IDs that must complete before this job runs
+        """
+        super().__init__(job_id, max_retries, retry_backoff, dependencies or [])
+        self.symbols = symbols
+        self.start_date = start_date or (date.today() - timedelta(days=365))
+        self.end_date = end_date or date.today()
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute snapshot fundamentals backfill.
+
+        Returns:
+            Dictionary with job execution stats
+        """
+        from hrp.data.ingestion.fundamentals import backfill_snapshot_fundamentals
+
+        # Get symbols from universe if not specified
+        symbols = self.symbols
+        if symbols is None:
+            manager = UniverseManager()
+            symbols = manager.get_universe_at_date(date.today())
+            if not symbols:
+                raise RuntimeError("Universe is empty — cannot run snapshot fundamentals backfill without symbols")
+            logger.info(f"Using {len(symbols)} symbols from universe")
+
+        logger.info(
+            f"Backfilling snapshot fundamentals for {len(symbols)} symbols "
+            f"from {self.start_date} to {self.end_date}"
+        )
+
+        result = backfill_snapshot_fundamentals(
+            symbols=symbols,
+            start_date=self.start_date,
+            end_date=self.end_date,
+        )
+
+        return {
+            "records_fetched": result["records_fetched"],
+            "records_inserted": result["records_inserted"],
+            "symbols_success": result["symbols_success"],
+            "symbols_failed": result["symbols_failed"],
+            "failed_symbols": result.get("failed_symbols", []),
+            "trading_days": result.get("trading_days", 0),
+        }
+
+
 class FundamentalsTimeSeriesJob(IngestionJob):
     """
     Scheduled job for daily fundamentals time-series ingestion.
@@ -854,6 +931,7 @@ class FundamentalsTimeSeriesJob(IngestionJob):
         symbols: list[str] | None = None,
         as_of_date: date | None = None,
         lookback_days: int = 90,
+        include_valuation_metrics: bool = False,
         job_id: str = "fundamentals_timeseries",
         max_retries: int = 3,
         retry_backoff: float = 2.0,
@@ -866,6 +944,8 @@ class FundamentalsTimeSeriesJob(IngestionJob):
             symbols: List of stock tickers (None = all universe symbols)
             as_of_date: Date to compute time-series as of (default: today)
             lookback_days: Days to backfill for point-in-time correctness
+            include_valuation_metrics: If True, also backfill valuation metrics
+                (ts_market_cap, ts_pe_ratio, etc.)
             job_id: Unique identifier for this job
             max_retries: Maximum number of retry attempts
             retry_backoff: Exponential backoff multiplier (seconds)
@@ -875,6 +955,7 @@ class FundamentalsTimeSeriesJob(IngestionJob):
         self.symbols = symbols
         self.as_of_date = as_of_date or date.today()
         self.lookback_days = lookback_days
+        self.include_valuation_metrics = include_valuation_metrics
 
     def execute(self) -> dict[str, Any]:
         """
@@ -908,6 +989,7 @@ class FundamentalsTimeSeriesJob(IngestionJob):
             start=start,
             end=self.as_of_date,
             batch_size=10,
+            include_valuation_metrics=self.include_valuation_metrics,
         )
 
         return {
@@ -916,4 +998,155 @@ class FundamentalsTimeSeriesJob(IngestionJob):
             "symbols_success": result["symbols_success"],
             "symbols_failed": result["symbols_failed"],
             "failed_symbols": result.get("failed_symbols", []),
+            "valuation_rows_inserted": result.get("valuation_rows_inserted", 0),
         }
+
+
+class ComprehensiveFundamentalsBackfillJob(IngestionJob):
+    """
+    Comprehensive fundamentals backfill job that runs all fundamental
+    data pipelines in sequence.
+
+    Runs:
+    1. Quarterly fundamentals ingestion (revenue, eps, book_value, etc.)
+    2. Snapshot fundamentals backfill (market_cap, pe_ratio, etc.)
+    3. Time-series generation (ts_revenue, ts_eps, ts_market_cap, etc.)
+
+    This provides complete fundamental data coverage for backtesting.
+    """
+
+    def __init__(
+        self,
+        symbols: list[str] | None = None,
+        lookback_days: int = 365,
+        job_id: str = "comprehensive_fundamentals_backfill",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        dependencies: list[str] | None = None,
+    ):
+        """
+        Initialize comprehensive fundamentals backfill job.
+
+        Args:
+            symbols: List of stock tickers (None = all universe symbols)
+            lookback_days: Days of history to backfill
+            job_id: Unique identifier for this job
+            max_retries: Maximum number of retry attempts
+            retry_backoff: Exponential backoff multiplier (seconds)
+            dependencies: List of job IDs that must complete before this job runs
+        """
+        super().__init__(job_id, max_retries, retry_backoff, dependencies or [])
+        self.symbols = symbols
+        self.lookback_days = lookback_days
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute comprehensive fundamentals backfill.
+
+        Runs three stages in sequence:
+        1. Quarterly fundamentals ingestion
+        2. Snapshot fundamentals backfill
+        3. Time-series generation (including valuation metrics)
+
+        Returns:
+            Dictionary with job execution stats for all stages
+        """
+        from hrp.data.ingestion.fundamentals import (
+            backfill_snapshot_fundamentals,
+            ingest_fundamentals,
+            ingest_snapshot_fundamentals,
+        )
+        from hrp.data.ingestion.fundamentals_timeseries import backfill_fundamentals_timeseries
+
+        # Get symbols from universe if not specified
+        symbols = self.symbols
+        if symbols is None:
+            manager = UniverseManager()
+            symbols = manager.get_universe_at_date(date.today())
+            if not symbols:
+                raise RuntimeError("Universe is empty — cannot run comprehensive fundamentals backfill without symbols")
+            logger.info(f"Using {len(symbols)} symbols from universe")
+
+        end_date = date.today()
+        start_date = end_date - timedelta(days=self.lookback_days)
+
+        stats: dict[str, Any] = {
+            "symbols_requested": len(symbols),
+            "stages_completed": 0,
+            "quarterly_stats": {},
+            "snapshot_stats": {},
+            "timeseries_stats": {},
+            "records_inserted": 0,
+        }
+
+        # Stage 1: Quarterly fundamentals ingestion
+        logger.info("Stage 1/3: Ingesting quarterly fundamentals")
+        try:
+            quarterly_result = ingest_fundamentals(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                source="yfinance",  # Use yfinance as SimFin may not be available
+            )
+            stats["quarterly_stats"] = quarterly_result
+            stats["records_inserted"] += quarterly_result.get("records_inserted", 0)
+            stats["stages_completed"] += 1
+            logger.info(f"Quarterly fundamentals: {quarterly_result.get('records_inserted', 0)} records")
+        except Exception as e:
+            logger.error(f"Quarterly fundamentals failed: {e}")
+            stats["quarterly_stats"] = {"error": str(e)}
+
+        # Stage 2: Snapshot fundamentals (current + backfill)
+        logger.info("Stage 2/3: Ingesting and backfilling snapshot fundamentals")
+        try:
+            # First get current snapshot values
+            snapshot_current = ingest_snapshot_fundamentals(
+                symbols=symbols,
+                as_of_date=end_date,
+            )
+            logger.info(f"Current snapshot: {snapshot_current.get('records_inserted', 0)} records")
+
+            # Then backfill historical
+            snapshot_backfill = backfill_snapshot_fundamentals(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            stats["snapshot_stats"] = {
+                "current_records": snapshot_current.get("records_inserted", 0),
+                "backfill_records": snapshot_backfill.get("records_inserted", 0),
+                "trading_days": snapshot_backfill.get("trading_days", 0),
+            }
+            stats["records_inserted"] += snapshot_backfill.get("records_inserted", 0)
+            stats["stages_completed"] += 1
+            logger.info(f"Snapshot backfill: {snapshot_backfill.get('records_inserted', 0)} records")
+        except Exception as e:
+            logger.error(f"Snapshot fundamentals failed: {e}")
+            stats["snapshot_stats"] = {"error": str(e)}
+
+        # Stage 3: Time-series generation (quarterly + valuation)
+        logger.info("Stage 3/3: Generating fundamentals time-series")
+        try:
+            timeseries_result = backfill_fundamentals_timeseries(
+                symbols=symbols,
+                start=start_date,
+                end=end_date,
+                include_valuation_metrics=True,  # Include ts_market_cap, ts_pe_ratio, etc.
+            )
+            stats["timeseries_stats"] = timeseries_result
+            stats["records_inserted"] += timeseries_result.get("rows_inserted", 0)
+            stats["stages_completed"] += 1
+            logger.info(
+                f"Time-series: {timeseries_result.get('rows_inserted', 0)} records "
+                f"(including {timeseries_result.get('valuation_rows_inserted', 0)} valuation)"
+            )
+        except Exception as e:
+            logger.error(f"Time-series generation failed: {e}")
+            stats["timeseries_stats"] = {"error": str(e)}
+
+        logger.info(
+            f"Comprehensive fundamentals backfill complete: "
+            f"{stats['stages_completed']}/3 stages, {stats['records_inserted']} total records"
+        )
+
+        return stats

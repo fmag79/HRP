@@ -21,6 +21,7 @@ FUNDAMENTAL_METRICS = {
     "pb_ratio": "priceToBook",
     "dividend_yield": "dividendYield",
     "ev_ebitda": "enterpriseToEbitda",
+    "shares_outstanding": "sharesOutstanding",
 }
 
 
@@ -168,7 +169,7 @@ class FundamentalSource(DataSourceBase):
 
         # Ensure column order
         columns = ["symbol", "date", "market_cap", "pe_ratio", "pb_ratio",
-                   "dividend_yield", "ev_ebitda", "source"]
+                   "dividend_yield", "ev_ebitda", "shares_outstanding", "source"]
         df = df[columns]
 
         logger.info(

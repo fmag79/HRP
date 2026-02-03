@@ -602,6 +602,7 @@ SNAPSHOT_METRICS = [
     "pb_ratio",
     "dividend_yield",
     "ev_ebitda",
+    "shares_outstanding",
 ]
 
 
@@ -719,6 +720,120 @@ def _upsert_snapshot_fundamentals(db, df: pd.DataFrame) -> int:
         conn.unregister("fundamentals_to_insert")
 
     return len(df)
+
+
+def backfill_snapshot_fundamentals(
+    symbols: list[str],
+    start_date: date,
+    end_date: date,
+) -> dict[str, Any]:
+    """
+    Replicate current snapshot fundamental values across historical trading days.
+
+    This backfills the features table with snapshot fundamentals for historical
+    dates, using the current values. This is useful for backtesting when you
+    need fundamental data coverage but only have current snapshots.
+
+    Note: This assumes current values are representative of historical values,
+    which is an approximation. For true point-in-time accuracy, use quarterly
+    fundamentals with forward-filling.
+
+    Args:
+        symbols: List of stock tickers
+        start_date: Start date for backfill
+        end_date: End date for backfill
+
+    Returns:
+        Dictionary with backfill stats
+    """
+    from hrp.data.sources.fundamental_source import FundamentalSource
+
+    db = get_db()
+    source = FundamentalSource()
+
+    stats: dict[str, Any] = {
+        "symbols_requested": len(symbols),
+        "symbols_success": 0,
+        "symbols_failed": 0,
+        "records_fetched": 0,
+        "records_inserted": 0,
+        "failed_symbols": [],
+        "trading_days": 0,
+    }
+
+    logger.info(
+        f"Backfilling snapshot fundamentals for {len(symbols)} symbols "
+        f"from {start_date} to {end_date}"
+    )
+
+    # Get trading days in range from prices table
+    with db.connection() as conn:
+        trading_days_result = conn.execute(
+            """
+            SELECT DISTINCT date FROM prices
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date
+            """,
+            (start_date, end_date),
+        ).fetchall()
+    trading_days = [row[0] for row in trading_days_result]
+
+    if not trading_days:
+        logger.warning(f"No trading days found between {start_date} and {end_date}")
+        return stats
+
+    stats["trading_days"] = len(trading_days)
+    logger.info(f"Found {len(trading_days)} trading days for backfill")
+
+    # Fetch current fundamentals for all symbols
+    df = source.get_fundamentals_batch(symbols, date.today())
+
+    if df.empty:
+        logger.warning("No snapshot fundamentals data fetched")
+        stats["symbols_failed"] = len(symbols)
+        stats["failed_symbols"] = symbols.copy()
+        return stats
+
+    # Build records for each trading day
+    records = []
+    successful_symbols = set()
+
+    for _, row in df.iterrows():
+        symbol = row["symbol"]
+
+        for trading_day in trading_days:
+            for metric in SNAPSHOT_METRICS:
+                value = row.get(metric)
+                if value is not None and not pd.isna(value):
+                    records.append({
+                        "symbol": symbol,
+                        "date": trading_day,
+                        "feature_name": metric,
+                        "value": float(value),
+                        "version": "v1",
+                    })
+                    successful_symbols.add(symbol)
+
+    if not records:
+        logger.warning("No valid snapshot fundamental values to store")
+        return stats
+
+    stats["records_fetched"] = len(records)
+    stats["symbols_success"] = len(successful_symbols)
+    stats["symbols_failed"] = len(symbols) - len(successful_symbols)
+    stats["failed_symbols"] = [s for s in symbols if s not in successful_symbols]
+
+    # Store in features table
+    records_df = pd.DataFrame(records)
+    rows_inserted = _upsert_snapshot_fundamentals(db, records_df)
+    stats["records_inserted"] = rows_inserted
+
+    logger.info(
+        f"Snapshot fundamentals backfill complete: {stats['symbols_success']}/{stats['symbols_requested']} symbols, "
+        f"{stats['records_inserted']} records inserted across {stats['trading_days']} trading days"
+    )
+
+    return stats
 
 
 def get_latest_fundamentals(

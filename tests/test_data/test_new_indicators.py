@@ -134,8 +134,8 @@ class TestFeatureRegistration:
         assert FEATURE_FUNCTIONS["vwap_20d"] == compute_vwap_20d
 
     def test_total_features_count(self):
-        """Should have 44 total features registered (39 technical + 5 fundamental)."""
-        assert len(FEATURE_FUNCTIONS) == 44
+        """Should have 45 total features registered (39 technical + 6 fundamental)."""
+        assert len(FEATURE_FUNCTIONS) == 45
 
 
 # =============================================================================

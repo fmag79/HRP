@@ -25,6 +25,7 @@ from hrp.data.features.computation import (
     compute_market_cap,
     compute_pb_ratio,
     compute_pe_ratio,
+    compute_shares_outstanding,
 )
 from hrp.data.schema import create_tables
 from hrp.data.sources.fundamental_source import FundamentalSource, FUNDAMENTAL_METRICS
@@ -108,6 +109,7 @@ def mock_yfinance_info():
         "priceToBook": 45.2,
         "dividendYield": 0.005,  # 0.5%
         "enterpriseToEbitda": 22.1,
+        "sharesOutstanding": 15700000000,  # 15.7B shares
         "longName": "Apple Inc.",
         "sector": "Technology",
     }
@@ -146,9 +148,14 @@ class TestFundamentalFeatureRegistration:
         assert "ev_ebitda" in FEATURE_FUNCTIONS
         assert FEATURE_FUNCTIONS["ev_ebitda"] == compute_ev_ebitda
 
+    def test_shares_outstanding_registered(self):
+        """shares_outstanding should be in FEATURE_FUNCTIONS."""
+        assert "shares_outstanding" in FEATURE_FUNCTIONS
+        assert FEATURE_FUNCTIONS["shares_outstanding"] == compute_shares_outstanding
+
     def test_total_features_count(self):
-        """Should have 44 total features (39 technical + 5 fundamental)."""
-        assert len(FEATURE_FUNCTIONS) == 44
+        """Should have 45 total features (39 technical + 6 fundamental)."""
+        assert len(FEATURE_FUNCTIONS) == 45
 
 
 # =============================================================================
@@ -201,6 +208,14 @@ class TestPassthroughFeatures:
         assert "ev_ebitda" in result.columns
         assert result["ev_ebitda"].isna().all()
 
+    def test_shares_outstanding_returns_nan(self, sample_prices):
+        """shares_outstanding compute function should return NaN values."""
+        result = compute_shares_outstanding(sample_prices)
+
+        assert isinstance(result, pd.DataFrame)
+        assert "shares_outstanding" in result.columns
+        assert result["shares_outstanding"].isna().all()
+
 
 # =============================================================================
 # Test: FundamentalSource
@@ -218,6 +233,7 @@ class TestFundamentalSource:
         assert FUNDAMENTAL_METRICS["pb_ratio"] == "priceToBook"
         assert FUNDAMENTAL_METRICS["dividend_yield"] == "dividendYield"
         assert FUNDAMENTAL_METRICS["ev_ebitda"] == "enterpriseToEbitda"
+        assert FUNDAMENTAL_METRICS["shares_outstanding"] == "sharesOutstanding"
 
     def test_source_name(self):
         """FundamentalSource should have correct source_name."""
@@ -345,6 +361,7 @@ class TestSnapshotFundamentalsIngestion:
                 "priceToBook": 45.2,
                 "dividendYield": 0.005,
                 "enterpriseToEbitda": 22.1,
+                "sharesOutstanding": 15700000000,  # 15.7B shares
             }
             mock_ticker.return_value = mock_ticker_instance
 
@@ -354,8 +371,8 @@ class TestSnapshotFundamentalsIngestion:
             )
 
         assert result["symbols_success"] == 1
-        assert result["records_fetched"] == 5  # 5 metrics for 1 symbol
-        assert result["records_inserted"] == 5
+        assert result["records_fetched"] == 6  # 6 metrics for 1 symbol
+        assert result["records_inserted"] == 6
 
     def test_ingest_handles_partial_data(self, fundamental_db):
         """Ingestion should handle symbols with missing data."""

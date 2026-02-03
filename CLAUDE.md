@@ -74,7 +74,7 @@ api.fetchall_readonly(sql, params)    # Returns list of tuples
 api.execute_write(sql, params)        # INSERT/UPDATE/DELETE
 ```
 
-## Available Features (44 total)
+## Available Features (54 total)
 
 | Category | Features |
 |----------|----------|
@@ -89,7 +89,8 @@ api.execute_write(sql, params)        # INSERT/UPDATE/DELETE
 | **Price Ratios** | `price_to_sma_20d`, `price_to_sma_50d`, `price_to_sma_200d` |
 | **Bollinger Bands** | `bb_upper_20d`, `bb_lower_20d`, `bb_width_20d` |
 | **VWAP** | `vwap_20d` |
-| **Fundamental** | `market_cap`, `pe_ratio`, `pb_ratio`, `dividend_yield`, `ev_ebitda` |
+| **Fundamental** | `market_cap`, `pe_ratio`, `pb_ratio`, `dividend_yield`, `ev_ebitda`, `shares_outstanding` |
+| **Fundamental TS** | `ts_revenue`, `ts_eps`, `ts_book_value`, `ts_market_cap`, `ts_pe_ratio`, `ts_pb_ratio`, `ts_dividend_yield`, `ts_ev_ebitda`, `ts_shares_outstanding` |
 
 ## Agents
 
