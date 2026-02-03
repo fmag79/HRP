@@ -11,7 +11,7 @@ Tests cover:
 
 import os
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -652,6 +652,8 @@ class TestEmailNotification:
                 hypotheses_created=["HYP-2025-001"],
                 mlflow_run_id="test_run_123",
                 duration=127.5,
+                start_datetime=datetime(2024, 6, 1, 10, 0, 0),
+                end_datetime=datetime(2024, 6, 1, 10, 2, 7),
             )
 
             mock_notifier.send_summary_email.assert_called_once()
@@ -703,6 +705,8 @@ class TestEmailNotification:
                 hypotheses_created=[],
                 mlflow_run_id="test_run_123",
                 duration=60.0,
+                start_datetime=datetime(2024, 6, 1, 10, 0, 0),
+                end_datetime=datetime(2024, 6, 1, 10, 1, 0),
             )
 
             call_kwargs = mock_notifier.send_summary_email.call_args[1]

@@ -7,7 +7,7 @@ and creates draft hypotheses for promising signals.
 
 import time
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import mlflow
@@ -205,6 +205,7 @@ class SignalScientist(ResearchAgent):
             Dictionary with scan results
         """
         start_time = time.time()
+        start_datetime = datetime.now()
 
         # 1. Get universe symbols
         symbols = self.symbols or self._get_universe_symbols()
@@ -298,9 +299,12 @@ class SignalScientist(ResearchAgent):
         )
 
         duration = time.time() - start_time
+        end_datetime = datetime.now()
 
         # 9. Send email notification
-        self._send_email_notification(results, hypotheses_created, mlflow_run_id, duration)
+        self._send_email_notification(
+            results, hypotheses_created, mlflow_run_id, duration, start_datetime, end_datetime
+        )
 
         return {
             "scan_date": self.as_of_date.isoformat(),
@@ -855,6 +859,8 @@ class SignalScientist(ResearchAgent):
         hypotheses_created: list[str],
         mlflow_run_id: str,
         duration: float,
+        start_datetime: datetime,
+        end_datetime: datetime,
     ) -> None:
         """
         Send email notification with scan results.
@@ -864,6 +870,8 @@ class SignalScientist(ResearchAgent):
             hypotheses_created: List of created hypothesis IDs
             mlflow_run_id: MLflow run ID
             duration: Scan duration in seconds
+            start_datetime: When the scan started
+            end_datetime: When the scan ended
         """
         try:
             notifier = EmailNotifier()
@@ -871,9 +879,21 @@ class SignalScientist(ResearchAgent):
             # Sort by absolute IC
             top_signals = sorted(results, key=lambda x: abs(x.ic), reverse=True)[:10]
 
+            # Format duration as human-readable
+            hours, remainder = divmod(int(duration), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            if hours > 0:
+                duration_str = f"{hours}h {minutes}m {seconds}s"
+            elif minutes > 0:
+                duration_str = f"{minutes}m {seconds}s"
+            else:
+                duration_str = f"{seconds}s"
+
             summary_data = {
                 "scan_date": self.as_of_date.isoformat(),
-                "duration_seconds": f"{duration:.1f}",
+                "start_time": start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_time": end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+                "duration": duration_str,
                 "features_scanned": len(self.features or self.ALL_FEATURES),
                 "signals_found": len(results),
                 "signals_above_threshold": len(
