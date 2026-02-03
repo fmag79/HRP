@@ -23,6 +23,12 @@ from hrp.dashboard.components.scheduler_control import (
     render_scheduler_conflict,
     render_scheduler_status,
 )
+from hrp.dashboard.components.pipeline_kanban import (
+    render_kanban_column,
+    render_hypothesis_card,
+    render_card_actions,
+    render_kanban_board,
+)
 
 __all__ = [
     # Strategy config
@@ -42,4 +48,9 @@ __all__ = [
     # Scheduler control
     "render_scheduler_conflict",
     "render_scheduler_status",
+    # Pipeline Kanban
+    "render_kanban_column",
+    "render_hypothesis_card",
+    "render_card_actions",
+    "render_kanban_board",
 ]
