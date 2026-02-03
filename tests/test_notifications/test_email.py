@@ -80,7 +80,7 @@ class TestEmailNotifierConfiguration:
                 assert notifier.is_configured() is False
 
     def test_default_from_email(self):
-        """EmailNotifier should use default from email when not specified."""
+        """EmailNotifier should use Resend test domain when not specified."""
         with patch.dict(os.environ, {}, clear=False):
             if "NOTIFICATION_FROM_EMAIL" in os.environ:
                 del os.environ["NOTIFICATION_FROM_EMAIL"]
@@ -88,7 +88,8 @@ class TestEmailNotifierConfiguration:
             from hrp.notifications.email import EmailNotifier
 
             notifier = EmailNotifier()
-            assert notifier.from_email == "noreply@hrp.local"
+            # Default is Resend's test domain for development/testing
+            assert notifier.from_email == "onboarding@resend.dev"
 
     def test_custom_from_email(self):
         """EmailNotifier should use custom from email when specified."""
@@ -100,6 +101,24 @@ class TestEmailNotifierConfiguration:
 
             notifier = EmailNotifier()
             assert notifier.from_email == "custom@example.com"
+
+    def test_local_domain_not_configured(self):
+        """EmailNotifier should not be configured with .local domain."""
+        with patch.dict(
+            os.environ,
+            {
+                "RESEND_API_KEY": "test_api_key",
+                "NOTIFICATION_EMAIL": "test@example.com",
+                "NOTIFICATION_FROM_EMAIL": "noreply@hrp.local",
+            },
+        ):
+            with patch("hrp.notifications.email.RESEND_AVAILABLE", True):
+                from hrp.notifications.email import EmailNotifier
+
+                notifier = EmailNotifier()
+                # .local domains are invalid for Resend
+                assert notifier.is_configured() is False
+                assert notifier.from_email == "noreply@hrp.local"
 
 
 class TestEmailNotifierSendEmail:

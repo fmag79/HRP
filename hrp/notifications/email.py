@@ -47,22 +47,43 @@ class EmailNotifier:
         - NOTIFICATION_EMAIL: Email address to send notifications to
     """
 
+    # Resend's shared test domain (works for testing, sends only to your own email)
+    RESEND_TEST_DOMAIN = "onboarding@resend.dev"
+
     def __init__(self):
         """
         Initialize the EmailNotifier.
 
         Reads configuration from environment variables.
         Logs warnings if configuration is missing but does not raise errors.
+
+        For production, set NOTIFICATION_FROM_EMAIL to an address on a verified
+        domain in Resend. For testing, the default uses Resend's shared domain
+        which only delivers to the account owner's email.
         """
         self.api_key = os.getenv("RESEND_API_KEY")
         self.notification_email = os.getenv("NOTIFICATION_EMAIL")
-        self.from_email = os.getenv("NOTIFICATION_FROM_EMAIL", "noreply@hrp.local")
+        self.from_email = os.getenv("NOTIFICATION_FROM_EMAIL", self.RESEND_TEST_DOMAIN)
 
         # Track configuration status
         self._configured = self._check_configuration()
 
         if self._configured:
-            logger.info("EmailNotifier initialized and configured")
+            if self.from_email == self.RESEND_TEST_DOMAIN:
+                logger.warning(
+                    "EmailNotifier using Resend test domain - emails only deliver to "
+                    "account owner. Set NOTIFICATION_FROM_EMAIL to a verified domain "
+                    "for production use."
+                )
+            elif self.from_email.endswith(".local"):
+                logger.error(
+                    f"EmailNotifier from_email '{self.from_email}' uses .local domain "
+                    "which is not valid for Resend. Set NOTIFICATION_FROM_EMAIL to a "
+                    "verified domain or remove it to use Resend's test domain."
+                )
+                self._configured = False
+            else:
+                logger.info(f"EmailNotifier initialized with from_email: {self.from_email}")
         else:
             logger.error(
                 "EmailNotifier NOT configured - failure alerts will NOT be sent. "
