@@ -384,7 +384,7 @@ class QuantDeveloper(ResearchAgent):
 
         Args:
             signals: Signal DataFrame (symbols -> weights)
-            prices: Price data
+            prices: Price data (flat or pivoted format)
             config: Backtest configuration dict
 
         Returns:
@@ -394,9 +394,32 @@ class QuantDeveloper(ResearchAgent):
         from hrp.research.config import BacktestConfig, CostModel
 
         try:
-            # Build BacktestConfig
+            # Ensure prices are in pivoted format for run_backtest
+            # Flat format: columns = [symbol, date, open, high, low, close, ...]
+            # Pivoted format: MultiIndex columns = (field, symbol), DatetimeIndex rows
+            if 'symbol' in prices.columns and 'date' in prices.columns:
+                pivoted_prices = prices.pivot(index='date', columns='symbol')
+                pivoted_prices.index = pd.to_datetime(pivoted_prices.index)
+                pivoted_prices = pivoted_prices.sort_index()
+            else:
+                pivoted_prices = prices
+
+            # Filter prices to only symbols in signals (signals may be limited
+            # to max_positions, but prices has all universe symbols)
+            signal_symbols = list(signals.columns)
+            if isinstance(pivoted_prices.columns, pd.MultiIndex):
+                # MultiIndex: filter at level 1 (symbol)
+                available_symbols = pivoted_prices.columns.get_level_values(1).unique()
+                common_symbols = [s for s in signal_symbols if s in available_symbols]
+                pivoted_prices = pivoted_prices.loc[:, (slice(None), common_symbols)]
+            else:
+                # Regular columns
+                common_symbols = [s for s in signal_symbols if s in pivoted_prices.columns]
+                pivoted_prices = pivoted_prices[common_symbols]
+
+            # Build BacktestConfig with filtered symbols
             bt_config = BacktestConfig(
-                symbols=config.get("symbols", []),
+                symbols=common_symbols,
                 start_date=config["start_date"],
                 end_date=config["end_date"],
                 costs=CostModel(
@@ -406,7 +429,7 @@ class QuantDeveloper(ResearchAgent):
             )
 
             # Run backtest
-            result = run_backtest(signals, bt_config, prices)
+            result = run_backtest(signals, bt_config, pivoted_prices)
 
             return result
 
@@ -416,19 +439,25 @@ class QuantDeveloper(ResearchAgent):
 
     def _run_parameter_variations(
         self,
-        base_result: Any,
         variation_type: Literal["lookback", "top_pct"],
+        model: Any,
+        prices: pd.DataFrame,
+        config: dict[str, Any],
     ) -> list[ParameterVariation]:
         """
-        Run parameter variation backtests.
+        Run parameter variation backtests with real signal regeneration.
 
         Args:
-            base_result: Base backtest result
-            variation_type: Type of variation to run
+            variation_type: Type of variation to run (lookback or top_pct)
+            model: Trained ML model for signal generation
+            prices: Price data for backtesting
+            config: Backtest configuration dict
 
         Returns:
-            List of ParameterVariation results
+            List of ParameterVariation results with real metrics
         """
+        from hrp.research.strategies import generate_ml_predicted_signals
+
         variations = []
 
         if variation_type == "lookback":
@@ -438,18 +467,71 @@ class QuantDeveloper(ResearchAgent):
         else:
             return variations
 
+        # Prepare pivoted prices once for all variations
+        if 'symbol' in prices.columns and 'date' in prices.columns:
+            pivoted = prices.pivot(index='date', columns='symbol')
+            pivoted.index = pd.to_datetime(pivoted.index)
+            pivoted = pivoted.sort_index()
+        else:
+            pivoted = prices
+
+        # Get model features
+        features = getattr(model, 'feature_names_in_', [])
+        model_type = self._get_model_type_string(model)
+
         for value in values:
             try:
-                # Placeholder implementation - actual would regenerate signals
-                # and re-run backtest with varied parameter
+                # Set parameters for this variation
+                if variation_type == "lookback":
+                    train_lookback = value
+                    top_pct = self.top_pct
+                else:  # top_pct
+                    train_lookback = 252
+                    top_pct = value
+
+                # Generate signals with varied parameters
+                signals = generate_ml_predicted_signals(
+                    prices=pivoted,
+                    model_type=model_type,
+                    features=features if features else None,
+                    signal_method=self.signal_method,
+                    top_pct=top_pct,
+                    train_lookback=train_lookback,
+                    retrain_frequency=21,
+                )
+
+                if signals.empty:
+                    logger.warning(f"No signals for {variation_type}={value}")
+                    continue
+
+                # Limit to max_positions
+                if len(signals.columns) > self.max_positions:
+                    signal_values = signals.abs().mean()
+                    top_symbols = signal_values.nlargest(self.max_positions).index
+                    signals = signals[top_symbols]
+
+                # Run backtest with varied signals
+                backtest_result = self._run_base_backtest(signals, prices, config)
+
+                if backtest_result is None:
+                    logger.warning(f"Backtest failed for {variation_type}={value}")
+                    continue
+
+                # Extract real metrics
                 variation = ParameterVariation(
                     variation_name=f"{variation_type}_{value}",
                     params={variation_type: value},
-                    sharpe=getattr(base_result, "sharpe_ratio", 0) * 0.95,  # Placeholder
-                    max_drawdown=getattr(base_result, "max_drawdown", 0) * 1.05,  # Placeholder
-                    total_return=getattr(base_result, "total_return", 0) * 0.9,  # Placeholder
+                    sharpe=backtest_result.sharpe,
+                    max_drawdown=backtest_result.max_drawdown,
+                    total_return=backtest_result.total_return,
                 )
                 variations.append(variation)
+
+                logger.debug(
+                    f"Variation {variation_type}={value}: "
+                    f"Sharpe={backtest_result.sharpe:.2f}, "
+                    f"Return={backtest_result.total_return*100:.1f}%"
+                )
 
             except Exception as e:
                 logger.warning(f"Parameter variation {variation_type}={value} failed: {e}")
@@ -552,10 +634,17 @@ class QuantDeveloper(ResearchAgent):
             Dict with num_trades, avg_trade_value, gross_return
         """
         try:
+            # BacktestResult has .trades DataFrame and .total_return property
+            trades_df = backtest_result.trades
+            num_trades = len(trades_df) if trades_df is not None else 0
+            avg_trade_value = (
+                trades_df["value"].mean() if num_trades > 0 and "value" in trades_df.columns
+                else 0
+            )
             return {
-                "num_trades": getattr(backtest_result, "num_trades", 0),
-                "avg_trade_value": getattr(backtest_result, "avg_trade_value", 0),
-                "gross_return": getattr(backtest_result, "total_return", 0),
+                "num_trades": num_trades,
+                "avg_trade_value": avg_trade_value,
+                "gross_return": backtest_result.total_return,
             }
         except Exception as e:
             logger.warning(f"Failed to extract trade statistics: {e}")
@@ -729,8 +818,22 @@ class QuantDeveloper(ResearchAgent):
             start_date = date(2015, 1, 1)
             end_date = date.today()
 
-            # 3. Get symbols from universe or hypothesis
+            # 3. Get symbols from universe (fall back to latest available if today has no data)
             symbols = self.api.get_universe(as_of_date=end_date)
+            if not symbols:
+                # Try yesterday or get latest available date from universe
+                from datetime import timedelta
+                for days_back in range(1, 10):
+                    fallback_date = end_date - timedelta(days=days_back)
+                    symbols = self.api.get_universe(as_of_date=fallback_date)
+                    if symbols:
+                        logger.info(f"Using universe from {fallback_date} (today has no data)")
+                        end_date = fallback_date
+                        break
+
+            if not symbols:
+                logger.error(f"No universe symbols found for {hypothesis_id}")
+                return None
 
             # 4. Retrain model on full history
             model = self._train_full_history(
@@ -766,16 +869,29 @@ class QuantDeveloper(ResearchAgent):
                 logger.warning(f"Base backtest failed for {hypothesis_id}")
                 return None
 
-            # 8. Run parameter variations
+            # 8. Run parameter variations (real backtests with varied parameters)
             param_results = self._run_parameter_variations(
-                backtest_result, "lookback"
+                variation_type="lookback",
+                model=model,
+                prices=prices,
+                config=config,
             )
             param_results.extend(
-                self._run_parameter_variations(backtest_result, "top_pct")
+                self._run_parameter_variations(
+                    variation_type="top_pct",
+                    model=model,
+                    prices=prices,
+                    config=config,
+                )
             )
 
             # 9. Calculate time/regime splits
-            returns = getattr(backtest_result, "returns", pd.Series())
+            # BacktestResult has equity_curve, compute returns from it
+            equity_curve = backtest_result.equity_curve
+            if equity_curve is not None and len(equity_curve) > 1:
+                returns = equity_curve.pct_change().dropna()
+            else:
+                returns = pd.Series()
             time_metrics = self._split_by_period(returns)
             regime_metrics = self._split_by_regime(returns, prices)
 
@@ -796,9 +912,9 @@ class QuantDeveloper(ResearchAgent):
             self._log_agent_event(
                 event_type=EventType.QUANT_DEVELOPER_BACKTEST_COMPLETE,
                 details={
-                    "sharpe": getattr(backtest_result, "sharpe_ratio", 0),
-                    "max_drawdown": getattr(backtest_result, "max_drawdown", 0),
-                    "total_return": getattr(backtest_result, "total_return", 0),
+                    "sharpe": backtest_result.sharpe,
+                    "max_drawdown": backtest_result.max_drawdown,
+                    "total_return": backtest_result.total_return,
                 },
                 hypothesis_id=hypothesis_id,
             )
@@ -807,11 +923,11 @@ class QuantDeveloper(ResearchAgent):
             return HypothesisBacktestResult(
                 hypothesis_id=hypothesis_id,
                 title=hypothesis.get("title", "Unknown"),
-                sharpe=getattr(backtest_result, "sharpe_ratio", 0),
-                total_return=getattr(backtest_result, "total_return", 0),
-                max_drawdown=getattr(backtest_result, "max_drawdown", 0),
-                volatility=getattr(backtest_result, "volatility", 0),
-                win_rate=getattr(backtest_result, "win_rate", 0),
+                sharpe=backtest_result.sharpe,
+                total_return=backtest_result.total_return,
+                max_drawdown=backtest_result.max_drawdown,
+                volatility=backtest_result.volatility,
+                win_rate=backtest_result.win_rate,
                 period_metrics=time_metrics,
                 regime_metrics=regime_metrics,
                 parameter_variations=[
@@ -855,15 +971,33 @@ class QuantDeveloper(ResearchAgent):
             trade_stats: Trade statistics
         """
         try:
+            # Build param_experiments dict for Validation Analyst
+            # Format: {"baseline": {metrics}, "variation_name": {metrics}, ...}
+            param_experiments = {
+                "baseline": {
+                    "sharpe": backtest_result.sharpe,
+                    "max_drawdown": backtest_result.max_drawdown,
+                    "total_return": backtest_result.total_return,
+                    "params": {"top_pct": self.top_pct, "lookback": 252},
+                },
+            }
+            for v in param_results:
+                param_experiments[v.variation_name] = {
+                    "sharpe": v.sharpe,
+                    "max_drawdown": v.max_drawdown,
+                    "total_return": v.total_return,
+                    "params": v.params,
+                }
+
             # Build metadata dict
             metadata = {
                 "quant_developer_backtest": {
                     "date": date.today().isoformat(),
-                    "sharpe": getattr(backtest_result, "sharpe_ratio", 0),
-                    "max_drawdown": getattr(backtest_result, "max_drawdown", 0),
-                    "total_return": getattr(backtest_result, "total_return", 0),
-                    "volatility": getattr(backtest_result, "volatility", 0),
-                    "win_rate": getattr(backtest_result, "win_rate", 0),
+                    "sharpe": backtest_result.sharpe,
+                    "max_drawdown": backtest_result.max_drawdown,
+                    "total_return": backtest_result.total_return,
+                    "volatility": backtest_result.volatility,
+                    "win_rate": backtest_result.win_rate,
                     "parameter_variations": [
                         {
                             "variation_name": v.variation_name,
@@ -875,6 +1009,7 @@ class QuantDeveloper(ResearchAgent):
                         for v in param_results
                     ],
                 },
+                "param_experiments": param_experiments,  # For Validation Analyst
                 "period_metrics": time_metrics,
                 "regime_metrics": regime_metrics,
                 "num_trades": trade_stats.get("num_trades", 0),
