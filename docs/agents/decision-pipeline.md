@@ -36,12 +36,6 @@ This document describes the complete decision flow from signal discovery to stra
          │
          ▼
 ┌──────────────────┐      ┌──────────────────────────────────────────────────────┐
-│ ALPHA RESEARCHER │────▶│ TESTING → TESTING: Strategy code generation          │
-│ Strategy Generation│     │ FAIL → Manual fix required                          │
-└────────┬─────────┘      └──────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────┐      ┌──────────────────────────────────────────────────────┐
 │ ML SCIENTIST     │────▶│ TESTING → VALIDATED: Walk-forward validation pass    │
 │ Model Training   │      │ TESTING → REJECTED: Stability score > 1.0           │
 └────────┬─────────┘      └──────────────────────────────────────────────────────┘
@@ -112,8 +106,7 @@ graph TB
     SS -->|hypothesis_created| AR[Alpha Researcher<br/>SDK Agent]
 
     %% Research Phase
-    AR -->|strategy_spec| CM[Code Materializer<br/>Custom Agent]
-    CM -->|code_generated| MLS[ML Scientist<br/>SDK Agent]
+    AR -->|alpha_researcher_complete| MLS[ML Scientist<br/>SDK Agent]
     AR -->|DEFER| HLD[Hold for Research]
     AR -->|REJECT| Reject1[Reject Hypothesis]
 
@@ -158,7 +151,7 @@ graph TB
     classDef hold fill:#edf2f7,stroke:#718096,color:#1a202c
 
     class SS,AR,MLS,MQS,PO,VA sdkAgent
-    class CM,QD,RM,CIO customAgent
+    class QD,RM,CIO customAgent
     class Human decision
     class Reject1,Reject2,Reject3,Reject4,Reject5,Reject6,Reject7 reject
     class Deploy decision
@@ -172,8 +165,7 @@ graph TB
 | Source Agent | Lineage Event | Target Agent | Trigger Condition |
 |--------------|---------------|--------------|-------------------|
 | Signal Scientist | `hypothesis_created` | Alpha Researcher | New hypothesis in 'draft' status |
-| Alpha Researcher | `alpha_researcher_complete` | Code Materializer | Strategy spec ready for materialization |
-| Code Materializer | `code_materializer_complete` | ML Scientist | Code generated, syntax valid |
+| Alpha Researcher | `alpha_researcher_complete` | ML Scientist | Hypothesis promoted to testing |
 | ML Scientist | `experiment_completed` | ML Quality Sentinel | Walk-forward validation finished |
 | ML Quality Sentinel | `ml_quality_sentinel_audit` | Quant Developer | Overall quality check passed |
 | Quant Developer | `quant_developer_backtest_complete` | Pipeline Orchestrator | Strategy spec and backtest ready |
@@ -189,8 +181,7 @@ graph TB
 | Agent | Type | Creates | Consumes | Outputs |
 |-------|------|---------|----------|---------|
 | **Signal Scientist** | SDK | Hypotheses (draft) | Features, prices | MLflow runs with IC scores |
-| **Alpha Researcher** | SDK | Economic rationale, strategy specs | Draft hypotheses | Research notes, strategy specs (NO CODE) |
-| **Code Materializer** | Custom | Executable code | Strategy specs | Generated strategy code |
+| **Alpha Researcher** | SDK | Economic rationale, strategy specs | Draft hypotheses | Research notes, strategy specs |
 | **ML Scientist** | SDK | Experiments | Testing hypotheses | Walk-forward validation results |
 | **ML Quality Sentinel** | SDK | Audit reports | Completed experiments | Quality flags (passed/failed) |
 | **Quant Developer** | Custom | Strategy specs | Audited experiments | Strategy YAML, code templates |
@@ -217,7 +208,6 @@ graph LR
     subgraph Agents
         SS[Signal Scientist]
         AR[Alpha Researcher]
-        CM[Code Materializer]
         MLS[ML Scientist]
         MQS[ML Quality Sentinel]
         QD[Quant Developer]
@@ -235,11 +225,8 @@ graph LR
     AR -->|logs| LN
     AR -->|creates| ST
 
-    ST -->|reads| CM
-    CM -->|creates| GC[Generated Code]
-
-    GC -->|reads| MLS
     HR -->|reads| MLS
+    ST -->|reads| MLS
     MLS -->|logs| ML
     MLS -->|logs| LN
 
@@ -267,8 +254,8 @@ graph LR
     classDef data fill:#e2e8f0,stroke:#4a5568,color:#1a202c
     classDef agent fill:#4299e1,stroke:#2b6cb0,color:#fff
 
-    class HR,ML,LN,ST,KG,GC data
-    class SS,AR,CM,MLS,MQS,QD,PO,VA,RM,CA agent
+    class HR,ML,LN,ST,KG data
+    class SS,AR,MLS,MQS,QD,PO,VA,RM,CA agent
 ```
 
 ---
@@ -343,30 +330,10 @@ graph LR
 
 ---
 
-### Stage 3: Strategy Generation (Alpha Researcher)
-
-**Agent:** `AlphaResearcher`
-**Trigger:** Hypothesis in TESTING status
-**Output:** Generated strategy code in `hrp/research/strategies/`
-
-| Gate Type | Criteria | Pass | Fail | Next Step |
-|-----------|----------|------|------|-----------|
-| **Code Generation** | Valid Python code | Code created | Manual fix required | → ML Scientist |
-| **Imports** | All imports resolved | Code created | Manual fix required | → ML Scientist |
-| **Function Signature** | Matches expected API | Code created | Manual fix required | → ML Scientist |
-
-**Kill Gates:** None (manual intervention available)
-
-**On Fail:** Developer notified to fix code, hypothesis remains in TESTING
-
-**Status Change:** `TESTING` → `TESTING` (no status change, just adds strategy code)
-
----
-
-### Stage 4: Model Training (ML Scientist)
+### Stage 3: Model Training (ML Scientist)
 
 **Agent:** `MLScientist`
-**Trigger:** Hypothesis in TESTING status with strategy code
+**Trigger:** Hypothesis promoted to TESTING by Alpha Researcher
 **Output:** Walk-forward validation results
 
 | Gate Type | Criteria | Pass | Fail | Next Step |
@@ -390,7 +357,7 @@ graph LR
 
 ---
 
-### Stage 5: Training Audit (ML Quality Sentinel)
+### Stage 4: Training Audit (ML Quality Sentinel)
 
 **Agent:** `MLQualitySentinel`
 **Trigger:** Hypothesis promoted to VALIDATED
@@ -419,7 +386,7 @@ graph LR
 
 ---
 
-### Stage 6: Production Backtesting (Quant Developer)
+### Stage 5: Production Backtesting (Quant Developer)
 
 **Agent:** `QuantDeveloper`
 **Trigger:** Hypothesis in VALIDATED status (passed audit)
@@ -447,7 +414,7 @@ graph LR
 
 ---
 
-### Stage 7: Experiment Orchestration (Pipeline Orchestrator)
+### Stage 6: Experiment Orchestration (Pipeline Orchestrator)
 
 **Agent:** `PipelineOrchestrator`
 **Trigger:** Validated hypothesis with production backtest
@@ -470,7 +437,7 @@ graph LR
 
 ---
 
-### Stage 8: Stress Testing (Validation Analyst)
+### Stage 7: Stress Testing (Validation Analyst)
 
 **Agent:** `ValidationAnalyst`
 **Trigger:** Hypothesis in AUDITED or VALIDATED status
@@ -497,7 +464,7 @@ graph LR
 
 ---
 
-### Stage 9: Risk Review (Risk Manager)
+### Stage 8: Risk Review (Risk Manager)
 
 **Agent:** `RiskManager`
 **Trigger:** Hypothesis in PASSED status
@@ -529,7 +496,7 @@ graph LR
 
 ---
 
-### Stage 10: CIO Scoring (CIO Agent)
+### Stage 9: CIO Scoring (CIO Agent)
 
 **Agent:** `CIOAgent`
 **Trigger:** Hypothesis in PASSED status (passed Risk Manager)
@@ -579,7 +546,7 @@ Total Score = (Statistical × 0.40) + (Risk × 0.25) + (Economic × 0.20) + (Cos
 
 ---
 
-### Stage 11: Human Approval (Human CIO)
+### Stage 10: Human Approval (Human CIO)
 
 **Agent:** Human (ONLY stage requiring human intervention)
 **Trigger:** CIO Agent recommends CONTINUE or CONDITIONAL
@@ -692,8 +659,7 @@ Total Score = (Statistical × 0.40) + (Risk × 0.25) + (Economic × 0.20) + (Cos
 
 - Signal Scientist: Weekly (Monday 7 PM)
 - Alpha Researcher: Event-driven (after hypothesis_created)
-- Code Materializer: Event-driven (after alpha_researcher_complete)
-- ML Scientist: Event-driven (after code_materializer_complete)
+- ML Scientist: Event-driven (after alpha_researcher_complete)
 - ML Quality Sentinel: Daily (6 AM) + event-driven
 - Quant Developer: Event-driven (after ml_quality_sentinel_audit)
 - Pipeline Orchestrator: Event-driven (after quant_developer_complete)
@@ -903,9 +869,8 @@ Built on standardized agent framework with common patterns:
 - MLflow integration
 - Email alert support
 
-### Custom Agents (3)
+### Custom Agents (2)
 Domain-specific implementations:
-- **Code Materializer**: Translates strategy specs to executable code
 - **Quant Developer**: Generates strategy code and specs
 - **Risk Manager**: Portfolio-level risk assessment
 

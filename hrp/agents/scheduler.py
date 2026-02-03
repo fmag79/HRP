@@ -1187,8 +1187,7 @@ class IngestionScheduler:
 
         Full trigger chain:
         - Signal Scientist (hypothesis_created) → Alpha Researcher
-        - Alpha Researcher (alpha_researcher_complete) → Code Materializer
-        - Code Materializer (code_materializer_complete) → ML Scientist
+        - Alpha Researcher (alpha_researcher_complete) → ML Scientist
         - ML Scientist (experiment_completed) → ML Quality Sentinel
         - ML Quality Sentinel (ml_quality_sentinel_audit, passed) → Quant Developer
         - Quant Developer (quant_developer_backtest_complete) → Pipeline Orchestrator
@@ -1236,33 +1235,13 @@ class IngestionScheduler:
             name="signal_scientist_to_alpha_researcher",
         )
 
-        # Trigger 2: Alpha Researcher → Code Materializer
-        # When Alpha Researcher completes, Code Materializer generates strategy code
+        # Trigger 2: Alpha Researcher → ML Scientist
+        # When Alpha Researcher completes, ML Scientist validates the hypothesis
         def on_alpha_researcher_complete(event: dict) -> None:
             details = event.get("details", {})
             promoted_ids = details.get("reviewed_ids", [])  # Hypotheses promoted to testing
 
             for hypothesis_id in promoted_ids:
-                logger.info(f"Triggering Code Materializer for hypothesis {hypothesis_id}")
-                try:
-                    from hrp.agents.code_materializer import CodeMaterializer
-                    materializer = CodeMaterializer(hypothesis_ids=[hypothesis_id])
-                    materializer.run()
-                except Exception as e:
-                    logger.error(f"Code Materializer trigger failed: {e}")
-
-        watcher.register_trigger(
-            event_type="alpha_researcher_complete",
-            callback=on_alpha_researcher_complete,
-            actor_filter="agent:alpha-researcher",
-            name="alpha_researcher_to_code_materializer",
-        )
-
-        # Trigger 3: Code Materializer → ML Scientist
-        # When Code Materializer completes, ML Scientist validates the hypothesis
-        def on_code_materializer_complete(event: dict) -> None:
-            hypothesis_id = event.get("hypothesis_id")
-            if hypothesis_id:
                 logger.info(f"Triggering ML Scientist for hypothesis {hypothesis_id}")
                 try:
                     scientist = MLScientist(hypothesis_ids=[hypothesis_id])
@@ -1271,13 +1250,13 @@ class IngestionScheduler:
                     logger.error(f"ML Scientist trigger failed: {e}")
 
         watcher.register_trigger(
-            event_type="code_materializer_complete",
-            callback=on_code_materializer_complete,
-            actor_filter="agent:code-materializer",
-            name="code_materializer_to_ml_scientist",
+            event_type="alpha_researcher_complete",
+            callback=on_alpha_researcher_complete,
+            actor_filter="agent:alpha-researcher",
+            name="alpha_researcher_to_ml_scientist",
         )
 
-        # Trigger 4: ML Scientist → ML Quality Sentinel
+        # Trigger 3: ML Scientist → ML Quality Sentinel
         # When ML Scientist completes an experiment, Quality Sentinel audits it
         def on_experiment_completed(event: dict) -> None:
             details = event.get("details", {})
@@ -1304,7 +1283,7 @@ class IngestionScheduler:
             name="ml_scientist_to_quality_sentinel",
         )
 
-        # Trigger 5: ML Quality Sentinel → Quant Developer
+        # Trigger 4: ML Quality Sentinel → Quant Developer
         # When Quality Sentinel completes audit, Quant Developer runs backtests
         def on_quality_audit(event: dict) -> None:
             details = event.get("details", {})
@@ -1329,7 +1308,7 @@ class IngestionScheduler:
             name="ml_quality_sentinel_to_quant_developer",
         )
 
-        # Trigger 6: Quant Developer → Pipeline Orchestrator
+        # Trigger 5: Quant Developer → Pipeline Orchestrator
         # When Quant Developer completes backtest, Pipeline Orchestrator coordinates experiments
         def on_quant_developer_complete(event: dict) -> None:
             hypothesis_id = event.get("hypothesis_id")
@@ -1351,7 +1330,7 @@ class IngestionScheduler:
             name="quant_developer_to_pipeline_orchestrator",
         )
 
-        # Trigger 7: Pipeline Orchestrator → Validation Analyst
+        # Trigger 6: Pipeline Orchestrator → Validation Analyst
         # When Pipeline Orchestrator completes, Validation Analyst stress tests
         def on_pipeline_orchestrator_complete(event: dict) -> None:
             details = event.get("details", {})
@@ -1379,7 +1358,7 @@ class IngestionScheduler:
             name="pipeline_orchestrator_to_validation_analyst",
         )
 
-        # Trigger 8: Validation Analyst → Risk Manager
+        # Trigger 7: Validation Analyst → Risk Manager
         # When Validation Analyst completes, Risk Manager assesses risk
         def on_validation_analyst_complete(event: dict) -> None:
             details = event.get("details", {})
@@ -1400,7 +1379,7 @@ class IngestionScheduler:
             name="validation_analyst_to_risk_manager",
         )
 
-        # Trigger 9: Risk Manager → CIO Agent
+        # Trigger 8: Risk Manager → CIO Agent
         # When Risk Manager completes assessment, CIO Agent scores hypotheses
         def on_risk_manager_assessment(event: dict) -> None:
             details = event.get("details", {})

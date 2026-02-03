@@ -174,30 +174,15 @@ def run_agent_pipeline(dry_run: bool = False) -> dict:
         details = event.get("details", {})
         promoted_ids = details.get("reviewed_ids", [])
         for hypothesis_id in promoted_ids:
-            logger.info(f"Triggering Code Materializer for hypothesis {hypothesis_id}")
-            from hrp.agents.code_materializer import CodeMaterializer
-            materializer = CodeMaterializer(hypothesis_ids=[hypothesis_id])
-            materializer.run()
-
-    watcher.register_trigger(
-        event_type="alpha_researcher_complete",
-        callback=on_alpha_researcher_complete,
-        actor_filter="agent:alpha-researcher",
-        name="alpha_researcher_to_code_materializer",
-    )
-
-    def on_code_materializer_complete(event: dict) -> None:
-        hypothesis_id = event.get("hypothesis_id")
-        if hypothesis_id:
             logger.info(f"Triggering ML Scientist for hypothesis {hypothesis_id}")
             scientist = MLScientist(hypothesis_ids=[hypothesis_id])
             scientist.run()
 
     watcher.register_trigger(
-        event_type="code_materializer_complete",
-        callback=on_code_materializer_complete,
-        actor_filter="agent:code-materializer",
-        name="code_materializer_to_ml_scientist",
+        event_type="alpha_researcher_complete",
+        callback=on_alpha_researcher_complete,
+        actor_filter="agent:alpha-researcher",
+        name="alpha_researcher_to_ml_scientist",
     )
 
     def on_experiment_completed(event: dict) -> None:

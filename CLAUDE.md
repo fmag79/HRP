@@ -94,13 +94,12 @@ api.execute_write(sql, params)        # INSERT/UPDATE/DELETE
 ## Agents
 
 All agents follow `agent.run()` pattern. Agent pipeline chain:
-**Signal Scientist -> Alpha Researcher -> Pipeline Orchestrator -> ML Scientist -> ML Quality Sentinel**
+**Signal Scientist -> Alpha Researcher -> ML Scientist -> ML Quality Sentinel -> Quant Developer -> Pipeline Orchestrator**
 
 | Agent | Purpose | Key module |
 |-------|---------|------------|
 | SignalScientist | Automated signal discovery (IC-based) | `hrp.agents` |
 | AlphaResearcher | Reviews draft hypotheses, promotes to testing | `hrp.agents` |
-| CodeMaterializer | Generates executable strategy code | `hrp.agents` |
 | MLScientist | Walk-forward validation of testing hypotheses | `hrp.agents` |
 | MLQualitySentinel | Audits experiments for overfitting | `hrp.agents` |
 | ValidationAnalyst | Pre-deployment stress testing | `hrp.agents` |
@@ -195,7 +194,7 @@ hrp/
 |----------|---------|
 | `docs/architecture/data-pipeline-diagram.md` | Data pipeline: sources → jobs → DuckDB → agents → outputs |
 | `docs/agents/decision-pipeline.md` | Agent decision workflow: 11 stages, kill gates, scoring, human approval |
-| `docs/agents/01-*.md` through `docs/agents/11-*.md` | Individual agent specifications (numbered by pipeline order) |
+| `docs/agents/01-*.md` through `docs/agents/10-*.md` | Individual agent specifications (numbered by pipeline order) |
 | `docs/plans/Project-Status.md` | Development roadmap and tier status |
 | `docs/setup/Scheduler-Configuration-Guide.md` | launchd job configuration |
 
