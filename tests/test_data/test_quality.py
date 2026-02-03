@@ -48,7 +48,7 @@ class TestPriceAnomalyCheck:
                 """
             )
 
-        check = PriceAnomalyCheck(test_db, threshold=0.5)
+        check = PriceAnomalyCheck(test_db, threshold=0.5, read_only=False)
         result = check.run(date(2024, 1, 11))
 
         assert not result.passed
@@ -80,7 +80,7 @@ class TestPriceAnomalyCheck:
                 """
             )
 
-        check = PriceAnomalyCheck(test_db, threshold=0.5)
+        check = PriceAnomalyCheck(test_db, threshold=0.5, read_only=False)
         result = check.run(date(2024, 1, 11))
 
         # Should not flag SPLIT because it has a corporate action
@@ -103,7 +103,7 @@ class TestPriceAnomalyCheck:
                 """
             )
 
-        check = PriceAnomalyCheck(test_db, threshold=0.5)
+        check = PriceAnomalyCheck(test_db, threshold=0.5, read_only=False)
         result = check.run(date(2024, 1, 11))
 
         norm_issues = [i for i in result.issues if i.symbol == "NORM"]
@@ -137,7 +137,7 @@ class TestCompletenessCheck:
                 """
             )
 
-        check = CompletenessCheck(test_db)
+        check = CompletenessCheck(test_db, read_only=False)
         result = check.run(date(2024, 1, 15))
 
         # Missing prices are flagged as WARNING, not CRITICAL
@@ -167,7 +167,7 @@ class TestCompletenessCheck:
                 """
             )
 
-        check = CompletenessCheck(test_db)
+        check = CompletenessCheck(test_db, read_only=False)
         result = check.run(date(2024, 1, 15))
 
         assert result.passed
@@ -206,7 +206,7 @@ class TestGapDetectionCheck:
                     (dt,),
                 )
 
-        check = GapDetectionCheck(test_db, lookback_days=20)
+        check = GapDetectionCheck(test_db, lookback_days=20, read_only=False)
         result = check.run(date(2024, 1, 20))
 
         gap_issues = [i for i in result.issues if i.symbol == "GAPS"]
@@ -262,7 +262,7 @@ class TestGapDetectionCheck:
         if len(expected_trading_days) > 0:
             expected_trading_days = expected_trading_days[:-1]
 
-        check = GapDetectionCheck(test_db, lookback_days=12)
+        check = GapDetectionCheck(test_db, lookback_days=12, read_only=False)
         result = check.run(date(2024, 1, 19))
 
         # Should not flag gaps for COMPLETE symbol
@@ -310,7 +310,7 @@ class TestGapDetectionCheck:
                     (dt,),
                 )
 
-        check = GapDetectionCheck(test_db, lookback_days=10)
+        check = GapDetectionCheck(test_db, lookback_days=10, read_only=False)
         result = check.run(date(2024, 1, 17))
 
         # Should flag the missing trading days (only has 2 out of ~6 expected)
@@ -343,7 +343,7 @@ class TestStaleDataCheck:
                 """
             )
 
-        check = StaleDataCheck(test_db, stale_threshold_days=3)
+        check = StaleDataCheck(test_db, stale_threshold_days=3, read_only=False)
         result = check.run(date(2024, 1, 15))
 
         assert not result.passed
@@ -368,7 +368,7 @@ class TestVolumeAnomalyCheck:
                 """
             )
 
-        check = VolumeAnomalyCheck(test_db)
+        check = VolumeAnomalyCheck(test_db, read_only=False)
         result = check.run(date(2024, 1, 15))
 
         zero_issues = [i for i in result.issues if i.symbol == "ZERO"]
@@ -554,7 +554,7 @@ class TestQualityReportGenerator:
 
     def test_generate_report(self, test_db):
         """Should generate report with all checks."""
-        generator = QualityReportGenerator(test_db)
+        generator = QualityReportGenerator(test_db, read_only=False)
         report = generator.generate_report(date(2024, 1, 15))
 
         assert report.checks_run > 0
@@ -562,7 +562,7 @@ class TestQualityReportGenerator:
 
     def test_store_and_retrieve_report(self, test_db):
         """Should store report and retrieve it."""
-        generator = QualityReportGenerator(test_db)
+        generator = QualityReportGenerator(test_db, read_only=False)
         report = generator.generate_report(date(2024, 1, 15))
 
         # Store

@@ -127,8 +127,12 @@ class QualityCheck(ABC):
     name: str = "base_check"
     description: str = "Base quality check"
 
-    def __init__(self, db_path: str | None = None):
-        self._db = get_db(db_path)
+    def __init__(self, db_path: str | None = None, read_only: bool = True):
+        # Default to read-only connection since checks only read data
+        # This allows checks to run even when MCP server holds write lock
+        # Pass read_only=False in tests that already have read-write connections
+        self._db = get_db(db_path, read_only=read_only)
+        self._read_only = read_only
 
     @abstractmethod
     def run(self, as_of_date: date) -> CheckResult:
@@ -160,8 +164,9 @@ class PriceAnomalyCheck(QualityCheck):
         db_path: str | None = None,
         threshold: float = 0.5,
         lookback_days: int = 1,
+        read_only: bool = True,
     ):
-        super().__init__(db_path)
+        super().__init__(db_path, read_only=read_only)
         self.threshold = threshold  # 50% by default
         self.lookback_days = lookback_days
 
@@ -328,8 +333,8 @@ class GapDetectionCheck(QualityCheck):
     name = "gap_detection"
     description = "Detects missing dates in price history"
 
-    def __init__(self, db_path: str | None = None, lookback_days: int = 30):
-        super().__init__(db_path)
+    def __init__(self, db_path: str | None = None, lookback_days: int = 30, read_only: bool = True):
+        super().__init__(db_path, read_only=read_only)
         self.lookback_days = lookback_days
 
     def run(self, as_of_date: date) -> CheckResult:
@@ -442,8 +447,8 @@ class StaleDataCheck(QualityCheck):
     name = "stale_data"
     description = "Detects symbols not updated recently"
 
-    def __init__(self, db_path: str | None = None, stale_threshold_days: int = 3):
-        super().__init__(db_path)
+    def __init__(self, db_path: str | None = None, stale_threshold_days: int = 3, read_only: bool = True):
+        super().__init__(db_path, read_only=read_only)
         self.stale_threshold_days = stale_threshold_days
 
     def run(self, as_of_date: date) -> CheckResult:
@@ -532,8 +537,9 @@ class VolumeAnomalyCheck(QualityCheck):
         db_path: str | None = None,
         volume_threshold: float = 10.0,  # 10x average
         lookback_days: int = 20,
+        read_only: bool = True,
     ):
-        super().__init__(db_path)
+        super().__init__(db_path, read_only=read_only)
         self.volume_threshold = volume_threshold
         self.lookback_days = lookback_days
 

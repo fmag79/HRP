@@ -252,7 +252,8 @@ def run_quality_check_with_alerts(
     as_of_date = as_of_date or date.today()
 
     # Generate report
-    generator = QualityReportGenerator(db_path)
+    # Use read_only=False when storing to allow database writes
+    generator = QualityReportGenerator(db_path, read_only=not store_report)
     report = generator.generate_report(as_of_date)
 
     # Store report

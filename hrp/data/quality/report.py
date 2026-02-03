@@ -163,6 +163,7 @@ class QualityReportGenerator:
         self,
         db_path: str | None = None,
         checks: list[type[QualityCheck]] | None = None,
+        read_only: bool = True,
     ):
         """
         Initialize the report generator.
@@ -170,9 +171,13 @@ class QualityReportGenerator:
         Args:
             db_path: Optional database path.
             checks: List of check classes to run. Defaults to DEFAULT_CHECKS.
+            read_only: If True (default), use read-only connections.
+                       This allows reports to run even when MCP server holds write lock.
+                       Pass False in tests that already have read-write connections.
         """
-        self._db = get_db(db_path)
+        self._db = get_db(db_path, read_only=read_only)
         self._db_path = db_path
+        self._read_only = read_only
         self._check_classes = checks or DEFAULT_CHECKS
         logger.info(f"Quality report generator initialized with {len(self._check_classes)} checks")
 
@@ -193,7 +198,7 @@ class QualityReportGenerator:
 
         for check_class in self._check_classes:
             try:
-                check = check_class(self._db_path)
+                check = check_class(self._db_path, read_only=self._read_only)
                 result = check.run(as_of_date)
                 results.append(result)
                 total_run_time += result.run_time_ms
