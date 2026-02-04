@@ -86,3 +86,26 @@ class TestReadyEndpoint:
         assert "checks" in data
         assert data["checks"]["database"] == "ok"
         assert data["checks"]["api"] == "ok"
+
+
+class TestMetricsEndpoint:
+    """Tests for /metrics endpoint."""
+
+    def test_metrics_returns_200(self, client):
+        """Metrics endpoint should return 200."""
+        response = client.get("/metrics")
+        assert response.status_code == 200
+
+    def test_metrics_returns_prometheus_format(self, client):
+        """Metrics should be in Prometheus format."""
+        response = client.get("/metrics")
+        content_type = response.headers.get("content-type", "")
+        # Prometheus format uses text/plain or specific prometheus content type
+        assert "text/plain" in content_type or "openmetrics" in content_type
+
+    def test_metrics_includes_process_info(self, client):
+        """Metrics should include standard process info."""
+        response = client.get("/metrics")
+        text = response.text
+        # prometheus_client automatically includes process metrics
+        assert "python_info" in text or "process_" in text or "hrp_" in text

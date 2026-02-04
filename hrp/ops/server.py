@@ -5,6 +5,33 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import FastAPI, Response
+from fastapi.responses import Response as FastAPIResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
+
+# Define custom metrics
+REQUEST_COUNT = Counter(
+    "hrp_http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "status"],
+)
+
+REQUEST_LATENCY = Histogram(
+    "hrp_http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    ["method", "endpoint"],
+)
+
+ACTIVE_CONNECTIONS = Gauge(
+    "hrp_active_connections",
+    "Number of active connections",
+)
 
 
 def check_system_ready() -> tuple[bool, dict]:
@@ -67,6 +94,14 @@ def create_app() -> FastAPI:
             response.status_code = 503
 
         return result
+
+    @app.get("/metrics")
+    def metrics():
+        """Prometheus metrics endpoint."""
+        return FastAPIResponse(
+            content=generate_latest(REGISTRY),
+            media_type=CONTENT_TYPE_LATEST,
+        )
 
     return app
 
