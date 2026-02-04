@@ -1,16 +1,19 @@
 # HRP Deployment Guide
 
-Guide for deploying HRP scheduler as a production background service on macOS.
+Guide for deploying HRP scheduler and ops server as production background services on macOS.
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Initial Setup](#initial-setup)
-3. [Background Service Setup (launchd)](#background-service-setup-launchd)
-4. [Service Management](#service-management)
-5. [Monitoring](#monitoring)
-6. [Troubleshooting](#troubleshooting)
-7. [Alternative Deployment Methods](#alternative-deployment-methods)
+2. [Environment Variables](#environment-variables)
+3. [Startup Validation](#startup-validation)
+4. [Initial Setup](#initial-setup)
+5. [Background Service Setup (launchd)](#background-service-setup-launchd)
+6. [Ops Server Deployment](#ops-server-deployment)
+7. [Service Management](#service-management)
+8. [Monitoring](#monitoring)
+9. [Troubleshooting](#troubleshooting)
+10. [Alternative Deployment Methods](#alternative-deployment-methods)
 
 ---
 
@@ -28,6 +31,90 @@ python -c "from hrp.agents.scheduler import IngestionScheduler; print('✓ HRP i
 # Verify database exists
 ls -lh ~/hrp-data/hrp.duckdb
 ```
+
+---
+
+## Environment Variables
+
+### Core Configuration
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `HRP_DB_PATH` | Database path | `~/hrp-data/hrp.duckdb` | No |
+| `HRP_DATA_DIR` | Data directory | `~/hrp-data/` | No |
+| `RESEND_API_KEY` | Resend API key for email notifications | - | For alerts |
+| `NOTIFICATION_EMAIL` | Email address for notifications | - | For alerts |
+| `NOTIFICATION_FROM_EMAIL` | From address | `onboarding@resend.dev` | No |
+| `SIMFIN_API_KEY` | SimFin API key for fundamentals | - | For fundamentals |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude agents | - | For production |
+
+### Tier 3: Operations & Security
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `HRP_ENVIRONMENT` | Environment mode: `development`, `staging`, `production` | `development` | No |
+| `HRP_AUTH_ENABLED` | Enable dashboard authentication | `true` | No |
+| `HRP_AUTH_COOKIE_KEY` | Secret key for auth cookies (32+ chars) | - | For auth |
+| `HRP_AUTH_USERS_FILE` | Path to users YAML file | `~/hrp-data/auth/users.yaml` | No |
+| `HRP_OPS_HOST` | Ops server bind host | `0.0.0.0` | No |
+| `HRP_OPS_PORT` | Ops server bind port | `8080` | No |
+| `HRP_THRESHOLD_*` | Override alert thresholds (see [Alert Thresholds](alert-thresholds.md)) | - | No |
+
+**Environment-specific requirements:**
+- **Development:** No required secrets
+- **Staging:** `ANTHROPIC_API_KEY` recommended
+- **Production:** `ANTHROPIC_API_KEY` required (startup validation fails without it)
+
+---
+
+## Startup Validation
+
+HRP provides fail-fast startup validation to ensure required configuration is present before running services.
+
+### Using fail_fast_startup()
+
+Call `fail_fast_startup()` at application entry points (API, dashboard, CLI) to validate configuration:
+
+```python
+from hrp.utils.startup import fail_fast_startup
+
+# Strict mode - raises RuntimeError on failure
+fail_fast_startup()
+```
+
+**What it validates:**
+- Required secrets for the current environment (e.g., `ANTHROPIC_API_KEY` in production)
+- Database connectivity (via secrets validation)
+- Essential configuration
+
+**Example error:**
+```
+RuntimeError: Startup validation failed:
+  - Missing required secret: ANTHROPIC_API_KEY
+```
+
+### Non-strict Validation
+
+For scripts that want to handle validation errors manually:
+
+```python
+from hrp.utils.startup import validate_startup
+
+errors = validate_startup()
+if errors:
+    print("Warnings:", errors)
+    # Handle gracefully or continue with degraded functionality
+```
+
+### Environment-specific Validation
+
+| Environment | `HRP_ENVIRONMENT` | Required Secrets |
+|-------------|-------------------|------------------|
+| Development | `development` (default) | None |
+| Staging | `staging` | `ANTHROPIC_API_KEY` (warning only) |
+| Production | `production` | `ANTHROPIC_API_KEY` (fails startup) |
+
+**Important:** Always set `HRP_ENVIRONMENT=production` in production deployments to ensure all required secrets are validated.
 
 ---
 
@@ -161,6 +248,73 @@ tail -20 ~/hrp-data/logs/scheduler.error.log
 # INFO -   - price_ingestion: next run at ...
 # INFO -   - feature_computation: next run at ...
 ```
+
+---
+
+## Ops Server Deployment
+
+The HRP Ops Server provides health endpoints (`/health`, `/ready`) and Prometheus metrics (`/metrics`) for production monitoring. For detailed configuration, see [Ops Server Guide](ops-server.md).
+
+### Quick Setup
+
+The ops server has its own launchd plist: `launchd/com.hrp.ops-server.plist`
+
+```bash
+# Install all HRP launchd jobs (including ops server)
+./scripts/manage_launchd.sh install
+
+# Check status of all HRP jobs
+./scripts/manage_launchd.sh status
+
+# View ops server logs
+tail -f ~/hrp-data/logs/ops-server.error.log
+```
+
+### Manual Installation
+
+If you prefer to manage the ops server separately:
+
+```bash
+# Copy plist to LaunchAgents
+cp launchd/com.hrp.ops-server.plist ~/Library/LaunchAgents/
+
+# Load (start) the service
+launchctl load ~/Library/LaunchAgents/com.hrp.ops-server.plist
+
+# Verify it's running
+launchctl list | grep hrp.ops
+curl http://localhost:8080/health
+```
+
+### Service Configuration
+
+The `com.hrp.ops-server.plist` configures:
+- **RunAtLoad:** Starts automatically on login
+- **KeepAlive:** Restarts if the process exits
+- **Host:** `127.0.0.1` (localhost only for security)
+- **Port:** `8080`
+- **Environment:** `HRP_ENVIRONMENT=production`
+
+**Log Locations:**
+- stdout: `~/hrp-data/logs/ops-server.log`
+- stderr: `~/hrp-data/logs/ops-server.error.log`
+
+### Verify Ops Server Health
+
+```bash
+# Liveness probe
+curl http://localhost:8080/health
+
+# Readiness probe (checks database connectivity)
+curl http://localhost:8080/ready
+
+# Prometheus metrics
+curl http://localhost:8080/metrics | grep hrp_
+```
+
+For advanced configuration including Prometheus scraping setup and alert thresholds, see:
+- [Ops Server Guide](ops-server.md)
+- [Alert Thresholds Guide](alert-thresholds.md)
 
 ---
 
@@ -510,26 +664,60 @@ Create a cron job to verify the scheduler is running:
 
 Before deploying to production:
 
+### Environment Setup
 - [ ] Database initialized and populated
 - [ ] All tests passing (`pytest tests/ -v`)
-- [ ] Environment variables configured (`.env` file)
-- [ ] Log directory created with proper permissions
-- [ ] Backup directory created
-- [ ] Scheduler tested manually
+- [ ] Log directory created with proper permissions (`mkdir -p ~/hrp-data/logs`)
+- [ ] Backup directory created (`mkdir -p ~/hrp-data/backups`)
+- [ ] Auth directory created (`mkdir -p ~/hrp-data/auth`)
+
+### Environment Variables
+- [ ] `HRP_ENVIRONMENT=production` set
+- [ ] `ANTHROPIC_API_KEY` configured (required for production)
+- [ ] `RESEND_API_KEY` configured (if using email alerts)
+- [ ] `NOTIFICATION_EMAIL` configured (if using email alerts)
+- [ ] `HRP_AUTH_COOKIE_KEY` configured (32+ chars, if using dashboard auth)
+
+### Startup Validation
+- [ ] Run `fail_fast_startup()` passes without errors:
+  ```bash
+  python -c "from hrp.utils.startup import fail_fast_startup; fail_fast_startup(); print('OK')"
+  ```
+
+### Scheduler Service
+- [ ] Scheduler tested manually (`python run_scheduler.py`)
 - [ ] launchd plist created with correct paths
-- [ ] Service loaded and running
-- [ ] Logs show successful startup
+- [ ] Scheduler service loaded and running
+- [ ] Scheduler logs show successful startup
 - [ ] First job execution verified
+
+### Ops Server
+- [ ] Ops server launchd plist installed (`com.hrp.ops-server.plist`)
+- [ ] Ops server running and healthy (`curl http://localhost:8080/health`)
+- [ ] Readiness probe passing (`curl http://localhost:8080/ready`)
+- [ ] Prometheus metrics exposed (`curl http://localhost:8080/metrics`)
+
+### Monitoring & Alerts
 - [ ] Email notifications tested (if configured)
 - [ ] Backup job tested
-- [ ] Monitoring/alerting configured
+- [ ] Alert thresholds configured (optional, see [Alert Thresholds](alert-thresholds.md))
+- [ ] Prometheus scraping configured (optional, see [Ops Server](ops-server.md))
 
 ---
 
 ## Support
 
 For issues or questions:
-1. Check logs: `~/hrp-data/logs/scheduler.error.log`
-2. Test manually: `python run_scheduler.py`
-3. Check job history: `python -m hrp.agents.cli job-status`
-4. Review documentation: `docs/cookbook.md`
+1. Check scheduler logs: `~/hrp-data/logs/scheduler.error.log`
+2. Check ops server logs: `~/hrp-data/logs/ops-server.error.log`
+3. Test scheduler manually: `python run_scheduler.py`
+4. Test ops server manually: `python -m hrp.ops`
+5. Check job history: `python -m hrp.agents.cli job-status`
+6. Verify startup validation: `python -c "from hrp.utils.startup import fail_fast_startup; fail_fast_startup()"`
+
+## Related Documentation
+
+- [Ops Server Guide](ops-server.md) - Health endpoints and Prometheus metrics
+- [Alert Thresholds Guide](alert-thresholds.md) - Configurable monitoring thresholds
+- [Cookbook](cookbook.md) - Quick reference guide
+- [Monitoring Setup](monitoring-universe-scheduling.md) - Database monitoring queries

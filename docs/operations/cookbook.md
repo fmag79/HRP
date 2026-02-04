@@ -2317,101 +2317,41 @@ python -c "from hrp.mcp import mcp; mcp.run()"
 
 ## 12. Ops Server & Monitoring
 
-The HRP Ops Server provides health endpoints, Prometheus metrics, and system monitoring.
+The HRP Ops Server provides health endpoints, Prometheus metrics, and system monitoring for production deployments.
 
-### 12.1 Starting the Ops Server
+**Quick Start:**
 
 ```bash
 # Start ops server (default: 0.0.0.0:8080)
 python -m hrp.ops
 
-# Custom host/port
-python -m hrp.ops --host 127.0.0.1 --port 9090
-
-# Via environment variables
-export HRP_OPS_HOST=127.0.0.1
-export HRP_OPS_PORT=9090
-python -m hrp.ops
-```
-
-### 12.2 Health Endpoints
-
-```bash
-# Liveness probe (is the server running?)
+# Verify it's running
 curl http://localhost:8080/health
-# Response: {"status": "ok", "timestamp": "2026-02-04T10:30:00"}
-
-# Readiness probe (is the system ready to serve?)
-curl http://localhost:8080/ready
-# Response: {"status": "ready", "timestamp": "...", "checks": {"database": "ok", "api": "ok"}}
-
-# Prometheus metrics
-curl http://localhost:8080/metrics
-# Response: Prometheus text format with system and application metrics
 ```
 
-### 12.3 Configuring Alert Thresholds
+**Key Endpoints:**
 
-Thresholds can be configured via YAML file or environment variables:
+| Endpoint | Purpose |
+|----------|---------|
+| `/health` | Liveness probe - confirms server is running |
+| `/ready` | Readiness probe - verifies database and API connectivity |
+| `/metrics` | Prometheus metrics for scraping |
 
-```yaml
-# ~/hrp-data/config/thresholds.yaml
-health_score_warning: 90.0
-health_score_critical: 70.0
-freshness_warning_days: 3
-freshness_critical_days: 5
-anomaly_count_warning: 50
-anomaly_count_critical: 100
-```
+**Full Documentation:**
 
-Or via environment variables:
+- **[Ops Server Guide](ops-server.md)** - Complete ops server documentation including:
+  - Health endpoint details and response formats
+  - Prometheus metrics reference and example queries
+  - Programmatic usage with `MetricsCollector`
+  - Running as a launchd service
+  - Troubleshooting guide
 
-```bash
-export HRP_THRESHOLD_HEALTH_SCORE_WARNING=85
-export HRP_THRESHOLD_FRESHNESS_WARNING_DAYS=2
-```
-
-### 12.4 Using the MetricsCollector
-
-```python
-from hrp.ops.metrics import MetricsCollector
-
-collector = MetricsCollector()
-
-# Get system metrics (CPU, memory, disk)
-system = collector.collect_system_metrics()
-print(f"CPU: {system['cpu_percent']}%")
-print(f"Memory: {system['memory_percent']}%")
-
-# Get data pipeline health
-data = collector.collect_data_metrics()
-print(f"Data status: {data['status']}")
-print(f"Health score: {data.get('health_score', 'N/A')}")
-```
-
-### 12.5 Running as a Service (launchd)
-
-```bash
-# Install the ops server launchd job
-./scripts/manage_launchd.sh install com.hrp.ops-server
-
-# Check status
-./scripts/manage_launchd.sh status
-
-# Uninstall
-./scripts/manage_launchd.sh uninstall com.hrp.ops-server
-```
-
-### 12.6 Startup Validation
-
-For production deployments, use startup validation to fail fast on missing secrets:
-
-```python
-from hrp.utils.startup import fail_fast_startup
-
-# Call at application entry points
-fail_fast_startup()  # Raises RuntimeError if ANTHROPIC_API_KEY missing in production
-```
+- **[Alert Thresholds Guide](alert-thresholds.md)** - Configurable monitoring thresholds including:
+  - Health score thresholds (warning/critical levels)
+  - Data freshness thresholds
+  - Anomaly detection thresholds
+  - Model drift thresholds (PSI, KL divergence, IC decay)
+  - Configuration via YAML or environment variables
 
 ---
 

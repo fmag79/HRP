@@ -781,7 +781,239 @@ ORDER BY date DESC, additions DESC
 
 ---
 
-## 9. Quick Reference
+## 9. Ops Server Integration
+
+The HRP Ops Server provides health endpoints and Prometheus metrics for comprehensive monitoring. This section covers integrating the ops server with universe scheduling monitoring.
+
+### 9.1 Health Check Endpoints
+
+The ops server exposes three endpoints for monitoring. See [Ops Server Guide](ops-server.md) for full details.
+
+**Liveness Probe:**
+```bash
+# Check if ops server is running
+curl http://localhost:8080/health
+
+# Response: {"status": "ok", "timestamp": "2026-01-25T18:10:00.123456"}
+```
+
+**Readiness Probe:**
+```bash
+# Check if database and API are accessible
+curl http://localhost:8080/ready
+
+# Response (healthy):
+# {
+#   "status": "ready",
+#   "checks": {"database": "ok", "api": "ok"}
+# }
+```
+
+**Prometheus Metrics:**
+```bash
+# Get metrics for scraping
+curl http://localhost:8080/metrics
+```
+
+### 9.2 Start the Ops Server
+
+```bash
+# Start manually
+python -m hrp.ops
+
+# Or as launchd service
+launchctl load ~/Library/LaunchAgents/com.hrp.ops-server.plist
+
+# Verify it's running
+curl http://localhost:8080/health
+```
+
+### 9.3 Prometheus Queries for Universe Health
+
+Use these PromQL queries in Prometheus or Grafana to monitor universe scheduling:
+
+**API Availability:**
+```promql
+# Request rate to ready endpoint (indicates health check activity)
+rate(hrp_http_requests_total{endpoint="/ready"}[5m])
+
+# Error rate on health endpoints
+sum(rate(hrp_http_requests_total{endpoint=~"/health|/ready", status=~"5.."}[5m]))
+/ sum(rate(hrp_http_requests_total{endpoint=~"/health|/ready"}[5m]))
+```
+
+**Latency Monitoring:**
+```promql
+# 95th percentile latency for ready endpoint
+histogram_quantile(0.95, rate(hrp_http_request_duration_seconds_bucket{endpoint="/ready"}[5m]))
+
+# Average response time
+rate(hrp_http_request_duration_seconds_sum{endpoint="/ready"}[5m])
+/ rate(hrp_http_request_duration_seconds_count{endpoint="/ready"}[5m])
+```
+
+**Connection Monitoring:**
+```promql
+# Active connections to ops server
+hrp_active_connections
+
+# Alert if connections spike
+hrp_active_connections > 10
+```
+
+### 9.4 Alert Thresholds
+
+Configure alert thresholds via environment variables or YAML. See [Alert Thresholds Guide](alert-thresholds.md) for all options.
+
+**Key thresholds for universe monitoring:**
+
+| Threshold | Default | Environment Variable |
+|-----------|---------|---------------------|
+| Health score warning | 90.0 | `HRP_THRESHOLD_HEALTH_SCORE_WARNING` |
+| Health score critical | 70.0 | `HRP_THRESHOLD_HEALTH_SCORE_CRITICAL` |
+| Freshness warning | 3 days | `HRP_THRESHOLD_FRESHNESS_WARNING_DAYS` |
+| Freshness critical | 5 days | `HRP_THRESHOLD_FRESHNESS_CRITICAL_DAYS` |
+| Ingestion success warning | 95% | `HRP_THRESHOLD_INGESTION_SUCCESS_RATE_WARNING` |
+| Ingestion success critical | 80% | `HRP_THRESHOLD_INGESTION_SUCCESS_RATE_CRITICAL` |
+
+**Example: Set stricter universe freshness thresholds:**
+```bash
+export HRP_THRESHOLD_FRESHNESS_WARNING_DAYS=1
+export HRP_THRESHOLD_FRESHNESS_CRITICAL_DAYS=2
+```
+
+### 9.5 Combined Monitoring Workflow
+
+This workflow combines ops server health checks with database monitoring for comprehensive universe scheduling oversight.
+
+**Step 1: Check ops server health**
+```bash
+#!/bin/bash
+# check_full_health.sh
+
+HOST=${HRP_OPS_HOST:-localhost}
+PORT=${HRP_OPS_PORT:-8080}
+
+echo "=== HRP Universe Monitoring Workflow ==="
+echo
+
+# Step 1: Check ops server
+echo "1. Ops Server Health:"
+HEALTH=$(curl -s -w "%{http_code}" -o /tmp/health.json http://${HOST}:${PORT}/health)
+if [ "$HEALTH" = "200" ]; then
+    echo "   [OK] Ops server running"
+else
+    echo "   [FAIL] Ops server not responding (HTTP $HEALTH)"
+    exit 1
+fi
+
+# Step 2: Check readiness (database + API)
+echo "2. System Readiness:"
+READY=$(curl -s -w "%{http_code}" -o /tmp/ready.json http://${HOST}:${PORT}/ready)
+if [ "$READY" = "200" ]; then
+    echo "   [OK] Database and API ready"
+else
+    echo "   [FAIL] System not ready (HTTP $READY)"
+    cat /tmp/ready.json | jq .
+    exit 1
+fi
+```
+
+**Step 2: Check universe update status**
+```bash
+# Continue from above script...
+
+# Step 3: Check last universe update
+echo "3. Last Universe Update:"
+cd /Users/fer/Projects/HRP
+python -c "
+from hrp.data.db import DatabaseManager
+db = DatabaseManager()
+with db.connection() as conn:
+    result = conn.execute('''
+        SELECT status, started_at, records_inserted
+        FROM ingestion_log
+        WHERE source_id = 'universe_update'
+        ORDER BY started_at DESC
+        LIMIT 1
+    ''').fetchone()
+    if result:
+        from datetime import date
+        days_ago = (date.today() - result[1].date()).days
+        status = 'OK' if result[0] == 'completed' and days_ago <= 2 else 'WARNING'
+        print(f'   [{status}] Status: {result[0]}, {days_ago} days ago, {result[2]} records')
+    else:
+        print('   [WARNING] No universe updates found')
+"
+```
+
+**Step 3: Check metrics**
+```bash
+# Continue from above script...
+
+# Step 4: Check Prometheus metrics
+echo "4. Request Metrics:"
+curl -s http://${HOST}:${PORT}/metrics | grep -E "^hrp_http_requests_total" | head -5
+
+echo
+echo "=== Monitoring Complete ==="
+```
+
+**Save as:** `~/hrp-data/scripts/check_full_health.sh`
+
+### 9.6 Grafana Dashboard Setup
+
+Create a Grafana dashboard for universe monitoring:
+
+**Panel 1: API Health**
+```promql
+# Success rate over time
+1 - (sum(rate(hrp_http_requests_total{status=~"5.."}[5m])) / sum(rate(hrp_http_requests_total[5m])))
+```
+
+**Panel 2: Latency Heatmap**
+```promql
+# Response time distribution
+rate(hrp_http_request_duration_seconds_bucket[5m])
+```
+
+**Panel 3: Active Connections**
+```promql
+# Current connections
+hrp_active_connections
+```
+
+**Alert Rule Example:**
+```yaml
+# Grafana alert rule for ops server health
+- alert: HRPOpsServerDown
+  expr: up{job="hrp-ops"} == 0
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "HRP Ops Server is down"
+    description: "The HRP ops server has been unreachable for more than 1 minute."
+
+- alert: HRPHighErrorRate
+  expr: sum(rate(hrp_http_requests_total{status=~"5.."}[5m])) / sum(rate(hrp_http_requests_total[5m])) > 0.05
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "HRP high error rate detected"
+    description: "Error rate is above 5% for the last 5 minutes."
+```
+
+### 9.7 Related Documentation
+
+- [Ops Server Guide](ops-server.md) - Full ops server documentation
+- [Alert Thresholds Guide](alert-thresholds.md) - Configurable threshold settings
+- [Scheduler Configuration Guide](../setup/Scheduler-Configuration-Guide.md) - launchd job setup
+
+---
+
+## 10. Quick Reference
 
 ### Essential Commands
 ```bash
@@ -799,14 +1031,22 @@ python -m hrp.agents.cli run-now --job universe
 
 # Health check
 python ~/hrp-data/scripts/check_universe_health.py
+
+# Ops server health (requires ops server running)
+curl http://localhost:8080/health
+curl http://localhost:8080/ready
+curl http://localhost:8080/metrics
 ```
 
 ### Key Files
 ```
 Service: ~/Library/LaunchAgents/com.hrp.scheduler.plist
+Ops Server: ~/Library/LaunchAgents/com.hrp.ops-server.plist
 Logs: ~/hrp-data/logs/scheduler.error.log
+Ops Logs: ~/hrp-data/logs/ops-server.log
 Database: ~/hrp-data/hrp.duckdb
 Scripts: ~/hrp-data/scripts/
+Thresholds: ~/hrp-data/config/thresholds.yaml
 ```
 
 ### Database Tables

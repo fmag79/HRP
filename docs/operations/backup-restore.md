@@ -198,10 +198,27 @@ else:
 
 ### Pre-Restore Checklist
 
-1. **Stop all services** - Dashboard, scheduler, any running jobs
-2. **Verify the backup** - Ensure backup integrity before restoring
-3. **Document current state** - Note what data will be lost (if any)
-4. **Confirm restore target** - Ensure you're restoring to the correct location
+1. **Check ops server health** - Document current system state before changes
+2. **Stop all services** - Dashboard, scheduler, any running jobs
+3. **Verify the backup** - Ensure backup integrity before restoring
+4. **Document current state** - Note what data will be lost (if any)
+5. **Confirm restore target** - Ensure you're restoring to the correct location
+
+#### Verify Ops Server Health (Pre-Restore)
+
+Before starting a restore, check the ops server to document the current system state:
+
+```bash
+# Check liveness (server running)
+curl http://localhost:8080/health
+
+# Check readiness (database connectivity)
+curl http://localhost:8080/ready
+```
+
+If the readiness check already fails (e.g., due to database corruption), proceed with the restore. Document the error for your records.
+
+See [Ops Server Guide](ops-server.md) for detailed health endpoint documentation.
 
 ### Restore from Backup
 
@@ -254,10 +271,35 @@ if success:
 
 ### Post-Restore Validation
 
-After restoring, verify the system works:
+After restoring, verify the system works correctly before restarting services.
+
+#### Step 1: Verify Ops Server Health
+
+Check both liveness and readiness endpoints to confirm the restore was successful:
+
+```bash
+# Start the ops server (if not running as a service)
+python -m hrp.ops &
+
+# Wait for startup
+sleep 2
+
+# Check liveness
+curl http://localhost:8080/health
+# Expected: {"status": "ok", ...}
+
+# Check readiness (verifies database connectivity)
+curl http://localhost:8080/ready
+# Expected: {"status": "ready", "checks": {"database": "ok", "api": "ok"}, ...}
+```
+
+If the readiness check fails, the database may not have been restored correctly. Check the error message and verify the database file exists at `~/hrp-data/hrp.duckdb`.
+
+#### Step 2: Verify API and Data Integrity
 
 ```python
 from hrp.api.platform import PlatformAPI
+from datetime import date
 
 api = PlatformAPI()
 health = api.health_check()
@@ -270,6 +312,20 @@ print(f"Tables: {health['tables']}")
 prices_count = len(api.get_prices(['AAPL'], start=date(2020,1,1), end=date.today()))
 print(f"Price records: {prices_count}")
 ```
+
+#### Step 3: Restart Services
+
+Once validation passes, restart your services:
+
+```bash
+# Restart dashboard
+streamlit run hrp/dashboard/app.py &
+
+# Restart scheduler (if using)
+python -m hrp.agents.run_scheduler &
+```
+
+See [Ops Server Guide](ops-server.md) for detailed health endpoint documentation and troubleshooting.
 
 ---
 
