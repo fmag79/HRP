@@ -146,7 +146,3 @@ def reset_config() -> None:
     _config = None
 
 
-def ensure_directories() -> None:
-    """Ensure all required data directories exist."""
-    config = get_config()
-    config.data.optuna_dir.mkdir(parents=True, exist_ok=True)

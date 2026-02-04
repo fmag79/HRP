@@ -348,7 +348,7 @@ def _evaluate_with_pruning(
                 logger.debug(f"Trial pruned at fold {fold_idx}")
                 raise optuna.TrialPruned()
 
-            # Check Sharpe decay
+            # Check Sharpe decay (as an overfitting guard when pruning enabled)
             if train_sharpes and test_sharpes:
                 mean_train_sharpe = float(np.mean(train_sharpes))
                 mean_test_sharpe = float(np.mean(test_sharpes))
