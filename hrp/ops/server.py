@@ -4,7 +4,36 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
+
+
+def check_system_ready() -> tuple[bool, dict]:
+    """
+    Check if system is ready to serve requests.
+
+    Returns:
+        Tuple of (is_ready, details_dict)
+    """
+    details = {}
+    is_ready = True
+
+    try:
+        from hrp.api.platform import PlatformAPI
+
+        api = PlatformAPI(read_only=True)
+        health = api.health_check()
+        api.close()
+
+        details["database"] = health.get("database", "unknown")
+        details["api"] = health.get("api", "unknown")
+
+        if health.get("database") != "ok":
+            is_ready = False
+    except Exception as e:
+        details["error"] = str(e)
+        is_ready = False
+
+    return is_ready, details
 
 
 def create_app() -> FastAPI:
@@ -22,6 +51,22 @@ def create_app() -> FastAPI:
             "status": "ok",
             "timestamp": datetime.now().isoformat(),
         }
+
+    @app.get("/ready")
+    def ready(response: Response):
+        """Readiness probe - returns 200 if system is ready, 503 otherwise."""
+        is_ready, details = check_system_ready()
+
+        result = {
+            "status": "ready" if is_ready else "not_ready",
+            "timestamp": datetime.now().isoformat(),
+            "checks": details,
+        }
+
+        if not is_ready:
+            response.status_code = 503
+
+        return result
 
     return app
 
