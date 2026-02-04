@@ -22,6 +22,13 @@ from hrp.ml.optimization import (
     cross_validated_optimize,
     SCORING_METRICS,
 )
+
+# Re-export Optuna distributions for convenience
+from optuna.distributions import (
+    FloatDistribution,
+    IntDistribution,
+    CategoricalDistribution,
+)
 from hrp.ml.regime import (
     MarketRegime,
     HMMConfig,
@@ -64,6 +71,10 @@ __all__ = [
     "OptimizationResult",
     "cross_validated_optimize",
     "SCORING_METRICS",
+    # Optuna distributions (re-exported for convenience)
+    "FloatDistribution",
+    "IntDistribution",
+    "CategoricalDistribution",
     # Regime Detection
     "MarketRegime",
     "HMMConfig",
