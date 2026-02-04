@@ -14,8 +14,6 @@ from hrp.ml.optimization import (
     OptimizationConfig,
     OptimizationResult,
     cross_validated_optimize,
-    _generate_param_combinations,
-    _evaluate_params,
     _evaluate_with_pruning,
     _get_sampler,
     SCORING_METRICS,
