@@ -603,11 +603,26 @@ Respond with a JSON object containing:
             if exp_id:
                 details = event.get("details", {})
                 metrics = details.get("metrics", {})
+
+                mean_ic = metrics.get("mean_ic")
+                stability = metrics.get("stability_score")
+
+                # If metrics not in event details, fetch from MLflow
+                if mean_ic is None or stability is None:
+                    try:
+                        exp_data = self.api.get_experiment(exp_id)
+                        if exp_data and exp_data.get("metrics"):
+                            mlflow_metrics = exp_data["metrics"]
+                            mean_ic = mean_ic or mlflow_metrics.get("mean_ic")
+                            stability = stability or mlflow_metrics.get("stability_score")
+                    except Exception:
+                        pass
+
                 summaries.append({
                     "id": exp_id[:12] if len(exp_id) > 12 else exp_id,
                     "hypothesis_id": event.get("hypothesis_id", "N/A"),
-                    "sharpe": metrics.get("sharpe_ratio", "N/A"),
-                    "max_dd": metrics.get("max_drawdown", "N/A"),
+                    "mean_ic": mean_ic if mean_ic is not None else "N/A",
+                    "stability": stability if stability is not None else "N/A",
                 })
         return summaries
 
@@ -886,16 +901,16 @@ Respond with a JSON object containing:
             parts.append(render_section_divider("Recent Experiment Performance"))
             rows = []
             for exp in recent_experiments:
-                sharpe = exp.get("sharpe", "N/A")
-                if isinstance(sharpe, (int, float)):
-                    sharpe = f"{sharpe:.2f}"
-                max_dd = exp.get("max_dd", "N/A")
-                if isinstance(max_dd, (int, float)):
-                    max_dd = f"{max_dd:.1%}"
-                rows.append([exp["id"], exp["hypothesis_id"], str(sharpe), str(max_dd)])
+                mean_ic = exp.get("mean_ic", "N/A")
+                if isinstance(mean_ic, (int, float)):
+                    mean_ic = f"{mean_ic:.3f}"
+                stability = exp.get("stability", "N/A")
+                if isinstance(stability, (int, float)):
+                    stability = f"{stability:.2f}"
+                rows.append([exp["id"], exp["hypothesis_id"], str(mean_ic), str(stability)])
             parts.append(render_status_table(
                 "Top Experiments",
-                ["Experiment", "Hypothesis", "Sharpe", "Max DD"],
+                ["Experiment", "Hypothesis", "IC", "Stability"],
                 rows,
             ))
 
