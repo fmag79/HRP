@@ -154,6 +154,28 @@ def remove_user(users_file: Path, username: str) -> None:
     logger.info(f"Removed user: {username}")
 
 
+def reset_password(users_file: Path, username: str, password: str) -> None:
+    """
+    Reset a user's password.
+
+    Args:
+        users_file: Path to users YAML file
+        username: Username to reset password for
+        password: New plain text password (will be hashed)
+
+    Raises:
+        ValueError: If user not found
+    """
+    users = load_users(users_file)
+
+    if username not in users["credentials"]["usernames"]:
+        raise ValueError(f"User {username} not found")
+
+    users["credentials"]["usernames"][username]["password"] = hash_password(password)
+    save_users(users_file, users)
+    logger.info(f"Reset password for user: {username}")
+
+
 def get_authenticator(config: AuthConfig) -> Any | None:
     """
     Get configured streamlit-authenticator instance.

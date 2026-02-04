@@ -11,6 +11,7 @@ from hrp.dashboard.auth import (
     add_user,
     load_users,
     remove_user,
+    reset_password,
 )
 
 
@@ -27,6 +28,14 @@ def cmd_remove_user(args: argparse.Namespace) -> None:
     config = AuthConfig.from_env()
     remove_user(config.users_file, args.username)
     print(f"Removed user: {args.username}")
+
+
+def cmd_reset_password(args: argparse.Namespace) -> None:
+    """Reset a user's password."""
+    config = AuthConfig.from_env()
+    password = args.password or getpass.getpass("New password: ")
+    reset_password(config.users_file, args.username, password)
+    print(f"Password reset for user: {args.username}")
 
 
 def cmd_list_users(args: argparse.Namespace) -> None:
@@ -61,6 +70,14 @@ def main() -> None:
     rm_parser = subparsers.add_parser("remove-user", help="Remove a user")
     rm_parser.add_argument("--username", required=True, help="Username to remove")
     rm_parser.set_defaults(func=cmd_remove_user)
+
+    # reset-password command
+    reset_parser = subparsers.add_parser("reset-password", help="Reset a user's password")
+    reset_parser.add_argument("--username", required=True, help="Username to reset")
+    reset_parser.add_argument(
+        "--password", help="New password (prompted if not provided)"
+    )
+    reset_parser.set_defaults(func=cmd_reset_password)
 
     # list-users command
     list_parser = subparsers.add_parser("list-users", help="List all users")

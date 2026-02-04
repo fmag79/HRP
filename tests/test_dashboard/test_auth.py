@@ -155,6 +155,30 @@ credentials:
         with pytest.raises(ValueError, match="not found"):
             remove_user(users_file, "nonexistent")
 
+    def test_reset_password_updates_hash(self, tmp_path):
+        """reset_password should update user's password hash."""
+        users_file = tmp_path / "users.yaml"
+
+        from hrp.dashboard.auth import add_user, load_users, reset_password
+
+        add_user(users_file, "testuser", "test@example.com", "Test User", "oldpass")
+        old_hash = load_users(users_file)["credentials"]["usernames"]["testuser"]["password"]
+
+        reset_password(users_file, "testuser", "newpass")
+
+        new_hash = load_users(users_file)["credentials"]["usernames"]["testuser"]["password"]
+        assert new_hash != old_hash
+        assert new_hash.startswith("$2b$")
+
+    def test_reset_password_raises_if_not_found(self, tmp_path):
+        """reset_password should raise if user not found."""
+        users_file = tmp_path / "users.yaml"
+
+        from hrp.dashboard.auth import reset_password
+
+        with pytest.raises(ValueError, match="not found"):
+            reset_password(users_file, "nonexistent", "newpass")
+
 
 class TestGetAuthenticator:
     """Tests for get_authenticator function."""
