@@ -81,6 +81,7 @@ ops = [
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
     "prometheus-client>=0.19.0",
+    "psutil>=5.9.0",
 ]
 
 [project.scripts]
@@ -110,3 +111,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=hrp --cov-report=term-missing"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "e2e: marks tests as end-to-end tests (slow, require full stack)",
+    "benchmark: marks tests as performance benchmarks",
+]
