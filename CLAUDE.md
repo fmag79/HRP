@@ -177,10 +177,14 @@ Job scheduling: Individual launchd plists in `launchd/`, managed via `scripts/ma
 |----------|-------------|----------|
 | `HRP_DB_PATH` | Database path (default: `~/hrp-data/hrp.duckdb`) | No |
 | `HRP_DATA_DIR` | Data directory (default: `~/hrp-data/`) | No |
+| `HRP_ENVIRONMENT` | Environment mode: `development`, `staging`, `production` (default: `development`) | No |
 | `RESEND_API_KEY` | Resend API key for email notifications | For alerts |
 | `NOTIFICATION_EMAIL` | Email address for notifications | For alerts |
 | `NOTIFICATION_FROM_EMAIL` | From address (default: `onboarding@resend.dev`) | No |
 | `SIMFIN_API_KEY` | SimFin API key for fundamentals (falls back to YFinance) | For fundamentals |
+| `HRP_AUTH_ENABLED` | Enable dashboard authentication (default: `true`) | No |
+| `HRP_AUTH_COOKIE_KEY` | Secret key for auth cookies (32+ chars) | For auth |
+| `HRP_AUTH_USERS_FILE` | Path to users YAML file (default: `~/hrp-data/auth/users.yaml`) | No |
 
 ## Project Structure
 
