@@ -7,31 +7,39 @@ existing walk-forward validation and overfitting guards.
 
 from __future__ import annotations
 
-import itertools
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from loguru import logger
+import optuna
+from optuna.distributions import (
+    BaseDistribution,
+    FloatDistribution,
+    IntDistribution,
+    CategoricalDistribution,
+)
+from optuna.pruners import MedianPruner
+from optuna.samplers import GridSampler, RandomSampler, TPESampler, CmaEsSampler
 
-from hrp.ml.models import SUPPORTED_MODELS
+from hrp.ml.models import SUPPORTED_MODELS, get_model
 from hrp.ml.validation import (
     FoldResult,
     WalkForwardConfig,
     generate_folds,
     compute_fold_metrics,
-    aggregate_fold_metrics,
 )
 from hrp.ml.training import _fetch_features, select_features
-from hrp.ml.models import get_model
 from hrp.risk.overfitting import (
     HyperparameterTrialCounter,
     SharpeDecayMonitor,
     OverfittingError,
 )
+from hrp.utils.config import get_config
 
 
 # Scoring metrics and their optimization direction (higher is better)
@@ -43,44 +51,121 @@ SCORING_METRICS = {
     "sharpe": True,  # Higher is better
 }
 
+# Valid Optuna samplers
+VALID_SAMPLERS = {"grid", "random", "tpe", "cmaes"}
+
+
+def _distributions_to_grid(
+    param_space: dict[str, BaseDistribution],
+) -> dict[str, list]:
+    """
+    Convert Optuna distributions to explicit grid for GridSampler.
+
+    Args:
+        param_space: Dict of param name to distribution
+
+    Returns:
+        Dict of param name to list of values
+
+    Raises:
+        ValueError: If FloatDistribution lacks step
+    """
+    grid = {}
+    for name, dist in param_space.items():
+        if isinstance(dist, CategoricalDistribution):
+            grid[name] = list(dist.choices)
+        elif isinstance(dist, IntDistribution):
+            step = dist.step if dist.step else 1
+            grid[name] = list(range(dist.low, dist.high + 1, step))
+        elif isinstance(dist, FloatDistribution):
+            if dist.step:
+                values = []
+                v = dist.low
+                while v <= dist.high:
+                    values.append(v)
+                    v += dist.step
+                grid[name] = values
+            else:
+                raise ValueError(
+                    f"Grid sampler requires step for float param '{name}'. "
+                    f"Use FloatDistribution({dist.low}, {dist.high}, step=X)"
+                )
+        else:
+            raise ValueError(f"Unsupported distribution type for '{name}': {type(dist)}")
+    return grid
+
+
+def _get_sampler(
+    sampler_name: str,
+    param_space: dict[str, BaseDistribution],
+) -> optuna.samplers.BaseSampler:
+    """
+    Create Optuna sampler from name.
+
+    Args:
+        sampler_name: One of 'grid', 'random', 'tpe', 'cmaes'
+        param_space: Parameter space (needed for GridSampler)
+
+    Returns:
+        Configured Optuna sampler
+
+    Raises:
+        ValueError: If sampler_name invalid or grid requires step for floats
+    """
+    if sampler_name == "grid":
+        search_space = _distributions_to_grid(param_space)
+        return GridSampler(search_space)
+    elif sampler_name == "random":
+        return RandomSampler(seed=42)
+    elif sampler_name == "tpe":
+        return TPESampler(seed=42)
+    elif sampler_name == "cmaes":
+        return CmaEsSampler(seed=42)
+    else:
+        raise ValueError(
+            f"Unknown sampler: '{sampler_name}'. "
+            f"Options: grid, random, tpe, cmaes"
+        )
+
 
 @dataclass
 class OptimizationConfig:
     """
-    Configuration for cross-validated optimization.
+    Configuration for cross-validated optimization using Optuna.
 
     Attributes:
         model_type: Type of model (must be in SUPPORTED_MODELS)
         target: Target variable name (e.g., 'returns_20d')
         features: List of feature names from feature store
-        param_grid: Parameter grid for search (e.g., {"alpha": [0.1, 1.0, 10.0]})
+        param_space: Optuna distributions for hyperparameters
         start_date: Start of the entire date range
         end_date: End of the entire date range
         n_folds: Number of cross-validation folds (default 5)
         window_type: 'expanding' or 'rolling' (default 'expanding')
         scoring_metric: Metric to optimize (default 'ic')
-        constraints: Optional constraints on parameters
-        max_trials: Maximum HP trials (integrates with HyperparameterTrialCounter)
+        n_trials: Number of optimization trials (default 50)
         hypothesis_id: Optional hypothesis ID for overfitting tracking
-        search_type: 'grid' or 'random' (default 'grid')
-        n_random_samples: Number of samples for random search
+        sampler: Optuna sampler type ('grid', 'random', 'tpe', 'cmaes')
+        enable_pruning: Enable Optuna pruning for early trial termination
         early_stop_decay_threshold: Sharpe decay threshold for early stopping
+        min_train_periods: Minimum training periods for each fold
+        feature_selection: Whether to perform feature selection
+        max_features: Maximum features to select
     """
 
     model_type: str
     target: str
     features: list[str]
-    param_grid: dict[str, list[Any]]
+    param_space: dict[str, BaseDistribution]
     start_date: date
     end_date: date
     n_folds: int = 5
     window_type: str = "expanding"
     scoring_metric: str = "ic"
-    constraints: dict[str, Any] | None = None
-    max_trials: int = 50
+    n_trials: int = 50
     hypothesis_id: str | None = None
-    search_type: str = "grid"
-    n_random_samples: int = 20
+    sampler: str = "tpe"
+    enable_pruning: bool = True
     early_stop_decay_threshold: float = 0.5
     min_train_periods: int = 252
     feature_selection: bool = True
@@ -107,16 +192,18 @@ class OptimizationConfig:
                 f"Unsupported scoring_metric: '{self.scoring_metric}'. "
                 f"Available: {available}"
             )
-        if not self.param_grid:
-            raise ValueError("param_grid cannot be empty")
-        if self.search_type not in ("grid", "random"):
+        if not self.param_space:
+            raise ValueError("param_space cannot be empty")
+        if self.sampler not in VALID_SAMPLERS:
+            available = ", ".join(sorted(VALID_SAMPLERS))
             raise ValueError(
-                f"search_type must be 'grid' or 'random', got '{self.search_type}'"
+                f"Unknown sampler: '{self.sampler}'. "
+                f"Available: {available}"
             )
 
         logger.debug(
             f"OptimizationConfig created: {self.model_type}, "
-            f"{self.n_folds} folds, scoring={self.scoring_metric}"
+            f"{self.n_folds} folds, scoring={self.scoring_metric}, sampler={self.sampler}"
         )
 
 
@@ -150,55 +237,32 @@ class OptimizationResult:
     execution_time_seconds: float = 0.0
 
 
-def _generate_param_combinations(
-    param_grid: dict[str, list[Any]],
-    search_type: str = "grid",
-    n_random_samples: int = 20,
-    max_trials: int | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Generate parameter combinations from grid.
-
-    Args:
-        param_grid: Dict mapping param name to list of values
-        search_type: 'grid' for full grid, 'random' for random sampling
-        n_random_samples: Number of samples for random search
-        max_trials: Maximum trials to generate
-
-    Returns:
-        List of parameter dictionaries
-    """
-    keys = list(param_grid.keys())
-    values = list(param_grid.values())
-
-    if search_type == "grid":
-        combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
-    else:
-        # Random search
-        np.random.seed(42)  # For reproducibility
-        combinations = []
-        for _ in range(n_random_samples):
-            combo = {k: np.random.choice(v) for k, v in param_grid.items()}
-            combinations.append(combo)
-
-    # Limit by max_trials if specified
-    if max_trials is not None and len(combinations) > max_trials:
-        combinations = combinations[:max_trials]
-
-    return combinations
-
-
-def _evaluate_params(
+def _evaluate_with_pruning(
+    trial: optuna.Trial,
     params: dict[str, Any],
     config: OptimizationConfig,
     all_data: pd.DataFrame,
     folds: list[tuple[date, date, date, date]],
-) -> tuple[float, list[FoldResult], dict[str, float]]:
+) -> tuple[float, list[FoldResult]]:
     """
-    Evaluate a single parameter combination across all folds.
+    Evaluate a parameter combination with Optuna pruning support.
+
+    Reports intermediate values after each fold and checks for pruning signals.
+    Also monitors Sharpe decay to catch overfitting early.
+
+    Args:
+        trial: Optuna trial object for reporting and pruning
+        params: Hyperparameters to evaluate
+        config: Optimization configuration
+        all_data: Full dataset with features and target
+        folds: List of (train_start, train_end, test_start, test_end) tuples
 
     Returns:
-        Tuple of (mean_score, fold_results, per_fold_scores)
+        Tuple of (mean_score, fold_results)
+
+    Raises:
+        optuna.TrialPruned: If trial should be pruned based on intermediate results
+                           or Sharpe decay threshold exceeded
     """
     fold_results = []
     fold_scores = []
@@ -206,6 +270,7 @@ def _evaluate_params(
     test_sharpes = []
 
     higher_is_better = SCORING_METRICS[config.scoring_metric]
+    decay_monitor = SharpeDecayMonitor(max_decay_ratio=config.early_stop_decay_threshold)
 
     for fold_idx, (train_start, train_end, test_start, test_end) in enumerate(folds):
         # Split data
@@ -273,18 +338,67 @@ def _evaluate_params(
         )
         fold_results.append(fold_result)
 
+        # Report intermediate value to Optuna
+        current_mean = float(np.mean(fold_scores)) if fold_scores else 0.0
+        trial.report(current_mean, fold_idx)
+
+        # Check if trial should be pruned (only when pruning is enabled)
+        if config.enable_pruning:
+            if trial.should_prune():
+                logger.debug(f"Trial pruned at fold {fold_idx}")
+                raise optuna.TrialPruned()
+
+            # Check Sharpe decay (as an overfitting guard when pruning enabled)
+            if train_sharpes and test_sharpes:
+                mean_train_sharpe = float(np.mean(train_sharpes))
+                mean_test_sharpe = float(np.mean(test_sharpes))
+                decay_result = decay_monitor.check(mean_train_sharpe, mean_test_sharpe)
+                if not decay_result.passed:
+                    logger.debug(f"Trial pruned due to Sharpe decay: {decay_result.message}")
+                    raise optuna.TrialPruned()
+
     if not fold_scores:
         mean_score = float("-inf") if higher_is_better else float("inf")
     else:
         mean_score = float(np.mean(fold_scores))
 
-    per_fold_scores = {
-        "train_sharpes": train_sharpes,
-        "test_sharpes": test_sharpes,
-        "fold_scores": fold_scores,
-    }
+    return mean_score, fold_results
 
-    return mean_score, fold_results, per_fold_scores
+
+def _sample_params(
+    trial: optuna.Trial,
+    param_space: dict[str, BaseDistribution],
+) -> dict[str, Any]:
+    """
+    Sample parameters from Optuna distributions using trial.suggest_* methods.
+
+    Args:
+        trial: Optuna trial object
+        param_space: Dict of param name to distribution
+
+    Returns:
+        Dict of sampled parameter values
+    """
+    params = {}
+    for name, dist in param_space.items():
+        if isinstance(dist, CategoricalDistribution):
+            params[name] = trial.suggest_categorical(name, dist.choices)
+        elif isinstance(dist, IntDistribution):
+            params[name] = trial.suggest_int(
+                name, dist.low, dist.high, step=dist.step or 1, log=dist.log
+            )
+        elif isinstance(dist, FloatDistribution):
+            if dist.step:
+                params[name] = trial.suggest_float(
+                    name, dist.low, dist.high, step=dist.step
+                )
+            else:
+                params[name] = trial.suggest_float(
+                    name, dist.low, dist.high, log=dist.log
+                )
+        else:
+            raise ValueError(f"Unsupported distribution type for '{name}': {type(dist)}")
+    return params
 
 
 def cross_validated_optimize(
@@ -293,13 +407,14 @@ def cross_validated_optimize(
     log_to_mlflow: bool = True,
 ) -> OptimizationResult:
     """
-    Run cross-validated parameter optimization.
+    Run cross-validated parameter optimization using Optuna.
 
-    Combines grid/random search with walk-forward validation and
-    integrates with overfitting guards.
+    Creates an Optuna study with configurable sampler and optional pruning.
+    Integrates with HyperparameterTrialCounter for overfitting guards.
+    Persists studies to SQLite when hypothesis_id is provided for resume capability.
 
     Args:
-        config: Optimization configuration
+        config: Optimization configuration with param_space distributions
         symbols: List of symbols to use
         log_to_mlflow: Whether to log results to MLflow
 
@@ -311,8 +426,8 @@ def cross_validated_optimize(
         ValueError: If no data found
     """
     logger.info(
-        f"Starting cross-validated optimization: {config.model_type}, "
-        f"{config.n_folds} folds, metric={config.scoring_metric}"
+        f"Starting Optuna optimization: {config.model_type}, "
+        f"{config.n_folds} folds, metric={config.scoring_metric}, sampler={config.sampler}"
     )
 
     start_time = time.perf_counter()
@@ -322,10 +437,8 @@ def cross_validated_optimize(
     if config.hypothesis_id:
         trial_counter = HyperparameterTrialCounter(
             hypothesis_id=config.hypothesis_id,
-            max_trials=config.max_trials,
+            max_trials=config.n_trials,
         )
-
-    decay_monitor = SharpeDecayMonitor(max_decay_ratio=config.early_stop_decay_threshold)
 
     # Fetch all data once
     all_data = _fetch_features(
@@ -358,60 +471,64 @@ def cross_validated_optimize(
     )
     folds = generate_folds(wf_config, available_dates)
 
-    # Generate parameter combinations
-    param_combinations = _generate_param_combinations(
-        config.param_grid,
-        config.search_type,
-        config.n_random_samples,
-        config.max_trials,
+    # Determine optimization direction
+    higher_is_better = SCORING_METRICS[config.scoring_metric]
+    direction = "maximize" if higher_is_better else "minimize"
+
+    # Create sampler
+    sampler = _get_sampler(config.sampler, config.param_space)
+
+    # Create pruner if enabled
+    pruner = MedianPruner() if config.enable_pruning else optuna.pruners.NopPruner()
+
+    # Set up study storage
+    storage = None
+    if config.hypothesis_id:
+        optuna_dir = get_config().data.optuna_dir
+        optuna_dir.mkdir(parents=True, exist_ok=True)
+        storage_path = optuna_dir / f"{config.hypothesis_id}.db"
+        storage = f"sqlite:///{storage_path}"
+
+    # Create study
+    study = optuna.create_study(
+        direction=direction,
+        sampler=sampler,
+        pruner=pruner,
+        storage=storage,
+        load_if_exists=True,
+        study_name=config.hypothesis_id,
     )
 
-    logger.info(f"Evaluating {len(param_combinations)} parameter combinations")
-
     # Track results
-    all_trials = []
-    best_params = None
-    best_score = float("-inf") if SCORING_METRICS[config.scoring_metric] else float("inf")
-    best_fold_results = []
+    all_trials_data = []
     early_stopped = False
     early_stop_reason = None
 
-    higher_is_better = SCORING_METRICS[config.scoring_metric]
+    def objective(trial: optuna.Trial) -> float:
+        nonlocal early_stopped, early_stop_reason
 
-    for trial_idx, params in enumerate(param_combinations):
         # Check trial counter
         if trial_counter and not trial_counter.can_try():
             early_stopped = True
-            early_stop_reason = f"Trial limit ({config.max_trials}) exceeded"
+            early_stop_reason = f"Trial limit ({config.n_trials}) exceeded"
             logger.warning(early_stop_reason)
-            break
+            raise optuna.TrialPruned()
 
-        logger.debug(f"Trial {trial_idx + 1}/{len(param_combinations)}: {params}")
+        # Sample parameters
+        params = _sample_params(trial, config.param_space)
+        logger.debug(f"Trial {trial.number}: {params}")
 
-        # Evaluate params
-        mean_score, fold_results, per_fold_scores = _evaluate_params(
-            params, config, all_data, folds
-        )
-
-        # Check for Sharpe decay (early stopping)
-        if per_fold_scores["train_sharpes"] and per_fold_scores["test_sharpes"]:
-            mean_train_sharpe = float(np.mean(per_fold_scores["train_sharpes"]))
-            mean_test_sharpe = float(np.mean(per_fold_scores["test_sharpes"]))
-
-            decay_result = decay_monitor.check(mean_train_sharpe, mean_test_sharpe)
-            if not decay_result.passed:
-                logger.warning(f"Trial {trial_idx + 1}: {decay_result.message}")
-
-        # Log trial
-        trial_record = {
-            "trial_idx": trial_idx,
-            "params": params,
-            "mean_score": mean_score,
-            "fold_scores": per_fold_scores["fold_scores"],
-            "train_sharpes": per_fold_scores["train_sharpes"],
-            "test_sharpes": per_fold_scores["test_sharpes"],
-        }
-        all_trials.append(trial_record)
+        # Evaluate with pruning support
+        try:
+            mean_score, fold_results = _evaluate_with_pruning(
+                trial=trial,
+                params=params,
+                config=config,
+                all_data=all_data,
+                folds=folds,
+            )
+        except optuna.TrialPruned:
+            raise
 
         # Log to trial counter if available
         if trial_counter:
@@ -425,38 +542,68 @@ def cross_validated_optimize(
             except OverfittingError:
                 early_stopped = True
                 early_stop_reason = "Trial limit exceeded via counter"
-                break
+                raise optuna.TrialPruned()
 
-        # Update best
-        is_better = (
-            (mean_score > best_score)
-            if higher_is_better
-            else (mean_score < best_score)
-        )
-        if is_better and not np.isnan(mean_score) and not np.isinf(mean_score):
-            best_score = mean_score
-            best_params = params
-            best_fold_results = fold_results
+        # Track trial data
+        all_trials_data.append({
+            "trial_idx": trial.number,
+            "params": params,
+            "mean_score": mean_score,
+            "fold_results": fold_results,
+        })
+
+        return mean_score
+
+    # Determine number of trials to run
+    n_trials = config.n_trials
+    if trial_counter:
+        n_trials = min(n_trials, trial_counter.remaining_trials)
+
+    # Run optimization (suppress Optuna logs)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
     # Build CV results DataFrame
     cv_results_data = []
-    for trial in all_trials:
-        row = {"mean_score": trial["mean_score"]}
-        row.update({f"param_{k}": v for k, v in trial["params"].items()})
+    for trial_data in all_trials_data:
+        row = {"mean_score": trial_data["mean_score"]}
+        row.update({f"param_{k}": v for k, v in trial_data["params"].items()})
         cv_results_data.append(row)
 
-    cv_results = pd.DataFrame(cv_results_data)
+    cv_results = pd.DataFrame(cv_results_data) if cv_results_data else pd.DataFrame()
 
     execution_time = time.perf_counter() - start_time
 
+    # Extract best parameters from study
+    best_fold_results = []
+    try:
+        best_trial = study.best_trial
+        best_params = best_trial.params
+        best_score = best_trial.value
+        # Find fold_results for the best trial
+        for trial_data in all_trials_data:
+            if trial_data["trial_idx"] == best_trial.number:
+                best_fold_results = trial_data.get("fold_results", [])
+                break
+    except ValueError:
+        # No trials completed (all pruned)
+        best_params = {}
+        best_score = float("nan")
+
+    # Clean all_trials for result (remove fold_results for memory efficiency)
+    clean_trials = [
+        {"trial_idx": t["trial_idx"], "params": t["params"], "mean_score": t["mean_score"]}
+        for t in all_trials_data
+    ]
+
     result = OptimizationResult(
-        best_params=best_params or {},
+        best_params=best_params,
         best_score=best_score,
         cv_results=cv_results,
         fold_results=best_fold_results,
-        all_trials=all_trials,
+        all_trials=clean_trials,
         hypothesis_id=config.hypothesis_id,
-        n_trials_completed=len(all_trials),
+        n_trials_completed=len(all_trials_data),
         early_stopped=early_stopped,
         early_stop_reason=early_stop_reason,
         execution_time_seconds=execution_time,
@@ -464,7 +611,7 @@ def cross_validated_optimize(
 
     logger.info(
         f"Optimization complete: best_score={best_score:.4f}, "
-        f"best_params={best_params}, trials={len(all_trials)}"
+        f"best_params={best_params}, trials={len(all_trials_data)}"
     )
 
     if log_to_mlflow:
@@ -490,7 +637,7 @@ def _log_optimization_to_mlflow(
             mlflow.log_param("n_folds", config.n_folds)
             mlflow.log_param("window_type", config.window_type)
             mlflow.log_param("scoring_metric", config.scoring_metric)
-            mlflow.log_param("search_type", config.search_type)
+            mlflow.log_param("sampler", config.sampler)
             mlflow.log_param("n_trials", result.n_trials_completed)
 
             # Log best params

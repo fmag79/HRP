@@ -65,6 +65,10 @@ class DataConfig:
     def reports_dir(self) -> Path:
         return self.output_dir / "reports"
 
+    @property
+    def optuna_dir(self) -> Path:
+        return self.data_dir / "optuna"
+
 
 @dataclass
 class APIConfig:
@@ -168,3 +172,5 @@ def reset_config() -> None:
     """Reset the global configuration (useful for testing)."""
     global _config
     _config = None
+
+
