@@ -183,7 +183,7 @@ Text-based features from earnings calls, SEC filings, and news.
 
 - **Ops Server**: FastAPI server with `/health`, `/ready`, `/metrics` endpoints (`hrp/ops/`)
 - **Prometheus Metrics**: `MetricsCollector` for system (CPU, memory, disk) and data pipeline metrics
-- **Configurable Thresholds**: `OpsThresholds` dataclass with YAML + env var support
+- **Configurable Thresholds**: `OpsThresholds` dataclass with YAML + env var support (`HRP_THRESHOLD_*`)
 - **Ops Dashboard**: Streamlit page for system monitoring (`hrp/dashboard/pages/9_Ops.py`)
 - **Startup Validation**: `fail_fast_startup()` for production secret checks (`hrp/utils/startup.py`)
 - **Secret Filtering**: `filter_secrets()` to mask API keys in logs (`hrp/utils/log_filter.py`)
@@ -193,6 +193,17 @@ Text-based features from earnings calls, SEC filings, and news.
 - **Integration Tests**: Golden path tests for hypothesis lifecycle (`tests/integration/`)
 - **CLI Entrypoint**: Unified `hrp` command via `hrp/cli.py`
 - **Version Alignment**: `hrp.__version__` from pyproject.toml metadata
+- **launchd Service**: `launchd/com.hrp.ops-server.plist` for ops server as background service
+- **Service Management**: `scripts/manage_launchd.sh` for install/uninstall/status/reload of all HRP jobs
+
+### Phase 2: Documentation (Complete)
+
+- **Ops Server Guide**: `docs/operations/ops-server.md` — health endpoints, Prometheus setup, launchd service
+- **Alert Thresholds Guide**: `docs/operations/alert-thresholds.md` — OpsThresholds dataclass, env vars, YAML config
+- **Deployment Guide**: Updated with Tier 3 env vars, startup validation, ops server reference
+- **Monitoring Guide**: Updated with ops server integration, Prometheus queries
+- **Cookbook**: Section 12 refactored to cross-reference focused docs (no duplication)
+- **Backup/Restore**: Updated with ops server health verification before/after restore
 
 ## Tier 4: Trading (Not Started)
 
