@@ -129,6 +129,10 @@ class CIOAgent(SDKAgent):
     agent_name = "cio"
     agent_version = "1.0.0"
 
+    # Minimum probability of skill required for CONTINUE decision
+    # Strategies below this threshold are KILL even if score >= 0.75
+    SKILL_PROBABILITY_THRESHOLD = 0.10  # 10% minimum confidence
+
     DEFAULT_THRESHOLDS = {
         "min_sharpe": 1.0,
         "max_drawdown": 0.20,
@@ -229,6 +233,13 @@ class CIOAgent(SDKAgent):
             economic_data = self._get_economic_data(hyp)
             cost_data = self._get_cost_data(hyp)
 
+            # Calculate deflated Sharpe BEFORE scoring for kill gate check
+            sharpe = experiment_data.get("sharpe", 0)
+            n_observations = experiment_data.get("n_observations", 252)
+            stat_sig = self._calculate_statistical_significance(sharpe, n_observations)
+            deflated = self._calculate_deflated_sharpe(sharpe, n_trials, n_observations)
+            probability_of_skill = deflated.get("probability_of_skill", 0.5)
+
             # Score the hypothesis
             score = self.score_hypothesis(
                 hypothesis_id=hypothesis_id,
@@ -238,28 +249,45 @@ class CIOAgent(SDKAgent):
                 cost_data=cost_data,
             )
 
-            # Build rationale
-            rationale = self._build_rationale(score, experiment_data, risk_data)
+            # HARD GATE: Override decision if probability of skill is too low
+            # Even if the dimensional score is high, we cannot approve strategies
+            # that are statistically indistinguishable from luck after multiple testing
+            decision = score.decision
+            skill_gate_failed = False
+            if probability_of_skill < self.SKILL_PROBABILITY_THRESHOLD and decision == "CONTINUE":
+                decision = "KILL"
+                skill_gate_failed = True
+                logger.info(
+                    f"Skill gate triggered for {hypothesis_id}: "
+                    f"prob_skill={probability_of_skill:.1%} < {self.SKILL_PROBABILITY_THRESHOLD:.0%}"
+                )
 
-            # Save decision to database
-            self._save_decision(
+            # Build rationale (may be augmented if skill gate failed)
+            rationale = self._build_rationale(score, experiment_data, risk_data)
+            if skill_gate_failed:
+                rationale = (
+                    f"**SKILL GATE OVERRIDE**: Insufficient statistical evidence after multiple "
+                    f"testing adjustment. Probability of skill: {probability_of_skill:.1%} "
+                    f"(threshold: {self.SKILL_PROBABILITY_THRESHOLD:.0%}). "
+                    f"Deflated Sharpe: {deflated.get('deflated_sharpe', 0):.2f}\n\n"
+                    f"Original score ({score.total:.2f}) would have been CONTINUE, "
+                    f"but overridden to KILL due to statistical insignificance.\n\n"
+                    + rationale
+                )
+
+            # Save decision to database (use overridden decision, not score.decision)
+            self._save_decision_with_override(
                 hypothesis_id=hypothesis_id,
                 score=score,
                 rationale=rationale,
+                decision_override=decision if skill_gate_failed else None,
             )
-
-            # Calculate statistical significance metrics
-            sharpe = experiment_data.get("sharpe", 0)
-            n_observations = experiment_data.get("n_observations", 252)
-
-            stat_sig = self._calculate_statistical_significance(sharpe, n_observations)
-            deflated = self._calculate_deflated_sharpe(sharpe, n_trials, n_observations)
 
             decisions.append({
                 "hypothesis_id": hypothesis_id,
                 "title": hyp.get("title", ""),
                 "thesis": hyp.get("thesis", ""),
-                "decision": score.decision,
+                "decision": decision,  # Use overridden decision
                 "score": score.total,
                 "score_breakdown": {
                     "statistical": score.statistical,
@@ -273,12 +301,13 @@ class CIOAgent(SDKAgent):
                 "cost_data": cost_data,
                 "statistical_significance": stat_sig,
                 "deflated_sharpe": deflated,
+                "skill_gate_failed": skill_gate_failed,
             })
 
-            # Stage model if CONTINUE
+            # Stage model if CONTINUE (use overridden decision)
             self._maybe_stage_model(
                 hypothesis_id=hypothesis_id,
-                decision=score.decision,
+                decision=decision,  # Use overridden decision, not score.decision
                 experiment_data=experiment_data,
             )
 
@@ -400,6 +429,34 @@ class CIOAgent(SDKAgent):
         self.api.log_cio_decision(
             hypothesis_id=hypothesis_id,
             decision=score.decision,
+            score_total=score.total,
+            score_statistical=score.statistical,
+            score_risk=score.risk,
+            score_economic=score.economic,
+            score_cost=score.cost,
+            rationale=rationale,
+        )
+
+    def _save_decision_with_override(
+        self,
+        hypothesis_id: str,
+        score: "CIOScore",
+        rationale: str,
+        decision_override: str | None = None,
+    ) -> None:
+        """
+        Save CIO decision to database, with optional decision override.
+
+        Args:
+            hypothesis_id: The hypothesis this decision is for
+            score: The CIOScore from dimensional scoring
+            rationale: Human-readable explanation
+            decision_override: If provided, use this decision instead of score.decision
+                             (e.g., when skill gate overrides CONTINUE to KILL)
+        """
+        self.api.log_cio_decision(
+            hypothesis_id=hypothesis_id,
+            decision=decision_override if decision_override else score.decision,
             score_total=score.total,
             score_statistical=score.statistical,
             score_risk=score.risk,
