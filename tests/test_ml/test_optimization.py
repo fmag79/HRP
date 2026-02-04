@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 import pandas as pd
 import pytest
+from optuna.distributions import FloatDistribution, IntDistribution, CategoricalDistribution
 
 from hrp.ml.optimization import (
     OptimizationConfig,
@@ -405,3 +406,49 @@ class TestModuleExports:
         assert OptimizationConfig is not None
         assert OptimizationResult is not None
         assert cross_validated_optimize is not None
+
+
+class TestOptimizationConfigNew:
+    """Tests for new Optuna-based OptimizationConfig."""
+
+    def test_config_with_param_space(self):
+        """Test creating config with param_space distributions."""
+        config = OptimizationConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d", "volatility_20d"],
+            param_space={
+                "alpha": FloatDistribution(0.01, 100.0, log=True),
+            },
+            start_date=date(2015, 1, 1),
+            end_date=date(2023, 12, 31),
+        )
+        assert "alpha" in config.param_space
+        assert config.sampler == "tpe"
+        assert config.n_trials == 50
+        assert config.enable_pruning is True
+
+    def test_config_rejects_invalid_sampler(self):
+        """Test config rejects invalid sampler."""
+        with pytest.raises(ValueError, match="Unknown sampler"):
+            OptimizationConfig(
+                model_type="ridge",
+                target="returns_20d",
+                features=["momentum_20d"],
+                param_space={"alpha": FloatDistribution(0.1, 10.0)},
+                start_date=date(2015, 1, 1),
+                end_date=date(2023, 12, 31),
+                sampler="invalid",
+            )
+
+    def test_config_rejects_empty_param_space(self):
+        """Test config rejects empty param_space."""
+        with pytest.raises(ValueError, match="param_space cannot be empty"):
+            OptimizationConfig(
+                model_type="ridge",
+                target="returns_20d",
+                features=["momentum_20d"],
+                param_space={},
+                start_date=date(2015, 1, 1),
+                end_date=date(2023, 12, 31),
+            )

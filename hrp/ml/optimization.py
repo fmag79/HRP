@@ -16,6 +16,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from loguru import logger
+from optuna.distributions import (
+    BaseDistribution,
+    FloatDistribution,
+    IntDistribution,
+    CategoricalDistribution,
+)
 
 from hrp.ml.models import SUPPORTED_MODELS
 from hrp.ml.validation import (
@@ -43,44 +49,48 @@ SCORING_METRICS = {
     "sharpe": True,  # Higher is better
 }
 
+# Valid Optuna samplers
+VALID_SAMPLERS = {"grid", "random", "tpe", "cmaes"}
+
 
 @dataclass
 class OptimizationConfig:
     """
-    Configuration for cross-validated optimization.
+    Configuration for cross-validated optimization using Optuna.
 
     Attributes:
         model_type: Type of model (must be in SUPPORTED_MODELS)
         target: Target variable name (e.g., 'returns_20d')
         features: List of feature names from feature store
-        param_grid: Parameter grid for search (e.g., {"alpha": [0.1, 1.0, 10.0]})
+        param_space: Optuna distributions for hyperparameters
         start_date: Start of the entire date range
         end_date: End of the entire date range
         n_folds: Number of cross-validation folds (default 5)
         window_type: 'expanding' or 'rolling' (default 'expanding')
         scoring_metric: Metric to optimize (default 'ic')
-        constraints: Optional constraints on parameters
-        max_trials: Maximum HP trials (integrates with HyperparameterTrialCounter)
+        n_trials: Number of optimization trials (default 50)
         hypothesis_id: Optional hypothesis ID for overfitting tracking
-        search_type: 'grid' or 'random' (default 'grid')
-        n_random_samples: Number of samples for random search
+        sampler: Optuna sampler type ('grid', 'random', 'tpe', 'cmaes')
+        enable_pruning: Enable Optuna pruning for early trial termination
         early_stop_decay_threshold: Sharpe decay threshold for early stopping
+        min_train_periods: Minimum training periods for each fold
+        feature_selection: Whether to perform feature selection
+        max_features: Maximum features to select
     """
 
     model_type: str
     target: str
     features: list[str]
-    param_grid: dict[str, list[Any]]
+    param_space: dict[str, BaseDistribution]
     start_date: date
     end_date: date
     n_folds: int = 5
     window_type: str = "expanding"
     scoring_metric: str = "ic"
-    constraints: dict[str, Any] | None = None
-    max_trials: int = 50
+    n_trials: int = 50
     hypothesis_id: str | None = None
-    search_type: str = "grid"
-    n_random_samples: int = 20
+    sampler: str = "tpe"
+    enable_pruning: bool = True
     early_stop_decay_threshold: float = 0.5
     min_train_periods: int = 252
     feature_selection: bool = True
@@ -107,16 +117,18 @@ class OptimizationConfig:
                 f"Unsupported scoring_metric: '{self.scoring_metric}'. "
                 f"Available: {available}"
             )
-        if not self.param_grid:
-            raise ValueError("param_grid cannot be empty")
-        if self.search_type not in ("grid", "random"):
+        if not self.param_space:
+            raise ValueError("param_space cannot be empty")
+        if self.sampler not in VALID_SAMPLERS:
+            available = ", ".join(sorted(VALID_SAMPLERS))
             raise ValueError(
-                f"search_type must be 'grid' or 'random', got '{self.search_type}'"
+                f"Unknown sampler: '{self.sampler}'. "
+                f"Available: {available}"
             )
 
         logger.debug(
             f"OptimizationConfig created: {self.model_type}, "
-            f"{self.n_folds} folds, scoring={self.scoring_metric}"
+            f"{self.n_folds} folds, scoring={self.scoring_metric}, sampler={self.sampler}"
         )
 
 
