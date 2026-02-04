@@ -637,10 +637,12 @@ class QuantDeveloper(ResearchAgent):
             # BacktestResult has .trades DataFrame and .total_return property
             trades_df = backtest_result.trades
             num_trades = len(trades_df) if trades_df is not None else 0
-            avg_trade_value = (
-                trades_df["value"].mean() if num_trades > 0 and "value" in trades_df.columns
-                else 0
-            )
+            avg_trade_value = 0.0
+            if num_trades > 0:
+                # VectorBT trades have 'Size' and 'Avg Entry Price' columns
+                if "Size" in trades_df.columns and "Avg Entry Price" in trades_df.columns:
+                    trade_values = trades_df["Size"].abs() * trades_df["Avg Entry Price"]
+                    avg_trade_value = trade_values.mean()
             return {
                 "num_trades": num_trades,
                 "avg_trade_value": avg_trade_value,
