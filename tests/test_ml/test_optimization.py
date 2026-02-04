@@ -16,6 +16,7 @@ from hrp.ml.optimization import (
     cross_validated_optimize,
     _generate_param_combinations,
     _evaluate_params,
+    _evaluate_with_pruning,
     _get_sampler,
     SCORING_METRICS,
 )
@@ -495,3 +496,104 @@ class TestGetSampler:
         param_space = {"alpha": FloatDistribution(0.1, 10.0)}
         with pytest.raises(ValueError, match="Unknown sampler"):
             _get_sampler("invalid", param_space)
+
+
+class TestEvaluateWithPruning:
+    """Tests for _evaluate_with_pruning function."""
+
+    @pytest.fixture
+    def sample_config(self):
+        """Create sample OptimizationConfig for pruning tests."""
+        return OptimizationConfig(
+            model_type="ridge",
+            target="returns_20d",
+            features=["momentum_20d", "volatility_20d"],
+            param_space={"alpha": FloatDistribution(0.1, 10.0)},
+            start_date=date(2015, 1, 1),
+            end_date=date(2020, 12, 31),
+            n_folds=3,
+            feature_selection=False,
+            enable_pruning=True,
+            early_stop_decay_threshold=0.5,
+        )
+
+    @pytest.fixture
+    def mock_features_df(self):
+        """Create mock features DataFrame."""
+        dates = pd.date_range("2015-01-01", "2020-12-31", freq="B")
+        symbols = ["AAPL", "MSFT"]
+        index = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+
+        np.random.seed(42)
+        n = len(index)
+
+        momentum = np.random.randn(n) * 0.1
+        volatility = np.abs(np.random.randn(n)) * 0.2
+        target = 0.1 * momentum + np.random.randn(n) * 0.05
+
+        return pd.DataFrame(
+            {
+                "momentum_20d": momentum,
+                "volatility_20d": volatility,
+                "returns_20d": target,
+            },
+            index=index,
+        )
+
+    @pytest.fixture
+    def sample_folds(self):
+        """Create sample folds for testing."""
+        return [
+            (date(2015, 1, 1), date(2016, 12, 31), date(2017, 1, 1), date(2017, 12, 31)),
+            (date(2015, 1, 1), date(2017, 12, 31), date(2018, 1, 1), date(2018, 12, 31)),
+            (date(2015, 1, 1), date(2018, 12, 31), date(2019, 1, 1), date(2019, 12, 31)),
+        ]
+
+    def test_reports_intermediate_values(
+        self, sample_config, mock_features_df, sample_folds
+    ):
+        """Verify trial.report is called once per fold."""
+        mock_trial = MagicMock()
+        mock_trial.should_prune.return_value = False
+
+        params = {"alpha": 1.0}
+
+        mean_score, fold_results = _evaluate_with_pruning(
+            trial=mock_trial,
+            params=params,
+            config=sample_config,
+            all_data=mock_features_df,
+            folds=sample_folds,
+        )
+
+        # Verify trial.report was called once per fold
+        assert mock_trial.report.call_count == len(sample_folds)
+
+        # Verify call arguments: (score, fold_index)
+        for call_idx, call in enumerate(mock_trial.report.call_args_list):
+            args, kwargs = call
+            assert len(args) == 2
+            assert args[1] == call_idx  # fold_idx
+
+    def test_prunes_on_should_prune(
+        self, sample_config, mock_features_df, sample_folds
+    ):
+        """Verify TrialPruned raised when should_prune returns True."""
+        mock_trial = MagicMock()
+        # Return False for first fold, True for second fold
+        mock_trial.should_prune.side_effect = [False, True]
+
+        params = {"alpha": 1.0}
+
+        with pytest.raises(optuna.TrialPruned):
+            _evaluate_with_pruning(
+                trial=mock_trial,
+                params=params,
+                config=sample_config,
+                all_data=mock_features_df,
+                folds=sample_folds,
+            )
+
+        # Should have pruned after second fold
+        assert mock_trial.report.call_count == 2
+        assert mock_trial.should_prune.call_count == 2

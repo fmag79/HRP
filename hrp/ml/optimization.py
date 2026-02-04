@@ -374,6 +374,133 @@ def _evaluate_params(
     return mean_score, fold_results, per_fold_scores
 
 
+def _evaluate_with_pruning(
+    trial: optuna.Trial,
+    params: dict[str, Any],
+    config: OptimizationConfig,
+    all_data: pd.DataFrame,
+    folds: list[tuple[date, date, date, date]],
+) -> tuple[float, list[FoldResult]]:
+    """
+    Evaluate a parameter combination with Optuna pruning support.
+
+    Reports intermediate values after each fold and checks for pruning signals.
+    Also monitors Sharpe decay to catch overfitting early.
+
+    Args:
+        trial: Optuna trial object for reporting and pruning
+        params: Hyperparameters to evaluate
+        config: Optimization configuration
+        all_data: Full dataset with features and target
+        folds: List of (train_start, train_end, test_start, test_end) tuples
+
+    Returns:
+        Tuple of (mean_score, fold_results)
+
+    Raises:
+        optuna.TrialPruned: If trial should be pruned based on intermediate results
+                           or Sharpe decay threshold exceeded
+    """
+    fold_results = []
+    fold_scores = []
+    train_sharpes = []
+    test_sharpes = []
+
+    higher_is_better = SCORING_METRICS[config.scoring_metric]
+    decay_monitor = SharpeDecayMonitor(max_decay_ratio=config.early_stop_decay_threshold)
+
+    for fold_idx, (train_start, train_end, test_start, test_end) in enumerate(folds):
+        # Split data
+        dates = all_data.index.get_level_values("date")
+        if hasattr(dates[0], "date"):
+            train_mask = (dates.date >= train_start) & (dates.date <= train_end)
+            test_mask = (dates.date >= test_start) & (dates.date <= test_end)
+        else:
+            train_mask = (dates >= pd.Timestamp(train_start)) & (
+                dates <= pd.Timestamp(train_end)
+            )
+            test_mask = (dates >= pd.Timestamp(test_start)) & (
+                dates <= pd.Timestamp(test_end)
+            )
+
+        train_data = all_data.loc[train_mask]
+        test_data = all_data.loc[test_mask]
+
+        if len(train_data) == 0 or len(test_data) == 0:
+            continue
+
+        X_train = train_data[config.features]
+        y_train = train_data[config.target]
+        X_test = test_data[config.features]
+        y_test = test_data[config.target]
+
+        # Feature selection
+        selected_features = list(config.features)
+        if config.feature_selection and len(config.features) > config.max_features:
+            selected_features = select_features(X_train, y_train, config.max_features)
+            X_train = X_train[selected_features]
+            X_test = X_test[selected_features]
+
+        # Train model with params
+        model = get_model(config.model_type, params)
+        model.fit(X_train, y_train)
+
+        # Predict on train and test
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+
+        # Compute metrics
+        train_metrics = compute_fold_metrics(y_train, y_train_pred)
+        test_metrics = compute_fold_metrics(y_test, y_test_pred)
+
+        # Track Sharpe proxy (using IC as proxy for factor investing)
+        train_sharpes.append(train_metrics.get("ic", 0.0))
+        test_sharpes.append(test_metrics.get("ic", 0.0))
+
+        # Extract scoring metric
+        score = test_metrics.get(config.scoring_metric, float("nan"))
+        if not np.isnan(score):
+            fold_scores.append(score)
+
+        fold_result = FoldResult(
+            fold_index=fold_idx,
+            train_start=train_start,
+            train_end=train_end,
+            test_start=test_start,
+            test_end=test_end,
+            metrics=test_metrics,
+            model=model,
+            n_train_samples=len(X_train),
+            n_test_samples=len(X_test),
+        )
+        fold_results.append(fold_result)
+
+        # Report intermediate value to Optuna
+        current_mean = float(np.mean(fold_scores)) if fold_scores else 0.0
+        trial.report(current_mean, fold_idx)
+
+        # Check if trial should be pruned
+        if trial.should_prune():
+            logger.debug(f"Trial pruned at fold {fold_idx}")
+            raise optuna.TrialPruned()
+
+        # Check Sharpe decay
+        if train_sharpes and test_sharpes:
+            mean_train_sharpe = float(np.mean(train_sharpes))
+            mean_test_sharpe = float(np.mean(test_sharpes))
+            decay_result = decay_monitor.check(mean_train_sharpe, mean_test_sharpe)
+            if not decay_result.passed:
+                logger.debug(f"Trial pruned due to Sharpe decay: {decay_result.message}")
+                raise optuna.TrialPruned()
+
+    if not fold_scores:
+        mean_score = float("-inf") if higher_is_better else float("inf")
+    else:
+        mean_score = float(np.mean(fold_scores))
+
+    return mean_score, fold_results
+
+
 def cross_validated_optimize(
     config: OptimizationConfig,
     symbols: list[str],
