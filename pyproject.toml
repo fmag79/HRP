@@ -1,6 +1,6 @@
 [project]
 name = "hrp"
-version = "1.6.0"
+version = "1.9.0"
 description = "Hedgefund Research Platform - Personal quantitative research for systematic trading"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -52,6 +52,11 @@ dependencies = [
     "loguru>=0.7.0",
     "httpx>=0.26.0",
     "exchange-calendars>=4.5.0",
+
+    # Security
+    "streamlit-authenticator>=0.3.0",
+    "bcrypt>=4.1.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
