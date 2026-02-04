@@ -176,7 +176,7 @@ Text-based features from earnings calls, SEC filings, and news.
 - **Dashboard Authentication**: bcrypt password hashing, session cookies, login/logout flow
 - **Security Validators**: XSS prevention, path traversal detection, filename sanitization (`hrp/utils/security.py`)
 - **Secrets Validation**: `validate_secrets()` in `hrp/utils/secrets.py` for environment variable checks
-- **Auth CLI**: User management via `python -m hrp.auth` (list-users, add-user, reset-password)
+- **Auth CLI**: User management via `python -m hrp.dashboard.auth_cli` (list-users, add-user, remove-user, reset-password)
 - **Environment Variables**: `HRP_AUTH_ENABLED`, `HRP_AUTH_COOKIE_KEY`, `HRP_AUTH_USERS_FILE`
 
 ### Phase 2: Ops (Not Started)

@@ -1921,6 +1921,50 @@ mlflow ui --backend-store-uri sqlite:///$HOME/hrp-data/mlflow/mlflow.db
 # Access at http://localhost:5000
 ```
 
+### 8.4 Dashboard Authentication
+
+The dashboard uses bcrypt password hashing with session cookies. Manage users via the auth CLI.
+
+**List users:**
+
+```bash
+python -m hrp.dashboard.auth_cli list-users
+```
+
+**Add a user:**
+
+```bash
+python -m hrp.dashboard.auth_cli add-user \
+    --username admin \
+    --email admin@example.com \
+    --name "Admin User"
+# You'll be prompted for the password
+```
+
+**Reset a password:**
+
+```bash
+python -m hrp.dashboard.auth_cli reset-password --username admin
+# You'll be prompted for the new password
+
+# Or non-interactively:
+python -m hrp.dashboard.auth_cli reset-password --username admin --password "newpass"
+```
+
+**Remove a user:**
+
+```bash
+python -m hrp.dashboard.auth_cli remove-user --username olduser
+```
+
+**Environment variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HRP_AUTH_ENABLED` | Enable/disable auth | `true` |
+| `HRP_AUTH_COOKIE_KEY` | Secret for session cookies (32+ chars) | Required |
+| `HRP_AUTH_USERS_FILE` | Path to users YAML | `~/hrp-data/auth/users.yaml` |
+
 ---
 
 ## 9. Common Workflows
