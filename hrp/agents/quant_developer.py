@@ -14,7 +14,6 @@ import pandas as pd
 from loguru import logger
 
 from hrp.agents.base import ResearchAgent
-from hrp.research.hypothesis import update_pipeline_stage
 from hrp.research.lineage import EventType
 
 
@@ -350,7 +349,7 @@ class QuantDeveloper(ResearchAgent):
             signals = generate_ml_predicted_signals(
                 prices=pivoted,
                 model_type=self._get_model_type_string(model),
-                features=features if features else None,
+                features=list(features) if len(features) > 0 else None,
                 signal_method=self.signal_method,
                 top_pct=self.top_pct,
                 train_lookback=252,
@@ -494,7 +493,7 @@ class QuantDeveloper(ResearchAgent):
                 signals = generate_ml_predicted_signals(
                     prices=pivoted,
                     model_type=model_type,
-                    features=features if features else None,
+                    features=list(features) if len(features) > 0 else None,
                     signal_method=self.signal_method,
                     top_pct=top_pct,
                     train_lookback=train_lookback,
@@ -591,7 +590,7 @@ class QuantDeveloper(ResearchAgent):
         Returns:
             Dict mapping regime name to metrics
         """
-        from hrp.ml.regime import RegimeDetector
+        from hrp.ml.regime import HMMConfig, RegimeDetector
 
         if returns.empty or prices.empty:
             return {}
@@ -1016,6 +1015,7 @@ class QuantDeveloper(ResearchAgent):
                 "num_trades": trade_stats.get("num_trades", 0),
                 "avg_trade_value": trade_stats.get("avg_trade_value", 0),
                 "gross_return": trade_stats.get("gross_return", 0),
+                "pipeline_stage": "quant_backtest",  # Track stage in metadata (column doesn't exist)
             }
 
             # Update hypothesis
@@ -1025,7 +1025,6 @@ class QuantDeveloper(ResearchAgent):
                 metadata=metadata,
                 actor=self.ACTOR,
             )
-            update_pipeline_stage(hypothesis_id, "quant_backtest", actor=self.ACTOR)
 
         except Exception as e:
             logger.error(f"Failed to update hypothesis {hypothesis_id}: {e}")
