@@ -141,7 +141,7 @@ Pipeline stages track hypothesis position independently of status.
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Validation Analyst                                                      │
 │  └─ Parameter sensitivity, time stability, regime stability             │
-│  └─ Enriches metadata (does NOT change status)                          │
+│  └─ Can demote validated → testing on failure                           │
 │  └─ Emits: VALIDATION_ANALYST_REVIEW, VALIDATION_ANALYST_COMPLETE      │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  ▼

@@ -1214,9 +1214,10 @@ from hrp.agents.scheduler import IngestionScheduler
 
 scheduler = IngestionScheduler()
 
-# Setup daily backup at 2 AM, keep 30 days
-scheduler.setup_daily_backup(
+# Setup weekly backup at 2 AM Saturday, keep 30 days
+scheduler.setup_weekly_backup(
     backup_time='02:00',
+    day_of_week='sat',
     keep_days=30,
     include_mlflow=True
 )
@@ -1550,9 +1551,10 @@ scheduler.setup_daily_ingestion(
     feature_job_time='18:10'     # 6:10 PM ET (after universe updated)
 )
 
-# Set up daily backup
-scheduler.setup_daily_backup(
+# Set up weekly backup
+scheduler.setup_weekly_backup(
     backup_time='02:00',  # 2 AM ET
+    day_of_week='sat',    # Saturday
     keep_days=30,
     include_mlflow=True,
 )

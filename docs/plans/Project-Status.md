@@ -36,11 +36,11 @@
 
 - Universe management: S&P 500 from Wikipedia, exclusion rules (financials, REITs, penny stocks)
 - Multi-source ingestion: Polygon.io (primary) + Yahoo Finance (fallback)
-- Feature store: 44 technical indicators with versioning
+- Feature store: 45 technical/fundamental indicators with versioning
 - Scheduled jobs: Individual launchd jobs — Prices (18:00) → Universe (18:05) → Features (18:10)
 - Weekly fundamentals: Saturday 10 AM ET (SimFin + YFinance fallback)
 - Data quality: 5 check types (anomaly, completeness, gaps, stale, volume)
-- Backup system: Automated daily, SHA-256 verification, 30-day retention
+- Backup system: Automated weekly (Saturday 2 AM ET), SHA-256 verification, 30-day retention
 - Email notifications: Via Resend for failures and summaries
 - Historical backfill: Progress tracking, resumability
 
@@ -53,7 +53,8 @@
 | Ingestion Status | Source status, last fetch times |
 | Hypotheses | Browse, create, update, lifecycle management |
 | Experiments | MLflow integration, comparison, artifacts |
-| Agents Monitor | Real-time status + historical timeline for all 11 agents |
+| Pipeline Progress | Kanban view of hypothesis pipeline, agent launcher |
+| Agents Monitor | Real-time status + historical timeline for all 10 agents |
 | Job Health | Job execution health, error tracking |
 
 ---
@@ -96,29 +97,28 @@
 - ML-predicted signal generation (model selection, signal methods)
 - Stop losses: Fixed %, ATR trailing, volatility-scaled
 
-### Research Agents (11 Implemented)
+### Research Agents (10 Implemented)
 
 | Agent | Type | Purpose |
 |-------|------|---------|
 | Signal Scientist | Custom | IC analysis, hypothesis creation |
 | Alpha Researcher | SDK (Claude) | Hypothesis review, economic rationale |
-| Code Materializer | Custom | Strategy code generation |
 | ML Scientist | Custom | Walk-forward validation, model training |
 | ML Quality Sentinel | Custom | Experiment auditing, overfitting detection |
+| Quant Developer | Custom | Production backtesting with costs |
+| Kill Gate Enforcer | Custom | End-to-end pipeline with kill gates |
 | Validation Analyst | Custom | Parameter sensitivity, regime stress tests |
 | Risk Manager | Custom | Independent risk oversight, veto authority |
-| Quant Developer | Custom | Hyperparameter sweep, optimization |
-| Pipeline Orchestrator | Custom | End-to-end pipeline with kill gates |
 | CIO Agent | SDK (Claude) | 4-dimension hypothesis scoring (Statistical/Risk/Economic/Cost) |
 | Report Generator | SDK (Claude) | Daily/weekly research summaries |
 
-**Pipeline:** Signal Scientist → Alpha Researcher → Code Materializer → ML Scientist → ML Quality Sentinel → Validation Analyst → Risk Manager → CIO Agent
+**Pipeline:** Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Quant Developer → Kill Gate Enforcer → Validation Analyst → Risk Manager → CIO Agent
 
 **Coordination:** Event-driven via individual launchd jobs (agent-pipeline polls every 15 min) + time-based launchd scheduling
 
-### MCP Server (22 Tools)
+### MCP Server (32 Tools)
 
-Hypothesis management (5), data access (5), backtesting (4), ML training (3), quality/health (3), agents (2)
+Hypothesis management (6), data access (6), backtesting (4), ML training (4), quality/health (4), agents (8)
 
 ---
 

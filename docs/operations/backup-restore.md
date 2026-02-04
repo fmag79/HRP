@@ -53,13 +53,13 @@ Each backup directory contains:
 
 ### Schedule
 
-Daily backups run automatically at **2:00 AM** local time (configurable).
+Weekly backups run automatically on **Saturday at 2:00 AM ET** (configurable).
 
 ### Enable Automated Backups
 
 #### Option A: Background Service (Production - macOS)
 
-The scheduler automatically includes daily backups when run as a launchd service (see cookbook section 7.2 for full setup).
+The scheduler automatically includes weekly backups when run as a launchd service (see cookbook section 7.2 for full setup).
 
 ```bash
 # Service includes backup by default
@@ -91,8 +91,9 @@ from hrp.agents.scheduler import IngestionScheduler
 import signal
 
 scheduler = IngestionScheduler()
-scheduler.setup_daily_backup(
+scheduler.setup_weekly_backup(
     backup_time="02:00",  # 2 AM
+    day_of_week="sat",    # Saturday
     keep_days=30          # Keep 30 days of backups
 )
 scheduler.start()

@@ -17,7 +17,7 @@
 | **Implementation** | `hrp/agents/alpha_researcher.py` |
 | **Trigger** | Lineage event (after Signal Scientist) + MCP on-demand |
 | **Upstream** | Signal Scientist (creates draft hypotheses) |
-| **Downstream** | Code Materializer (translates strategy specs) |
+| **Downstream** | ML Scientist (validates hypotheses via walk-forward) |
 
 ---
 
@@ -32,7 +32,7 @@ Reviews and refines draft hypotheses using Claude's reasoning capabilities, and 
 5. **Generates new strategies** - Creates novel strategy concepts from economic principles
 6. **Writes strategy specifications** - Economic specs only, NO code generation
 7. **Tags strategy class** - For adaptive IC thresholds (cross-sectional, time-series, ML)
-8. **Triggers downstream** Code Materializer via lineage events
+8. **Triggers downstream** ML Scientist via lineage events
 
 ---
 
@@ -108,7 +108,7 @@ print(f"Strategies generated: {result['strategies_generated']}")
 | **Pattern Mining** | Extend patterns from existing successful hypotheses | "Combine momentum_20d + low_volatility for dual strategy" |
 
 **Note:** Alpha Researcher generates economic strategy specifications ONLY.
-Code generation is handled by Code Materializer (downstream).
+ML Scientist validates hypotheses via walk-forward experiments (downstream).
 
 ### 6. Strategy Classification
 
@@ -281,7 +281,7 @@ Extends `SDKAgent` which provides:
 | **MLflow** | Logs review sessions |
 | **Lineage** | Logs events, triggers downstream |
 | **Signal Scientist** | Upstream - creates draft hypotheses |
-| **Code Materializer** | Downstream - translates strategy specs to code |
+| **ML Scientist** | Downstream - validates hypotheses via walk-forward |
 
 ---
 
@@ -343,4 +343,5 @@ Token usage: 12,450 input / 3,200 output
 - **2026-01-26:** Initial standalone agent definition created
 - **2026-01-26:** Extracted from research-agents-design.md for standalone reference
 - **2026-01-29:** Enhanced with strategy generation capabilities (3 sources: Claude ideation, literature patterns, pattern mining)
-- **2026-01-29:** Updated downstream to Code Materializer (specs only, NO code generation), added strategy classification
+- **2026-01-29:** Updated downstream to ML Scientist (specs only, NO code generation), added strategy classification
+- **2026-02-03:** Removed Code Materializer references (agent removed from pipeline)

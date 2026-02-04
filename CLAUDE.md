@@ -74,7 +74,7 @@ api.fetchall_readonly(sql, params)    # Returns list of tuples
 api.execute_write(sql, params)        # INSERT/UPDATE/DELETE
 ```
 
-## Available Features (54 total)
+## Available Features (45 implemented)
 
 | Category | Features |
 |----------|----------|
@@ -90,7 +90,6 @@ api.execute_write(sql, params)        # INSERT/UPDATE/DELETE
 | **Bollinger Bands** | `bb_upper_20d`, `bb_lower_20d`, `bb_width_20d` |
 | **VWAP** | `vwap_20d` |
 | **Fundamental** | `market_cap`, `pe_ratio`, `pb_ratio`, `dividend_yield`, `ev_ebitda`, `shares_outstanding` |
-| **Fundamental TS** | `ts_revenue`, `ts_eps`, `ts_book_value`, `ts_market_cap`, `ts_pe_ratio`, `ts_pb_ratio`, `ts_dividend_yield`, `ts_ev_ebitda`, `ts_shares_outstanding` |
 
 ## Hypothesis Lifecycle
 
@@ -180,7 +179,7 @@ Job scheduling: Individual launchd plists in `launchd/`, managed via `scripts/ma
 | `HRP_DATA_DIR` | Data directory (default: `~/hrp-data/`) | No |
 | `RESEND_API_KEY` | Resend API key for email notifications | For alerts |
 | `NOTIFICATION_EMAIL` | Email address for notifications | For alerts |
-| `NOTIFICATION_FROM_EMAIL` | From address (default: `noreply@hrp.local`) | No |
+| `NOTIFICATION_FROM_EMAIL` | From address (default: `onboarding@resend.dev`) | No |
 | `SIMFIN_API_KEY` | SimFin API key for fundamentals (falls back to YFinance) | For fundamentals |
 
 ## Project Structure
@@ -220,7 +219,7 @@ hrp/
 | Document | Purpose |
 |----------|---------|
 | `docs/architecture/data-pipeline-diagram.md` | Data pipeline: sources → jobs → DuckDB → agents → outputs |
-| `docs/agents/decision-pipeline.md` | Agent decision workflow: 11 stages, kill gates, scoring, human approval |
+| `docs/agents/decision-pipeline.md` | Agent decision workflow: 10 stages, kill gates, scoring, human approval |
 | `docs/agents/state-machine-transitions.md` | Complete state machine documentation: hypothesis states, pipeline stages, events, thresholds |
 | `docs/agents/01-*.md` through `docs/agents/10-*.md` | Individual agent specifications (numbered by pipeline order) |
 | `docs/plans/Project-Status.md` | Development roadmap and tier status |

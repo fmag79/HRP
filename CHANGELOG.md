@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+### Added
+- **Pipeline Progress Dashboard**: New Streamlit page with Kanban view showing hypothesis pipeline stages and agent launcher (`hrp/dashboard/pages/pipeline_progress.py`, `pipeline_kanban.py`, `agent_panel.py`)
+- **Kill Gate Enforcer backtest timeframe**: Reports now include start_date and end_date when available from experiment context
+
+### Fixed
+- **Alpha Researcher experiment metrics**: Top Experiments table now displays actual IC and stability metrics from experiment results instead of placeholders
+- **Quant Developer avg trade value**: Calculation now uses `Size * Avg Entry Price` from VectorBT trades DataFrame for accurate notional exposure
+- **Dashboard JSON parsing**: agents_monitor.py now correctly parses JSON details and handles datetime types
+- **Dashboard DuckDB connections**: Shared read-only connections prevent lock contention between dashboard pages
+- **Quality checks read-only mode**: QualityReportGenerator uses read-only connections to avoid MCP database lock
+- **Profitable field derivation**: robustness.py derives 'profitable' from total_return when field is missing
+
+### Changed
+- **Validation Analyst Medallion upgrade**: Report format upgraded to institutional-grade with KPI dashboards, health gauges, and statistical distributions
+- **Documentation sync**: Updated CLAUDE.md (45 features, 10 agents), Project-Status.md (10 agents, 32 MCP tools, weekly backup), removed obsolete Code Materializer and Pipeline Orchestrator references
+
 ## [1.9.0] - 2026-02-02
 
 ### Fixed

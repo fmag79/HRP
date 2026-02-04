@@ -55,8 +55,8 @@ Signal Scientist (hypothesis_created) → Alpha Researcher
 Alpha Researcher (complete)           → ML Scientist
 ML Scientist (experiment_completed)   → ML Quality Sentinel
 ML Quality Sentinel (audit passed)    → Quant Developer
-Quant Developer (backtest complete)   → Pipeline Orchestrator
-Pipeline Orchestrator (complete)      → Validation Analyst
+Quant Developer (backtest complete)   → Kill Gate Enforcer
+Kill Gate Enforcer (complete)         → Validation Analyst
 ```
 
 Each invocation processes all pending events, then exits. Worst-case latency for a single chain step is 15 minutes.

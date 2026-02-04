@@ -31,7 +31,7 @@ flowchart TB
         direction TB
         UT[("universe<br/>---<br/>S&P 500 symbols")]
         PT[("prices<br/>---<br/>OHLCV daily")]
-        FT[("features<br/>---<br/>44 technical indicators")]
+        FT[("features<br/>---<br/>45 indicators")]
         FUT[("fundamentals<br/>---<br/>P/E, P/B, etc.")]
         HT[("hypotheses<br/>---<br/>Research registry")]
         LT[("lineage<br/>---<br/>Audit trail")]
@@ -194,7 +194,7 @@ sequenceDiagram
     SCHED->>+FC: trigger()
     FC->>FC: Check: prices exist & fresh
     FC->>DB: SELECT FROM prices
-    FC->>FC: Compute 44 features
+    FC->>FC: Compute 45 features
     FC->>DB: INSERT INTO features
     FC->>LIN: Log feature computation
     FC-->>-SCHED: success
@@ -273,7 +273,7 @@ For terminal display and code comments:
                                            v
                                 ┌─────────────────────┐
                                 │FeatureComputationJob│ Daily 6:10 PM
-                                │  (44 indicators)    │
+                                │  (45 indicators)    │
                                 └──────────┬──────────┘
                                            │
     ┌─────────────────────┐               │

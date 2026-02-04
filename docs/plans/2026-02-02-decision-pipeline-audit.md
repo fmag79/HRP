@@ -2,7 +2,9 @@
 
 **Date:** 2026-02-02
 **Branch:** `fix/decision-pipeline-audit`
-**Status:** Planned
+**Status:** ⚠️ OBSOLETE - Code Materializer agent was removed; pipeline fixes completed separately
+
+> **Note (2026-02-03):** This plan references the Code Materializer agent which was removed from the pipeline. The pipeline issues identified here were resolved through separate commits. This document is kept for historical reference only.
 
 ## Problem Summary
 
