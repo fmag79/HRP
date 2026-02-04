@@ -107,9 +107,13 @@ def check_time_stability(
     """
     if not period_metrics:
         raise ValueError("No period metrics provided")
-    
+
     n_periods = len(period_metrics)
-    n_profitable = sum(1 for p in period_metrics if p["profitable"])
+    # Derive 'profitable' from total_return if not explicitly set
+    n_profitable = sum(
+        1 for p in period_metrics
+        if p.get("profitable", p.get("total_return", 0) > 0)
+    )
     profitable_ratio = n_profitable / n_periods
     
     failures = []
@@ -175,9 +179,13 @@ def check_regime_stability(
     """
     if not regime_metrics:
         raise ValueError("No regime metrics provided")
-    
+
     n_regimes = len(regime_metrics)
-    n_profitable = sum(1 for m in regime_metrics.values() if m["profitable"])
+    # Derive 'profitable' from total_return or sharpe if not explicitly set
+    n_profitable = sum(
+        1 for m in regime_metrics.values()
+        if m.get("profitable", m.get("total_return", m.get("sharpe", 0)) > 0)
+    )
     
     failures = []
     
