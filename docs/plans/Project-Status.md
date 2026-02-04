@@ -6,7 +6,7 @@
 |------|-------|--------|
 | **Foundation** | Data + Research Core | Complete |
 | **Intelligence** | ML + Agents | Complete |
-| **Intelligence Extensions** | NLP + Bayesian Optimization | Not started |
+| **Intelligence Extensions** | NLP + Bayesian Optimization | Bayesian: Complete, NLP: Not started |
 | **Production** | Security + Ops | Not started |
 | **Trading** | Live Execution | Not started |
 
@@ -122,14 +122,19 @@ Hypothesis management (6), data access (6), backtesting (4), ML training (4), qu
 
 ---
 
-## Tier 2.5: Intelligence Extensions (Not Started)
+## Tier 2.5: Intelligence Extensions (Bayesian Complete, NLP Not Started)
 
-### Bayesian Hyperparameter Optimization
+### Bayesian Hyperparameter Optimization ✅ Complete
 
-- **Status:** Optuna already in dependencies, unused
-- **Scope:** Replace grid/random search in `cross_validated_optimize()` with Optuna TPE sampler
-- **Files:** `hrp/ml/optimization.py`, `hrp/ml/training.py`
-- **Benefit:** Better hyperparameter search with fewer trials, respects existing trial counter limits (`HyperparameterTrialCounter`)
+- **Status:** Merged to main (2026-02-04)
+- **Implementation:** Optuna TPE sampler replaces grid/random search
+- **Key Changes:**
+  - `OptimizationConfig` now uses Optuna distributions (`FloatDistribution`, `IntDistribution`, `CategoricalDistribution`)
+  - Samplers: `tpe` (default), `cmaes`, `grid`, `random`
+  - MedianPruner for early trial termination
+  - Study persistence to `~/hrp-data/optuna/` (SQLite)
+- **Files:** `hrp/ml/optimization.py`, `hrp/utils/config.py`
+- **Tests:** 21 tests passing in `tests/test_ml/test_optimization.py`
 
 ### Fundamental NLP
 
