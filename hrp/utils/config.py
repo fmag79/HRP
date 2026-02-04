@@ -56,6 +56,10 @@ class DataConfig:
     def reports_dir(self) -> Path:
         return self.output_dir / "reports"
 
+    @property
+    def optuna_dir(self) -> Path:
+        return self.data_dir / "optuna"
+
 
 @dataclass
 class APIConfig:
@@ -140,3 +144,9 @@ def reset_config() -> None:
     """Reset the global configuration (useful for testing)."""
     global _config
     _config = None
+
+
+def ensure_directories() -> None:
+    """Ensure all required data directories exist."""
+    config = get_config()
+    config.data.optuna_dir.mkdir(parents=True, exist_ok=True)
