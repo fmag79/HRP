@@ -127,7 +127,8 @@ class TestFeatureExtraction:
             "metadata": {},
         }
         features = agent._extract_features_from_hypothesis(hypothesis)
-        assert features == ["momentum_20d"]
+        # Default fallback is now volatility_60d (safe feature, not leaky like momentum_20d)
+        assert features == ["volatility_60d"]
 
     def test_empty_metadata_uses_thesis(self):
         """If metadata has no features, uses thesis parsing."""
@@ -145,20 +146,22 @@ class TestFeatureCombinations:
     """Tests for feature combination generation."""
 
     def test_generates_base_combination(self):
-        """Base features included as first combination."""
+        """Base features included as first combination (after leakage filtering)."""
         agent = MLScientist()
-        combinations = agent._generate_feature_combinations(["momentum_20d"])
-        assert ["momentum_20d"] in combinations
-        assert combinations[0] == ["momentum_20d"]
+        # Use a safe feature - momentum_20d is filtered out as leaky
+        combinations = agent._generate_feature_combinations(["volatility_60d"])
+        assert ["volatility_60d"] in combinations
+        assert combinations[0] == ["volatility_60d"]
 
     def test_adds_complementary_features(self):
         """Complementary features added to combinations."""
         agent = MLScientist()
-        combinations = agent._generate_feature_combinations(["momentum_20d"])
-        # momentum_20d has complements: volatility_60d, rsi_14d, volume_ratio
+        # Use a safe feature with defined complements
+        combinations = agent._generate_feature_combinations(["volatility_60d"])
+        # volatility_60d has safe complements: atr_14d, volume_ratio, adx_14d, bb_width_20d
         combo_features = [set(c) for c in combinations]
-        assert {"momentum_20d", "volatility_60d"} in combo_features or \
-               {"momentum_20d", "rsi_14d"} in combo_features
+        assert {"volatility_60d", "atr_14d"} in combo_features or \
+               {"volatility_60d", "volume_ratio"} in combo_features
 
     def test_respects_max_features(self):
         """Combinations limited to MAX_FEATURES_PER_MODEL."""
@@ -557,7 +560,19 @@ class TestMLScientistConstants:
         assert "lightgbm" in MLScientist.HYPERPARAMETER_GRIDS
 
     def test_complementary_features_defined(self):
-        """Complementary features are defined for key features."""
-        assert "momentum_20d" in MLScientist.COMPLEMENTARY_FEATURES
+        """Complementary features are defined for safe (non-leaky) features."""
+        # Safe features should have complements defined
         assert "volatility_60d" in MLScientist.COMPLEMENTARY_FEATURES
-        assert "rsi_14d" in MLScientist.COMPLEMENTARY_FEATURES
+        assert "atr_14d" in MLScientist.COMPLEMENTARY_FEATURES
+        assert "volume_ratio" in MLScientist.COMPLEMENTARY_FEATURES
+        # Leaky features like momentum_20d should NOT be in complements
+        assert "momentum_20d" not in MLScientist.COMPLEMENTARY_FEATURES
+
+    def test_leaky_features_defined(self):
+        """Leaky features are defined for target-based filtering."""
+        assert "returns_20d" in MLScientist.LEAKY_FEATURES_BY_TARGET
+        leaky = MLScientist.LEAKY_FEATURES_BY_TARGET["returns_20d"]
+        # These have high correlation with returns_20d
+        assert "momentum_20d" in leaky  # corr = 1.0
+        assert "rsi_14d" in leaky  # corr = 0.71
+        assert "price_to_sma_20d" in leaky  # corr = 0.84

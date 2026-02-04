@@ -111,17 +111,43 @@ class MLScientist(ResearchAgent):
         },
     }
 
-    # Complementary features for combination search
+    # Features with high correlation to returns_20d target (potential leakage)
+    # These should NOT be used as predictors when target is returns_20d
+    LEAKY_FEATURES_BY_TARGET = {
+        "returns_20d": {
+            "momentum_20d",      # corr=1.00 (identical calculation)
+            "price_to_sma_50d",  # corr=0.87
+            "price_to_sma_20d",  # corr=0.84
+            "rsi_14d",           # corr=0.71
+            "roc_10d",           # corr=0.68
+            "cci_20d",           # corr=0.65
+            "ema_crossover",     # corr=0.61
+            "mfi_14d",           # corr=0.59
+            "momentum_60d",      # corr=0.56
+            "returns_60d",       # corr=0.56
+            "price_to_sma_200d", # corr=0.54
+        },
+        "returns_60d": {
+            "momentum_60d",      # identical
+            "returns_60d",
+        },
+        "returns_252d": {
+            "momentum_252d",     # identical
+            "returns_252d",
+        },
+    }
+
+    # Safe complementary features (all have <0.15 correlation with returns_20d)
     COMPLEMENTARY_FEATURES = {
-        "momentum_20d": ["volatility_60d", "rsi_14d", "volume_ratio"],
-        "momentum_60d": ["volatility_60d", "returns_252d", "adx_14d"],
-        "momentum_252d": ["volatility_60d", "price_to_sma_200d"],
-        "volatility_60d": ["momentum_20d", "returns_252d", "atr_14d"],
-        "volatility_20d": ["momentum_20d", "rsi_14d"],
-        "rsi_14d": ["momentum_20d", "price_to_sma_200d", "cci_20d"],
-        "returns_252d": ["volatility_60d", "momentum_20d"],
-        "price_to_sma_200d": ["rsi_14d", "momentum_20d", "trend"],
-        "volume_ratio": ["momentum_20d", "obv"],
+        "volatility_60d": ["atr_14d", "volume_ratio", "adx_14d", "bb_width_20d"],
+        "volatility_20d": ["atr_14d", "volume_ratio", "adx_14d"],
+        "atr_14d": ["volatility_60d", "volume_ratio", "adx_14d", "bb_width_20d"],
+        "volume_ratio": ["volatility_60d", "atr_14d", "adx_14d"],
+        "bb_width_20d": ["volatility_60d", "atr_14d", "volume_ratio"],
+        "adx_14d": ["volatility_60d", "atr_14d", "volume_ratio"],
+        # Moderate risk features - only pair with safe features
+        "macd_histogram": ["volatility_60d", "atr_14d", "volume_ratio"],
+        "returns_1d": ["volatility_60d", "atr_14d", "volume_ratio"],
     }
 
     # All features (reuse from SignalScientist)
@@ -472,17 +498,42 @@ class MLScientist(ResearchAgent):
             if feature in thesis.lower():
                 features.append(feature)
 
-        return features if features else ["momentum_20d"]  # Default fallback
+        return features if features else ["volatility_60d"]  # Safe default fallback
+
+    def _filter_leaky_features(self, features: list[str]) -> list[str]:
+        """
+        Remove features that have high correlation with the target.
+
+        This prevents data leakage where features like momentum_20d
+        are nearly identical to the returns_20d target.
+        """
+        leaky = self.LEAKY_FEATURES_BY_TARGET.get(self.target, set())
+        safe_features = [f for f in features if f not in leaky]
+
+        if len(safe_features) < len(features):
+            removed = set(features) - set(safe_features)
+            logger.warning(
+                f"Filtered {len(removed)} leaky features for target={self.target}: {removed}"
+            )
+
+        return safe_features if safe_features else ["volatility_60d"]  # Safe fallback
 
     def _generate_feature_combinations(self, base_features: list[str]) -> list[list[str]]:
-        """Generate feature combinations to test."""
-        combinations = [base_features]  # Start with base
+        """Generate feature combinations to test, filtering leaky features."""
+        # First filter any leaky base features
+        safe_base = self._filter_leaky_features(base_features)
+        combinations = [safe_base]  # Start with safe base
 
-        # Add complementary features
-        for base in base_features:
+        # Add complementary features (already defined as safe in COMPLEMENTARY_FEATURES)
+        for base in safe_base:
             complements = self.COMPLEMENTARY_FEATURES.get(base, [])
             for comp in complements[:2]:  # Limit to top 2 complements
-                combo = base_features + [comp]
+                # Skip if complement is already in base or is leaky
+                if comp in safe_base:
+                    continue
+                if comp in self.LEAKY_FEATURES_BY_TARGET.get(self.target, set()):
+                    continue
+                combo = safe_base + [comp]
                 if len(combo) <= self.MAX_FEATURES_PER_MODEL:
                     combinations.append(combo)
 
