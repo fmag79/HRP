@@ -6,14 +6,14 @@
     <string>com.hrp.quality-sentinel</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Documents/GitHub/HRP/.venv/bin/python</string>
+        <string>/Users/fer/Projects/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.agents.run_job</string>
         <string>--job</string>
         <string>quality-sentinel</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/fer/Documents/GitHub/HRP</string>
+    <string>/Users/fer/Projects/HRP</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -28,7 +28,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/fer/Documents/GitHub/HRP</string>
+        <string>/Users/fer/Projects/HRP</string>
     </dict>
 </dict>
 </plist>

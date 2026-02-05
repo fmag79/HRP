@@ -6,7 +6,7 @@
     <string>com.hrp.ops-server</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Documents/GitHub/HRP/.venv/bin/python</string>
+        <string>/Users/fer/Projects/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.ops</string>
         <string>--host</string>
@@ -15,7 +15,7 @@
         <string>8080</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/fer/Documents/GitHub/HRP</string>
+    <string>/Users/fer/Projects/HRP</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -27,7 +27,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/fer/Documents/GitHub/HRP</string>
+        <string>/Users/fer/Projects/HRP</string>
         <key>HRP_ENVIRONMENT</key>
         <string>production</string>
     </dict>
