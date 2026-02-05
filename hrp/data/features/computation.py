@@ -1182,9 +1182,12 @@ class FeatureComputer:
         # Combine all features
         if results:
             result_df = pd.concat(results, axis=1)
-            # Filter to requested dates
+            # Filter to requested dates - handle MultiIndex (date, symbol)
             date_index = pd.to_datetime(dates_list)
-            result_df = result_df.reindex(result_df.index.intersection(date_index))
+            # Get the date level from MultiIndex and filter
+            date_level = result_df.index.get_level_values("date")
+            mask = date_level.isin(date_index)
+            result_df = result_df.loc[mask]
             return result_df
         else:
             # Return empty DataFrame with correct structure
