@@ -46,11 +46,19 @@ flowchart TB
         QS["MLQualitySentinel<br/>---<br/>On-demand"]
     end
 
+    subgraph Trading["Trading Execution (Tier 4)"]
+        direction TB
+        PJ["DailyPredictionJob<br/>---<br/>Daily 6:15 PM ET"]
+        LT_AGENT["LiveTradingAgent<br/>---<br/>Daily 6:30 PM ET"]
+        DM["DriftMonitorJob<br/>---<br/>Daily 7:00 PM ET"]
+    end
+
     subgraph Outputs["Outputs"]
         direction TB
         VH["Validated<br/>Hypotheses"]
         MLF["MLflow<br/>Experiments"]
         ALERTS["Email<br/>Alerts"]
+        TRADES["Executed<br/>Trades"]
     end
 
     %% External to Jobs
@@ -82,6 +90,13 @@ flowchart TB
     MS --> EL
     EL --> QS
 
+    %% Trading Flow
+    VH --> PJ
+    PJ --> LT_AGENT
+    LT_AGENT --> TRADES
+    LT_AGENT --> DM
+    DM -->|"drift alert"| ALERTS
+
     %% Outputs
     QS -->|"validated"| VH
     QS -->|"audit alerts"| ALERTS
@@ -102,11 +117,14 @@ flowchart TB
     classDef external fill:#a0aec0,stroke:#4a5568,color:#fff
     classDef output fill:#9f7aea,stroke:#6b46c1,color:#fff
 
+    classDef trading fill:#e53e3e,stroke:#c53030,color:#fff
+
     class UU,PI,FC,FI job
     class SS,AR,MS,QS agent
     class UT,PT,FT,FUT,HT,LT,EL storage
     class WIKI,POLY,YF,SF external
-    class VH,MLF,ALERTS output
+    class VH,MLF,ALERTS,TRADES output
+    class PJ,LT_AGENT,DM trading
 ```
 
 ---
@@ -398,6 +416,14 @@ For terminal display and code comments:
 | `FeatureComputationJob` | Daily 6:10 PM ET | `prices` table | `features` table | Recent prices exist |
 | `FundamentalsIngestionJob` | Weekly Sat 10 AM | SimFin/YFinance | `fundamentals` table | Recent prices exist |
 
+### Trading Jobs (Tier 4)
+
+| Job | Schedule | Input | Output | Dependencies |
+|-----|----------|-------|--------|--------------|
+| `DailyPredictionJob` | Daily 6:15 PM ET | Deployed models | `predictions` table | Deployed strategies exist |
+| `LiveTradingAgent` | Daily 6:30 PM ET (disabled) | Predictions | `executed_trades` table | Predictions generated |
+| `DriftMonitorJob` | Daily 7:00 PM ET | Model data | Alerts/rollback | Deployed models exist |
+
 ### Agents (Intelligence Layer)
 
 | Agent | Trigger | Input | Output | Claude SDK |
@@ -418,6 +444,8 @@ For terminal display and code comments:
 | `hypotheses` | Research registry | `hypothesis_id`, `status`, `thesis`, `created_by` |
 | `lineage` | Audit trail | `event_type`, `entity_id`, `actor`, `timestamp` |
 | `experiments` | MLflow tracking | `experiment_id`, `run_id`, `metrics` |
+| `executed_trades` | Trade history | `trade_id`, `symbol`, `side`, `quantity`, `filled_price` |
+| `live_positions` | Current positions | `symbol`, `quantity`, `cost_basis`, `market_value` |
 
 ---
 

@@ -2355,6 +2355,88 @@ curl http://localhost:8080/health
 
 ---
 
+## 13. Trading Execution (Tier 4)
+
+### 13.1 Prerequisites
+
+Before enabling trading:
+1. Complete Tier 1-3 setup
+2. Have at least one deployed strategy
+3. Install TWS/IB Gateway
+4. Configure IBKR paper trading account
+
+See `docs/operations/ibkr-setup-guide.md` for IBKR setup.
+
+### 13.2 Generate Predictions
+
+```bash
+# Test prediction job
+python -m hrp.agents.run_job --job predictions --dry-run
+
+# Run predictions for deployed models
+python -m hrp.agents.run_job --job predictions
+```
+
+### 13.3 Execute Trades (Dry Run)
+
+```bash
+# Dry run - see what trades would execute
+python -m hrp.agents.run_job --job live-trader --trading-dry-run
+
+# Execute trades (DANGEROUS - only after testing)
+python -m hrp.agents.run_job --job live-trader --execute-trades
+```
+
+### 13.4 Monitor Drift
+
+```bash
+# Check for model drift
+python -m hrp.agents.run_job --job drift-monitor --dry-run
+
+# With auto-rollback on drift detection
+python -m hrp.agents.run_job --job drift-monitor --auto-rollback
+```
+
+### 13.5 View Positions and Trades
+
+```python
+from hrp.api.platform import PlatformAPI
+
+api = PlatformAPI()
+
+# Get current positions
+positions = api.get_live_positions()
+print(f"Positions: {len(positions)}")
+print(positions)
+
+# Get recent trades
+trades = api.get_executed_trades(limit=10)
+print(f"Recent trades: {len(trades)}")
+
+# Portfolio value
+value = api.get_portfolio_value()
+print(f"Portfolio value: ${value:,.2f}")
+```
+
+### 13.6 Trading Dashboard
+
+Access the Trading dashboard page at http://localhost:8501 (after starting the dashboard):
+- Portfolio overview (value, P&L, positions)
+- Current positions with market values
+- Recent trades history
+- Model drift status
+
+### 13.7 Safety Features
+
+Trading has multiple safety layers:
+- **Dry-run mode**: Default, simulates trades without execution
+- **Position limits**: Max 20 positions, 10% max per position
+- **Minimum order**: $100 minimum order value
+- **Drift monitoring**: Automatic monitoring before execution
+- **Paper trading**: Default broker configuration
+
+---
+
 ## Quick Reference
 
 ### API Methods

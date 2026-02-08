@@ -35,6 +35,9 @@ python -m hrp.agents.run_job --job prices --dry-run
 | 18:00 | `prices` | Price ingestion (after market close) |
 | 18:05 | `universe` | Universe update |
 | 18:10 | `features` | Feature computation |
+| 18:15 | `predictions` | Generate predictions for deployed models |
+| 18:30 | `live-trader` | Execute trades (DISABLED by default) |
+| 19:00 | `drift-monitor` | Check model drift, optional rollback |
 
 ### Periodic Jobs
 

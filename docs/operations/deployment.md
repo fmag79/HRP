@@ -60,6 +60,16 @@ ls -lh ~/hrp-data/hrp.duckdb
 | `HRP_OPS_PORT` | Ops server bind port | `8080` | No |
 | `HRP_THRESHOLD_*` | Override alert thresholds (see [Alert Thresholds](alert-thresholds.md)) | - | No |
 
+### Tier 4: Trading Execution
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `IBKR_HOST` | Interactive Brokers TWS/Gateway host | `127.0.0.1` | For trading |
+| `IBKR_PORT` | TWS/Gateway port (7497=paper, 7496=live) | `7497` | For trading |
+| `IBKR_CLIENT_ID` | Unique client ID (1-32) | `1` | For trading |
+| `IBKR_ACCOUNT` | Trading account ID (DU* for paper) | - | For trading |
+| `IBKR_PAPER_TRADING` | Enable paper trading mode | `true` | No |
+
 **Environment-specific requirements:**
 - **Development:** No required secrets
 - **Staging:** `ANTHROPIC_API_KEY` recommended
