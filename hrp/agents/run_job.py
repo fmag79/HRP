@@ -415,6 +415,24 @@ def run_live_trader(dry_run: bool = False, trading_dry_run: bool = True) -> dict
     return agent.run()
 
 
+def run_drift_monitor(dry_run: bool = False, auto_rollback: bool = False) -> dict:
+    """Run drift monitoring job.
+
+    Args:
+        dry_run: If True, skip job entirely
+        auto_rollback: If True, automatically rollback drifting models
+    """
+    from hrp.agents.drift_monitor_job import DriftMonitorJob, DriftConfig
+
+    if dry_run:
+        logger.info("[DRY RUN] Would run drift monitor job")
+        return {"status": "dry_run", "job": "drift-monitor"}
+
+    config = DriftConfig(auto_rollback=auto_rollback)
+    job = DriftMonitorJob(drift_config=config)
+    return job.run()
+
+
 # Job registry
 JOBS: dict[str, callable] = {
     "prices": run_prices,
@@ -432,6 +450,7 @@ JOBS: dict[str, callable] = {
     "cio-review": run_cio_review,
     "predictions": run_predictions,
     "live-trader": run_live_trader,
+    "drift-monitor": run_drift_monitor,
 }
 
 
@@ -456,6 +475,7 @@ Available jobs:
   cio-review           Weekly CIO Agent review
   predictions          Daily predictions for deployed strategies
   live-trader          Execute trades (DISABLED by default)
+  drift-monitor        Monitor deployed models for drift
 """,
     )
 
