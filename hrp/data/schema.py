@@ -584,6 +584,47 @@ TABLES = {
             CHECK (status IN ('pending', 'active', 'rolled_back'))
         )
     """,
+    # === Trading/Execution tables (Tier 4) ===
+    "executed_trades": """
+        CREATE TABLE IF NOT EXISTS executed_trades (
+            trade_id VARCHAR PRIMARY KEY,
+            order_id VARCHAR NOT NULL,
+            broker_order_id INTEGER,
+            hypothesis_id VARCHAR,
+            symbol VARCHAR NOT NULL,
+            side VARCHAR NOT NULL,
+            quantity INTEGER NOT NULL,
+            order_type VARCHAR NOT NULL,
+            limit_price DECIMAL(10, 2),
+            filled_price DECIMAL(10, 2),
+            filled_quantity INTEGER NOT NULL,
+            commission DECIMAL(10, 2),
+            status VARCHAR NOT NULL,
+            submitted_at TIMESTAMP,
+            filled_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CHECK (side IN ('buy', 'sell')),
+            CHECK (quantity > 0),
+            CHECK (filled_quantity >= 0),
+            CHECK (order_type IN ('market', 'limit')),
+            CHECK (status IN ('pending', 'submitted', 'filled', 'partially_filled', 'cancelled', 'rejected'))
+        )
+    """,
+    "live_positions": """
+        CREATE TABLE IF NOT EXISTS live_positions (
+            symbol VARCHAR PRIMARY KEY,
+            quantity INTEGER NOT NULL,
+            entry_price DECIMAL(10, 2) NOT NULL,
+            current_price DECIMAL(10, 2) NOT NULL,
+            market_value DECIMAL(15, 2) NOT NULL,
+            cost_basis DECIMAL(15, 2) NOT NULL,
+            unrealized_pnl DECIMAL(15, 2) NOT NULL,
+            unrealized_pnl_pct REAL NOT NULL,
+            hypothesis_id VARCHAR,
+            as_of_date DATE NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
 }
 
 # Indexes for performance
@@ -602,6 +643,12 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_drift_checks_drift_type ON model_drift_checks(drift_type, is_drift_detected)",
     "CREATE INDEX IF NOT EXISTS idx_perf_history_model_timestamp ON model_performance_history(model_name, timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_deployments_model_env ON model_deployments(model_name, environment, status)",
+    # Trading/Execution indexes
+    "CREATE INDEX IF NOT EXISTS idx_executed_trades_hypothesis ON executed_trades(hypothesis_id)",
+    "CREATE INDEX IF NOT EXISTS idx_executed_trades_symbol ON executed_trades(symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_executed_trades_filled_at ON executed_trades(filled_at)",
+    "CREATE INDEX IF NOT EXISTS idx_live_positions_hypothesis ON live_positions(hypothesis_id)",
+    "CREATE INDEX IF NOT EXISTS idx_live_positions_date ON live_positions(as_of_date)",
 ]
 
 
