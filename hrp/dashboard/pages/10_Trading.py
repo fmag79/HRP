@@ -287,3 +287,8 @@ def _render_actions(api: PlatformAPI) -> None:
         if st.button("Check Drift", use_container_width=True):
             st.info("Drift check would be triggered here")
             # In production, would run drift check
+
+
+# Run the page
+if __name__ == "__main__" or True:  # Always run when loaded as a Streamlit page
+    render()
