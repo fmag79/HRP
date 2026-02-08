@@ -157,6 +157,13 @@ All agents follow `agent.run()` pattern. Agent pipeline chain:
 | `hrp.utils.startup` | `validate_startup()`, `fail_fast_startup()` for production checks |
 | `hrp.utils.locks` | `JobLock`, `acquire_job_lock()` for job concurrency |
 | `hrp.utils.log_filter` | `filter_secrets()` to mask secrets in logs |
+| `hrp.execution.broker` | `IBKRBroker`, `BrokerConfig` for IBKR connection |
+| `hrp.execution.orders` | `Order`, `OrderManager`, `OrderType`, `OrderSide` |
+| `hrp.execution.positions` | `Position`, `PositionTracker` for broker sync |
+| `hrp.execution.signal_converter` | `SignalConverter`, `ConversionConfig` for order generation |
+| `hrp.agents.prediction_job` | `DailyPredictionJob` for deployed model predictions |
+| `hrp.agents.live_trader` | `LiveTradingAgent`, `TradingConfig` for trade execution |
+| `hrp.agents.drift_monitor_job` | `DriftMonitorJob`, `DriftConfig` for model drift detection |
 
 ## Walk-Forward Validation
 
@@ -198,6 +205,11 @@ Job scheduling: Individual launchd plists in `launchd/`, managed via `scripts/ma
 | `HRP_OPS_HOST` | Ops server bind host (default: `0.0.0.0`) | No |
 | `HRP_OPS_PORT` | Ops server bind port (default: `8080`) | No |
 | `HRP_THRESHOLD_*` | Override alert thresholds (e.g., `HRP_THRESHOLD_HEALTH_SCORE_WARNING=85`) | No |
+| `IBKR_HOST` | IBKR host (default: `127.0.0.1`) | For trading |
+| `IBKR_PORT` | IBKR port (7497 paper, 7496 live) | For trading |
+| `IBKR_CLIENT_ID` | IBKR client ID (default: `1`) | For trading |
+| `IBKR_ACCOUNT` | IBKR account (DU for paper, U for live) | For trading |
+| `IBKR_PAPER_TRADING` | Enable paper trading (default: `true`) | For trading |
 
 ## Project Structure
 

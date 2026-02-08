@@ -8,7 +8,7 @@
 | **Intelligence** | ML + Agents | Complete |
 | **Intelligence Extensions** | NLP + Bayesian Optimization | Bayesian: Complete, NLP: Not started |
 | **Production** | Security + Ops | Complete |
-| **Trading** | Live Execution | Not started |
+| **Trading** | Live Execution | Complete |
 
 ---
 
@@ -205,12 +205,56 @@ Text-based features from earnings calls, SEC filings, and news.
 - **Cookbook**: Section 12 refactored to cross-reference focused docs (no duplication)
 - **Backup/Restore**: Updated with ops server health verification before/after restore
 
-## Tier 4: Trading (Not Started)
+## Tier 4: Trading (Complete)
 
-- IBKR paper trading connection
-- Order execution (signal → order conversion)
-- Position tracking and P&L
-- Live vs backtest comparison
-- Auto-predict: daily scheduled predictions for production models
-- Model management dashboard page
-- Automated rollback on drift threshold breach
+### Live Execution
+
+- **IBKR Broker Integration**: Connection manager with paper trading support (`hrp/execution/broker.py`)
+- **Order Management**: Market and limit orders, status tracking (`hrp/execution/orders.py`)
+- **Position Tracking**: Broker sync, P&L calculations, persistence (`hrp/execution/positions.py`)
+- **Signal Conversion**: ML predictions → orders with risk limits (`hrp/execution/signal_converter.py`)
+
+### Scheduled Jobs
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| `predictions` | Daily 6:15 PM | Generate predictions for deployed models |
+| `drift-monitor` | Daily 7:00 PM | Check for model drift, optional rollback |
+| `live-trader` | Daily 6:30 PM | Execute trades (DISABLED by default) |
+
+### Trading Agents
+
+- **DailyPredictionJob**: Generates predictions for all deployed strategies
+- **LiveTradingAgent**: Executes trades based on signals (dry-run by default)
+- **DriftMonitorJob**: Monitors models for drift, optional auto-rollback
+
+### Database
+
+| Table | Purpose |
+|-------|---------|
+| `executed_trades` | Trade history with broker order IDs |
+| `live_positions` | Current positions synced from broker |
+
+### Dashboard
+
+- **Trading Page**: Portfolio overview, positions, trades, model drift status
+
+### API Methods
+
+- `get_live_positions()` - Query current positions
+- `get_executed_trades()` - Trade history with filters
+- `record_trade()` - Persist trade execution
+- `get_portfolio_value()` - Portfolio metrics
+
+### Safety Features
+
+- Dry-run mode by default
+- Position limits (max 20 positions, 10% each)
+- Minimum order value ($100)
+- Drift monitoring before execution
+- Paper trading default configuration
+
+### Documentation
+
+- `docs/operations/ibkr-setup-guide.md` - IBKR configuration
+- `docs/operations/tier4-trading-setup.md` - Complete setup guide

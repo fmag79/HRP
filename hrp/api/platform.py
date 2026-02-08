@@ -8,6 +8,7 @@ All consumers (dashboard, MCP, agents) use this API - no direct database access.
 import json
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
@@ -2473,3 +2474,150 @@ class PlatformAPI:
             "input_tokens": result[1],
             "output_tokens": result[2],
         }
+
+    # =========================================================================
+    # Trading and Execution
+    # =========================================================================
+
+    def get_live_positions(
+        self,
+        as_of_date: date | None = None,
+    ) -> pd.DataFrame:
+        """Get current live positions.
+
+        Args:
+            as_of_date: Date to get positions for (default: today)
+
+        Returns:
+            DataFrame with position details
+        """
+        if as_of_date:
+            query = """
+                SELECT * FROM live_positions
+                WHERE as_of_date = ?
+                ORDER BY unrealized_pnl DESC
+            """
+            return self._db.fetchdf(query, (as_of_date,))
+        else:
+            query = """
+                SELECT * FROM live_positions
+                ORDER BY unrealized_pnl DESC
+            """
+            return self._db.fetchdf(query)
+
+    def get_executed_trades(
+        self,
+        symbol: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        limit: int = 100,
+    ) -> pd.DataFrame:
+        """Get executed trades history.
+
+        Args:
+            symbol: Filter by symbol (optional)
+            start_date: Filter by start date (optional)
+            end_date: Filter by end date (optional)
+            limit: Maximum trades to return
+
+        Returns:
+            DataFrame with trade history
+        """
+        where_clauses = []
+        params: list = []
+
+        if symbol:
+            where_clauses.append("symbol = ?")
+            params.append(symbol)
+
+        if start_date:
+            where_clauses.append("filled_at >= ?")
+            params.append(start_date)
+
+        if end_date:
+            where_clauses.append("filled_at <= ?")
+            params.append(end_date)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        query = f"""
+            SELECT * FROM executed_trades
+            {where_sql}
+            ORDER BY filled_at DESC
+            LIMIT ?
+        """
+        params.append(limit)
+
+        return self._db.fetchdf(query, tuple(params))
+
+    def record_trade(
+        self,
+        order,
+        filled_price: Decimal,
+        filled_quantity: int | None = None,
+        commission: Decimal | None = None,
+        hypothesis_id: str | None = None,
+    ) -> str:
+        """Record an executed trade.
+
+        Args:
+            order: Order object
+            filled_price: Execution price
+            filled_quantity: Filled quantity (defaults to order quantity)
+            commission: Commission paid
+            hypothesis_id: Associated hypothesis
+
+        Returns:
+            trade_id
+        """
+        import uuid
+
+        trade_id = str(uuid.uuid4())
+        filled_qty = filled_quantity or order.quantity
+
+        self._db.execute(
+            """
+            INSERT INTO executed_trades (
+                trade_id, order_id, broker_order_id, hypothesis_id,
+                symbol, side, quantity, order_type, limit_price,
+                filled_price, filled_quantity, commission,
+                status, submitted_at, filled_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                trade_id,
+                order.order_id,
+                order.broker_order_id,
+                hypothesis_id,
+                order.symbol,
+                order.side.value,
+                order.quantity,
+                order.order_type.value,
+                float(order.limit_price) if order.limit_price else None,
+                float(filled_price),
+                filled_qty,
+                float(commission) if commission else None,
+                "filled",
+                order.submitted_at,
+                datetime.now(),
+            ),
+        )
+
+        self._db.commit()
+        logger.info(f"Recorded trade {trade_id} for {order.symbol}")
+
+        return trade_id
+
+    def get_portfolio_value(self) -> Decimal:
+        """Get current portfolio value from live positions.
+
+        Returns:
+            Total portfolio value
+        """
+        result = self._db.fetchone(
+            "SELECT SUM(market_value) as total FROM live_positions"
+        )
+
+        total = result[0] if result and result[0] else 0
+
+        return Decimal(str(total))
