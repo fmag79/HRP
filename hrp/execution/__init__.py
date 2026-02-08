@@ -13,9 +13,11 @@ Status: Tier 4 - Implemented
 from hrp.execution.broker import BrokerConfig, IBKRBroker
 from hrp.execution.orders import Order, OrderManager, OrderSide, OrderStatus, OrderType
 from hrp.execution.positions import Position, PositionTracker
+from hrp.execution.signal_converter import ConversionConfig, SignalConverter
 
 __all__ = [
     "BrokerConfig",
+    "ConversionConfig",
     "IBKRBroker",
     "Order",
     "OrderManager",
@@ -24,4 +26,5 @@ __all__ = [
     "OrderType",
     "Position",
     "PositionTracker",
+    "SignalConverter",
 ]

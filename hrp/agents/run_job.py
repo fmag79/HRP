@@ -382,6 +382,18 @@ def run_cio_review(dry_run: bool = False) -> dict:
     return result
 
 
+def run_predictions(dry_run: bool = False) -> dict:
+    """Run daily prediction job for deployed strategies."""
+    from hrp.agents.prediction_job import DailyPredictionJob
+
+    if dry_run:
+        logger.info("[DRY RUN] Would run daily prediction job")
+        return {"status": "dry_run", "job": "predictions"}
+
+    job = DailyPredictionJob()
+    return job.run()
+
+
 # Job registry
 JOBS: dict[str, callable] = {
     "prices": run_prices,
@@ -397,6 +409,7 @@ JOBS: dict[str, callable] = {
     "quality-monitoring": run_quality_monitoring,
     "quality-sentinel": run_quality_sentinel,
     "cio-review": run_cio_review,
+    "predictions": run_predictions,
 }
 
 
@@ -419,6 +432,7 @@ Available jobs:
   quality-monitoring   Daily data quality checks
   quality-sentinel     ML Quality Sentinel audit
   cio-review           Weekly CIO Agent review
+  predictions          Daily predictions for deployed strategies
 """,
     )
 
