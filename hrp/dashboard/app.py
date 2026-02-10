@@ -392,6 +392,13 @@ def render_ingestion_status() -> None:
     ingestion_status.render()
 
 
+def render_backtest_performance() -> None:
+    """Render the Backtest Performance page for analyzing backtest results."""
+    from hrp.dashboard.pages import backtest_performance
+
+    backtest_performance.main()
+
+
 def render_hypotheses() -> None:
     """Render the Hypotheses page for browsing, creating, and viewing hypotheses."""
     st.title("Hypotheses")
@@ -914,7 +921,7 @@ def render_sidebar() -> str:
 
         page = st.selectbox(
             "Select Page",
-            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Pipeline Progress", "Agents Monitor", "Job Health"],
+            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Backtest Performance", "Pipeline Progress", "Agents Monitor", "Job Health"],
             label_visibility="collapsed",
         )
 
@@ -1059,6 +1066,8 @@ def main() -> None:
         render_hypotheses()
     elif page == "Experiments":
         render_experiments()
+    elif page == "Backtest Performance":
+        render_backtest_performance()
     elif page == "Pipeline Progress":
         render_pipeline_progress()
     elif page == "Agents Monitor":
