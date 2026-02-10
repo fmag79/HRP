@@ -625,6 +625,26 @@ TABLES = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """,
+    # === Real-time / Intraday Data tables ===
+    "intraday_bars": """
+        CREATE TABLE IF NOT EXISTS intraday_bars (
+            symbol VARCHAR NOT NULL,
+            timestamp TIMESTAMP NOT NULL,
+            open DECIMAL(12,4),
+            high DECIMAL(12,4),
+            low DECIMAL(12,4),
+            close DECIMAL(12,4) NOT NULL,
+            volume BIGINT,
+            vwap DECIMAL(12,4),
+            trade_count INTEGER,
+            source VARCHAR DEFAULT 'polygon_ws',
+            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, timestamp),
+            CHECK (close > 0),
+            CHECK (volume IS NULL OR volume >= 0),
+            FOREIGN KEY (symbol) REFERENCES symbols(symbol)
+        )
+    """,
 }
 
 # Indexes for performance
@@ -649,6 +669,9 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_executed_trades_filled_at ON executed_trades(filled_at)",
     "CREATE INDEX IF NOT EXISTS idx_live_positions_hypothesis ON live_positions(hypothesis_id)",
     "CREATE INDEX IF NOT EXISTS idx_live_positions_date ON live_positions(as_of_date)",
+    # Intraday data indexes
+    "CREATE INDEX IF NOT EXISTS idx_intraday_bars_symbol_ts ON intraday_bars(symbol, timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_intraday_bars_ts ON intraday_bars(timestamp)",
 ]
 
 
