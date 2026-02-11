@@ -1,7 +1,22 @@
 """Attribution configuration."""
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Literal
+
+
+class AttributionMethod(str, Enum):
+    """Attribution method enum."""
+
+    BRINSON = "brinson"
+    REGRESSION = "regression"
+
+
+class ImportanceMethod(str, Enum):
+    """Feature importance method enum."""
+
+    PERMUTATION = "permutation"
+    SHAP = "shap"
 
 
 @dataclass
