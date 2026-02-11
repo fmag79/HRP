@@ -12,10 +12,18 @@ from .factor_attribution import (
     BrinsonAttribution,
     FactorAttribution,
 )
+from .feature_importance import (
+    FeatureImportanceTracker,
+    ImportanceResult,
+    RollingImportance,
+)
 
 __all__ = [
     "AttributionConfig",
     "AttributionResult",
     "BrinsonAttribution",
     "FactorAttribution",
+    "FeatureImportanceTracker",
+    "ImportanceResult",
+    "RollingImportance",
 ]
