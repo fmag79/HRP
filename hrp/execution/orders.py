@@ -18,6 +18,9 @@ class OrderType(Enum):
 
     MARKET = "market"
     LIMIT = "limit"
+    STOP_LOSS = "stop_loss"
+    STOP_LIMIT = "stop_limit"
+    TRAILING_STOP = "trailing_stop"
 
 
 class OrderSide(Enum):
@@ -47,6 +50,9 @@ class Order:
     quantity: int
     order_type: OrderType
     limit_price: Optional[Decimal] = None
+    stop_price: Optional[Decimal] = None  # For stop-loss and stop-limit orders
+    trail_amount: Optional[float] = None  # For trailing stop orders
+    trail_type: str = "percentage"  # "percentage" or "amount"
     status: OrderStatus = OrderStatus.PENDING
     order_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     broker_order_id: Optional[int] = None
@@ -61,11 +67,36 @@ class Order:
         """Validate order."""
         if self.quantity <= 0:
             raise ValueError("quantity must be positive")
+
+        # Validate LIMIT orders
         if self.order_type == OrderType.LIMIT and self.limit_price is None:
             raise ValueError("Limit orders require limit_price")
         if self.order_type == OrderType.LIMIT and self.limit_price is not None:
             if self.limit_price <= 0:
                 raise ValueError("limit_price must be positive")
+
+        # Validate STOP_LOSS orders
+        if self.order_type == OrderType.STOP_LOSS:
+            if self.stop_price is None:
+                raise ValueError("STOP_LOSS orders require stop_price")
+            if self.stop_price <= 0:
+                raise ValueError("stop_price must be positive")
+
+        # Validate STOP_LIMIT orders
+        if self.order_type == OrderType.STOP_LIMIT:
+            if self.stop_price is None or self.limit_price is None:
+                raise ValueError("STOP_LIMIT orders require both stop_price and limit_price")
+            if self.stop_price <= 0 or self.limit_price <= 0:
+                raise ValueError("stop_price and limit_price must be positive")
+
+        # Validate TRAILING_STOP orders
+        if self.order_type == OrderType.TRAILING_STOP:
+            if self.trail_amount is None:
+                raise ValueError("TRAILING_STOP orders require trail_amount")
+            if self.trail_amount <= 0:
+                raise ValueError("trail_amount must be positive")
+            if self.trail_type not in ("percentage", "amount"):
+                raise ValueError("trail_type must be 'percentage' or 'amount'")
 
 
 class OrderManager:

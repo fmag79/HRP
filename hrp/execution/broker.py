@@ -1,12 +1,128 @@
-"""IBKR broker connection and account management."""
+"""Broker connection and account management.
+
+Defines BaseBroker protocol for broker abstraction and IBKRBroker implementation.
+"""
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from ib_insync import IB
+    from hrp.execution.orders import Order, OrderStatus
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class BaseBroker(Protocol):
+    """Protocol for broker implementations.
+
+    All brokers (IBKR, Robinhood, etc.) must implement this interface
+    for interchangeable usage in trading agents.
+    """
+
+    def connect(self) -> None:
+        """Connect to broker API.
+
+        Raises:
+            ConnectionError: If connection fails.
+        """
+        ...
+
+    def disconnect(self) -> None:
+        """Disconnect from broker API."""
+        ...
+
+    def is_connected(self) -> bool:
+        """Check if connected to broker.
+
+        Returns:
+            True if connected, False otherwise.
+        """
+        ...
+
+    def place_order(self, order: "Order") -> "Order":
+        """Place an order with the broker.
+
+        Args:
+            order: Order to place.
+
+        Returns:
+            Order with updated status and broker_order_id.
+
+        Raises:
+            ValueError: If broker not connected or order invalid.
+        """
+        ...
+
+    def cancel_order(self, broker_order_id: str) -> bool:
+        """Cancel an open order.
+
+        Args:
+            broker_order_id: Broker's order ID.
+
+        Returns:
+            True if cancelled successfully, False otherwise.
+        """
+        ...
+
+    def get_order_status(self, broker_order_id: str) -> "OrderStatus":
+        """Get order status from broker.
+
+        Args:
+            broker_order_id: Broker's order ID.
+
+        Returns:
+            Current order status.
+        """
+        ...
+
+    def get_positions(self) -> list[dict]:
+        """Get current positions.
+
+        Returns:
+            List of position dicts with keys: symbol, quantity, avg_price, market_value.
+        """
+        ...
+
+    def get_portfolio_value(self) -> Decimal:
+        """Get total portfolio value.
+
+        Returns:
+            Total portfolio value in USD.
+        """
+        ...
+
+    def get_quote(self, symbol: str) -> Decimal:
+        """Get current market price for symbol.
+
+        Args:
+            symbol: Stock ticker symbol.
+
+        Returns:
+            Current market price.
+        """
+        ...
+
+    def get_quotes(self, symbols: list[str]) -> dict[str, Decimal]:
+        """Get current market prices for multiple symbols.
+
+        Args:
+            symbols: List of stock ticker symbols.
+
+        Returns:
+            Dict mapping symbol to current market price.
+        """
+        ...
+
+    def __enter__(self) -> "BaseBroker":
+        """Context manager entry."""
+        ...
+
+    def __exit__(self, *args) -> None:
+        """Context manager exit."""
+        ...
 
 
 @dataclass
