@@ -1,6 +1,29 @@
 ## [Unreleased]
 
 ### Added
+- **Interactive Setup Script** (`scripts/setup.sh`): 11-phase onboarding for new machines:
+  - Pre-flight checks (OS, Python >=3.11, uv/brew detection)
+  - System dependencies (libomp for LightGBM/XGBoost)
+  - Python venv creation with `.[dev]`, optional `.[ops]` and `.[trading]`
+  - Directory structure (`~/hrp-data/{logs,auth,optuna,cache,output,backups,config,mlflow}`)
+  - Interactive `.env` configuration with auto-generated auth cookie key
+  - Database schema initialization and verification
+  - Config file fixes (`.mcp.json` PYTHONPATH, launchd plist path replacement)
+  - Dashboard user creation, optional data bootstrap, optional launchd job install
+  - Verification suite (`--check` mode) with PASS/FAIL table
+  - Idempotent — safe to re-run on already-configured machines
+
+### Fixed
+- **`PlatformAPIError` not exported from `hrp.api.platform`**: Added `PlatformAPIError` to the import from `hrp.exceptions`, fixing 28 test collection failures in modules that import it from the API
+- **`ConnectionPool` import path**: Fixed `from hrp.data.database` → `from hrp.data.connection_pool` in `hrp/data/ingestion/intraday.py` and `hrp/agents/jobs.py` (module `hrp.data.database` does not exist)
+- **`empyrical-reloaded` missing from `pyproject.toml`**: Added `empyrical-reloaded>=0.5.10` to dependencies (was in `requirements.txt` but not `pyproject.toml`, so `pip install -e .` never installed it)
+
+### Testing
+- 2,932 tests collected, 0 collection errors (was 28 errors before fixes)
+
+---
+
+### Added
 - **Production Tier Phase 2 - Ops Infrastructure** (PR #42):
   - Ops Server (`hrp/ops/`): FastAPI server with `/health`, `/ready`, `/metrics` endpoints
   - MetricsCollector (`hrp/ops/metrics.py`): System (CPU, memory, disk) and data pipeline metrics
