@@ -223,6 +223,26 @@ class UniverseManager:
         current_symbols = set()
 
         with self._db.connection() as conn:
+            # Ensure all constituent symbols exist in the symbols table (FK requirement)
+            for constituent in constituents:
+                conn.execute(
+                    """
+                    INSERT INTO symbols (symbol, name, exchange, sector, industry)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT (symbol) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        sector = EXCLUDED.sector,
+                        industry = EXCLUDED.industry
+                    """,
+                    (
+                        constituent.symbol,
+                        constituent.name,
+                        "NYSE/NASDAQ",
+                        constituent.sector,
+                        constituent.sub_industry,
+                    ),
+                )
+
             for constituent in constituents:
                 symbol = constituent.symbol
                 current_symbols.add(symbol)

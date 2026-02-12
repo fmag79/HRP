@@ -688,6 +688,37 @@ INDEXES = [
 ]
 
 
+def _seed_data_sources(db_path: str | None = None) -> None:
+    """Seed data_sources table with known source IDs.
+
+    Required because ingestion_log has a FK to data_sources.
+    Idempotent via ON CONFLICT DO NOTHING.
+    """
+    db = get_db(db_path)
+    sources = [
+        ("price_ingestion", "scheduled_job"),
+        ("feature_computation", "scheduled_job"),
+        ("universe_update", "scheduled_job"),
+        ("fundamentals_ingestion", "scheduled_job"),
+        ("weekly_backup", "scheduled_job"),
+        ("signal_scientist_scan", "research_agent"),
+        ("yfinance", "api"),
+        ("polygon", "api"),
+        ("simfin", "api"),
+    ]
+    with db.connection() as conn:
+        for source_id, source_type in sources:
+            conn.execute(
+                """
+                INSERT INTO data_sources (source_id, source_type, status)
+                VALUES (?, ?, 'active')
+                ON CONFLICT DO NOTHING
+                """,
+                (source_id, source_type),
+            )
+    logger.info(f"Seeded {len(sources)} data sources")
+
+
 def create_tables(db_path: str | None = None) -> None:
     """Create all tables in the database."""
     db = get_db(db_path)
@@ -702,6 +733,9 @@ def create_tables(db_path: str | None = None) -> None:
             conn.execute(index_sql)
 
     logger.info(f"Schema initialized with {len(TABLES)} tables and {len(INDEXES)} indexes")
+
+    # Seed data_sources with known job/source IDs (idempotent)
+    _seed_data_sources(db_path)
 
     # Run migrations (idempotent)
     migrate_agent_token_usage_identity(db_path)
