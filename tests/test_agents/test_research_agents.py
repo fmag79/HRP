@@ -43,6 +43,7 @@ def research_test_db():
             """
             INSERT INTO data_sources (source_id, source_type, status)
             VALUES ('test_research_agent', 'research_agent', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

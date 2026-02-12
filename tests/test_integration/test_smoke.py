@@ -63,6 +63,7 @@ def smoke_test_db():
                 ('yfinance', 'api', 'active'),
                 ('polygon', 'api', 'active'),
                 ('test', 'test', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

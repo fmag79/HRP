@@ -43,6 +43,7 @@ def enforcer_test_db():
             """
             INSERT INTO data_sources (source_id, source_type, status)
             VALUES ('test_orchestrator', 'kill_gate_enforcer', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

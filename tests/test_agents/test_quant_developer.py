@@ -42,6 +42,7 @@ def quant_test_db():
             """
             INSERT INTO data_sources (source_id, source_type, status)
             VALUES ('test_quant_developer', 'quant_developer', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

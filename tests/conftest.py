@@ -218,6 +218,7 @@ def test_db_with_sources(test_db: str) -> Generator[str, None, None]:
                 ('yfinance', 'api', 'active'),
                 ('polygon', 'api', 'active'),
                 ('test', 'test', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

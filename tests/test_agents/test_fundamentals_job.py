@@ -43,6 +43,7 @@ def fundamentals_job_test_db():
                 ('fundamentals_ingestion', 'scheduled_job', 'active'),
                 ('yfinance', 'api', 'active'),
                 ('simfin', 'api', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

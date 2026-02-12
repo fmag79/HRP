@@ -216,6 +216,7 @@ class TestForeignKeyWorkflows:
             """
             INSERT INTO data_sources (source_id, source_type, status)
             VALUES ('test_api', 'market_data', 'active')
+            ON CONFLICT DO NOTHING
         """
         )
 

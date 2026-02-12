@@ -52,6 +52,7 @@ def cli_test_db():
             VALUES
                 ('price_ingestion', 'scheduled_job', 'active'),
                 ('feature_computation', 'scheduled_job', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

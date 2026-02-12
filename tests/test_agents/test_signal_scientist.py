@@ -49,6 +49,7 @@ def signal_test_db():
             VALUES
                 ('signal_scientist_scan', 'research_agent', 'active'),
                 ('feature_computation', 'scheduled_job', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

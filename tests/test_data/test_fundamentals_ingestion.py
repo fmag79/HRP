@@ -70,6 +70,7 @@ def fundamentals_test_db():
                 ('test', 'manual', 'test', 'active'),
                 ('yfinance', 'api', 'yfinance', 'active'),
                 ('simfin', 'api', 'simfin', 'active')
+            ON CONFLICT DO NOTHING
         """)
         # Insert universe entries
         conn.execute("""

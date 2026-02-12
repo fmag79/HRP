@@ -59,6 +59,7 @@ def job_test_db():
                 ('universe_update', 'scheduled_job', 'active'),
                 ('test_job', 'scheduled_job', 'active'),
                 ('dep_job', 'scheduled_job', 'active')
+            ON CONFLICT DO NOTHING
             """
         )
 

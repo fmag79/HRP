@@ -49,7 +49,7 @@ def populated_fundamentals_db(fundamentals_db):
 
     # Insert data source first (due to FK constraints)
     db.execute(
-        "INSERT INTO data_sources (source_id, source_type) VALUES (?, ?)",
+        "INSERT INTO data_sources (source_id, source_type) VALUES (?, ?) ON CONFLICT DO NOTHING",
         ("test", "fundamentals"),
     )
 
