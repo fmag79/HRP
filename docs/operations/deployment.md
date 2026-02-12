@@ -64,11 +64,25 @@ ls -lh ~/hrp-data/hrp.duckdb
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `IBKR_HOST` | Interactive Brokers TWS/Gateway host | `127.0.0.1` | For trading |
-| `IBKR_PORT` | TWS/Gateway port (7497=paper, 7496=live) | `7497` | For trading |
-| `IBKR_CLIENT_ID` | Unique client ID (1-32) | `1` | For trading |
-| `IBKR_ACCOUNT` | Trading account ID (DU* for paper) | - | For trading |
+| `HRP_BROKER_TYPE` | Broker: `ibkr`, `robinhood`, `paper` | `ibkr` | For trading |
+| `IBKR_HOST` | Interactive Brokers TWS/Gateway host | `127.0.0.1` | For IBKR |
+| `IBKR_PORT` | TWS/Gateway port (7497=paper, 7496=live) | `7497` | For IBKR |
+| `IBKR_CLIENT_ID` | Unique client ID (1-32) | `1` | For IBKR |
+| `IBKR_ACCOUNT` | Trading account ID (DU* for paper) | `DU` | For IBKR |
 | `IBKR_PAPER_TRADING` | Enable paper trading mode | `true` | No |
+| `ROBINHOOD_USERNAME` | Robinhood account email | - | For Robinhood |
+| `ROBINHOOD_PASSWORD` | Robinhood account password | - | For Robinhood |
+| `ROBINHOOD_MFA_SECRET` | Robinhood TOTP MFA secret | - | For Robinhood |
+
+### Tier 5: Advanced Analytics
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `POLYGON_API_KEY` | Polygon.io API key for real-time WebSocket data | - | For intraday |
+| `HRP_USE_VAR_SIZING` | Enable VaR-aware position sizing | `false` | No |
+| `HRP_AUTO_STOP_LOSS_PCT` | Auto stop-loss percentage for new positions | - | No |
+| `HRP_MAX_PORTFOLIO_VAR_PCT` | Max portfolio VaR % (daily, 95% confidence) | `0.02` | No |
+| `HRP_MAX_POSITION_VAR_PCT` | Max per-position VaR % | `0.005` | No |
 
 **Environment-specific requirements:**
 - **Development:** No required secrets
@@ -687,6 +701,10 @@ Before deploying to production:
 - [ ] `RESEND_API_KEY` configured (if using email alerts)
 - [ ] `NOTIFICATION_EMAIL` configured (if using email alerts)
 - [ ] `HRP_AUTH_COOKIE_KEY` configured (32+ chars, if using dashboard auth)
+- [ ] `HRP_BROKER_TYPE` configured (if using trading)
+- [ ] Broker credentials set (`IBKR_*` or `ROBINHOOD_*`)
+- [ ] `POLYGON_API_KEY` configured (if using intraday ingestion)
+- [ ] VaR thresholds configured (if using `HRP_USE_VAR_SIZING=true`)
 
 ### Startup Validation
 - [ ] Run `fail_fast_startup()` passes without errors:

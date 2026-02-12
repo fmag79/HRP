@@ -152,6 +152,9 @@ hrp_active_connections 2.0
 | `hrp_http_requests_total` | Counter | `method`, `endpoint`, `status` | Total HTTP requests received |
 | `hrp_http_request_duration_seconds` | Histogram | `method`, `endpoint` | Request duration in seconds |
 | `hrp_active_connections` | Gauge | - | Current number of active connections |
+| `hrp_intraday_bars_ingested_total` | Counter | `symbol` | Total intraday bars ingested via WebSocket |
+| `hrp_intraday_ingestion_lag_seconds` | Gauge | - | WebSocket ingestion lag in seconds |
+| `hrp_websocket_reconnects_total` | Counter | - | Total WebSocket reconnection attempts |
 
 ### Example Prometheus Queries
 
@@ -164,6 +167,12 @@ histogram_quantile(0.95, rate(hrp_http_request_duration_seconds_bucket[5m]))
 
 # Error rate
 sum(rate(hrp_http_requests_total{status=~"5.."}[5m])) / sum(rate(hrp_http_requests_total[5m]))
+
+# Intraday ingestion lag (alert if > 60 seconds during market hours)
+hrp_intraday_ingestion_lag_seconds > 60
+
+# WebSocket reconnection rate (alert if > 3 per hour)
+increase(hrp_websocket_reconnects_total[1h]) > 3
 ```
 
 ---
@@ -487,6 +496,7 @@ curl -s http://localhost:8080/metrics | grep hrp_
 ## Related Documentation
 
 - [Alert Thresholds](alert-thresholds.md) - Configuring monitoring thresholds
+- [VaR Risk Metrics](var-risk-metrics.md) - VaR/CVaR calculator and dashboard
 - [Deployment Guide](deployment.md) - Production deployment procedures
 - [Monitoring Setup](monitoring-universe-scheduling.md) - Database monitoring queries
 - [Cookbook](cookbook.md) - Practical recipes for common operations

@@ -18,6 +18,8 @@
 
 ```
   Max Position Size         5% of portfolio
+  Max Portfolio VaR         2% (daily, 95% confidence)
+  Max Position VaR          0.5% (daily, 95% confidence)
   Max Sector Concentration  25%
   Max Drawdown Threshold    15%
   Min Sharpe Ratio          0.50
@@ -69,6 +71,24 @@
   Risk Contribution         0.0%
   Reason                    BLOCKED
 ```
+
+────────────────────────────────────────────────────────────
+
+### 📊 VaR Budget Summary
+
+```
+  Portfolio VaR (95%, 1d)   1.8%  (limit: 2.0%)
+  VaR Budget Remaining      0.2%
+  VaR Method                Historical Simulation
+
+  Per-Position VaR:
+  HYP-2026-008              0.35%  ✅ within 0.5% limit
+  HYP-2026-009              0.42%  ✅ within 0.5% limit
+  HYP-2026-010              0.28%  ✅ within 0.5% limit
+  HYP-2026-011              0.48%  ⚠️ near 0.5% limit (conditional)
+```
+
+See `docs/operations/var-risk-metrics.md` for VaR calculator configuration.
 
 ────────────────────────────────────────────────────────────
 

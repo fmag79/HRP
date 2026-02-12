@@ -129,7 +129,38 @@ Control alerts based on data ingestion job success rates.
 | `ingestion_success_rate_warning` | 95.0 | Success rate % below this triggers warning |
 | `ingestion_success_rate_critical` | 80.0 | Success rate % below this triggers critical alert |
 
-**Used by:** Ingestion job monitoring (future implementation)
+**Used by:** Ingestion job monitoring, intraday ingestion pipeline
+
+### Real-Time Ingestion Thresholds
+
+Control alerts for intraday/WebSocket data ingestion (TASK-007).
+
+| Threshold | Default | Description |
+|-----------|---------|-------------|
+| `intraday_freshness_warning_minutes` | 5 | Minutes stale during trading hours before warning |
+| `intraday_freshness_critical_minutes` | 15 | Minutes stale during trading hours before critical |
+| `websocket_reconnect_warning` | 3 | Reconnection attempts before warning |
+
+**Alerts triggered:**
+- **Warning** (> 5 min stale during market hours): Logged warning, WebSocket may be disconnected
+- **Critical** (> 15 min stale during market hours): Email alert, intraday pipeline may be down
+
+**Used by:** `IntradayIngestionService` health monitoring, Ops Dashboard
+
+**Note:** Intraday freshness alerts are only active during NYSE market hours (9:30 AM - 4:00 PM ET, trading days only).
+
+### VaR Thresholds
+
+Control alerts for portfolio risk limits (TASK-006).
+
+| Threshold | Default | Description |
+|-----------|---------|-------------|
+| `portfolio_var_warning_pct` | 1.5 | Portfolio VaR % warning threshold (daily, 95%) |
+| `portfolio_var_critical_pct` | 2.0 | Portfolio VaR % critical threshold |
+| `position_var_warning_pct` | 0.4 | Per-position VaR % warning threshold |
+| `position_var_critical_pct` | 0.5 | Per-position VaR % critical threshold |
+
+**Used by:** `VaRCalculator`, Risk Metrics dashboard (`11_Risk_Metrics.py`)
 
 ---
 

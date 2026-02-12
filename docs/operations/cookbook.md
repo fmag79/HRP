@@ -18,6 +18,8 @@ This cookbook provides hands-on recipes for using the Hedgefund Research Platfor
 10. [Troubleshooting](#10-troubleshooting)
 11. [Claude Integration (MCP Server)](#11-claude-integration-mcp-server)
 12. [Ops Server & Monitoring](#12-ops-server--monitoring)
+13. [Trading Execution (Tier 4)](#13-trading-execution-tier-4)
+14. [Advanced Analytics (Tier 5)](#14-advanced-analytics-tier-5)
 
 ---
 
@@ -1900,6 +1902,14 @@ streamlit run hrp/dashboard/app.py
 | **Ingestion Status** | Job monitoring | Job history, next runs, failure alerts |
 | **Hypotheses** | Research management | Create, view, update hypotheses |
 | **Experiments** | Backtest results | View metrics, compare experiments, MLflow link |
+| **Pipeline Progress** | Agent pipeline | Kanban view of hypothesis stages, agent launcher |
+| **Agents Monitor** | Agent status | Real-time agent status, historical timeline |
+| **Job Health** | Job execution | Job health metrics, error tracking |
+| **Ops** | System monitoring | CPU/memory/disk, alert thresholds |
+| **Trading** | Live execution | Portfolio overview, positions, trades, drift status |
+| **Risk Metrics** | VaR/CVaR analysis | Portfolio VaR, per-symbol breakdown, method comparison |
+| **Performance Attribution** | Strategy analysis | Brinson-Fachler, factor contributions, feature importance |
+| **Backtest Performance** | Backtest visualization | Equity curves, drawdowns, rolling metrics, exports |
 
 ### 8.3 Start MLflow UI
 
@@ -2362,10 +2372,21 @@ curl http://localhost:8080/health
 Before enabling trading:
 1. Complete Tier 1-3 setup
 2. Have at least one deployed strategy
-3. Install TWS/IB Gateway
-4. Configure IBKR paper trading account
+3. Choose a broker and configure credentials
 
-See `docs/operations/ibkr-setup-guide.md` for IBKR setup.
+**Broker selection:**
+
+```bash
+# IBKR (default) — requires TWS/IB Gateway running
+export HRP_BROKER_TYPE=ibkr
+# See docs/operations/ibkr-setup-guide.md
+
+# Robinhood — requires OAuth + MFA
+export HRP_BROKER_TYPE=robinhood
+export ROBINHOOD_USERNAME=your_email
+export ROBINHOOD_PASSWORD=your_password
+export ROBINHOOD_MFA_SECRET=your_totp_secret
+```
 
 ### 13.2 Generate Predictions
 
@@ -2433,7 +2454,127 @@ Trading has multiple safety layers:
 - **Position limits**: Max 20 positions, 10% max per position
 - **Minimum order**: $100 minimum order value
 - **Drift monitoring**: Automatic monitoring before execution
-- **Paper trading**: Default broker configuration
+- **Paper trading**: Default broker configuration (IBKR only)
+- **VaR-aware sizing**: Constrain positions by VaR budget (see Section 14)
+- **Auto stop-loss**: Generate stop-loss orders for all new positions
+- **Rate limiting**: Robinhood broker enforces 5 req/15s with 2s order cooldown
+
+---
+
+## 14. Advanced Analytics (Tier 5)
+
+### 14.1 VaR/CVaR Risk Metrics
+
+```python
+from hrp.risk.var_calculator import VaRCalculator, VaRConfig
+from hrp.risk.risk_config import VaRMethod
+
+# Calculate VaR using historical simulation
+calculator = VaRCalculator()
+config = VaRConfig(
+    confidence_level=0.95,
+    time_horizon=1,       # 1-day VaR
+    method=VaRMethod.HISTORICAL,
+)
+
+result = calculator.calculate(returns=daily_returns, config=config)
+print(f"VaR (95%, 1d):  {result.var:.4f}")
+print(f"CVaR (95%, 1d): {result.cvar:.4f}")
+print(f"Dollar VaR:     ${result.dollar_var:,.0f}")
+```
+
+**Available methods:** `PARAMETRIC` (normal/t-dist), `HISTORICAL`, `MONTE_CARLO`
+
+See `docs/operations/var-risk-metrics.md` for the full guide.
+
+### 14.2 VaR-Aware Position Sizing
+
+```bash
+# Enable VaR constraints for trading
+export HRP_USE_VAR_SIZING=true
+export HRP_MAX_PORTFOLIO_VAR_PCT=0.02    # 2% portfolio VaR limit
+export HRP_MAX_POSITION_VAR_PCT=0.005    # 0.5% per-position limit
+export HRP_AUTO_STOP_LOSS_PCT=0.05       # 5% auto stop-loss
+```
+
+### 14.3 Performance Attribution
+
+```python
+from hrp.research.attribution.factor_attribution import BrinsonAttribution, FactorAttribution
+
+# Brinson-Fachler attribution (sector allocation vs selection)
+brinson = BrinsonAttribution()
+result = brinson.analyze(
+    portfolio_returns=portfolio_df,
+    benchmark_returns=benchmark_df,
+    sector_weights=sector_weights,
+)
+print(f"Allocation effect:  {result.allocation_effect:.4f}")
+print(f"Selection effect:   {result.selection_effect:.4f}")
+print(f"Interaction effect: {result.interaction_effect:.4f}")
+
+# Factor regression attribution (Fama-French)
+factor_attr = FactorAttribution()
+result = factor_attr.analyze(
+    portfolio_returns=returns,
+    method='fama_french_3',
+)
+```
+
+### 14.4 Feature Importance
+
+```python
+from hrp.research.attribution.feature_importance import FeatureImportance
+
+importance = FeatureImportance()
+
+# Permutation importance
+result = importance.analyze(model=trained_model, X=X_test, y=y_test, method='permutation')
+
+# SHAP importance (requires shap package)
+result = importance.analyze(model=trained_model, X=X_test, y=y_test, method='shap')
+```
+
+### 14.5 Intraday Data (Real-Time)
+
+```python
+from hrp.api.platform import PlatformAPI
+from datetime import datetime
+
+api = PlatformAPI()
+
+# Get intraday price bars (minute-level)
+bars = api.get_intraday_prices(
+    symbols=['AAPL', 'MSFT'],
+    start_ts=datetime(2026, 2, 11, 9, 30),
+    end_ts=datetime(2026, 2, 11, 16, 0),
+)
+
+# Get intraday features (7 available)
+features = api.get_intraday_features(
+    symbols=['AAPL'],
+    start_ts=datetime(2026, 2, 11, 9, 30),
+    end_ts=datetime(2026, 2, 11, 16, 0),
+    feature_names=['intraday_vwap', 'intraday_rsi_14', 'intraday_momentum_20'],
+)
+```
+
+**Available intraday features:** `intraday_vwap`, `intraday_rsi_14`, `intraday_momentum_20`, `intraday_volatility_20`, `intraday_volume_ratio`, `intraday_price_to_open`, `intraday_range_position`
+
+**Requires:** `POLYGON_API_KEY` environment variable for Polygon.io WebSocket data.
+
+### 14.6 NLP Sentiment Features
+
+```python
+from hrp.data.features.sentiment_features import get_sentiment_features
+
+# Get sentiment features for a symbol
+features = get_sentiment_features(symbol='AAPL')
+# Returns: sentiment_score_10k, sentiment_score_10q, sentiment_score_8k,
+#          sentiment_score_avg, sentiment_momentum, sentiment_category
+```
+
+**Requires:** `ANTHROPIC_API_KEY` for Claude API-based sentiment analysis.
 
 ---
 
@@ -2456,6 +2597,11 @@ Trading has multiple safety layers:
 | `api.run_quality_checks(date)` | Run data quality checks |
 | `api.health_check()` | System health status |
 | `api.get_fundamentals_as_of(symbols, metrics, as_of_date)` | Get point-in-time fundamentals |
+| `api.get_intraday_prices(symbols, start_ts, end_ts)` | Get minute-level OHLCV bars |
+| `api.get_intraday_features(symbols, start_ts, end_ts, features)` | Get intraday computed features |
+| `api.get_live_positions()` | Current broker positions |
+| `api.get_executed_trades(limit)` | Trade execution history |
+| `api.get_portfolio_value()` | Portfolio metrics |
 
 
 ### Strategy Signal Generators

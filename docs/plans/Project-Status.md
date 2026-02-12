@@ -6,9 +6,10 @@
 |------|-------|--------|
 | **Foundation** | Data + Research Core | Complete |
 | **Intelligence** | ML + Agents | Complete |
-| **Intelligence Extensions** | NLP + Bayesian Optimization | Bayesian: Complete, NLP: Not started |
+| **Intelligence Extensions** | NLP + Bayesian Optimization | Complete |
 | **Production** | Security + Ops | Complete |
 | **Trading** | Live Execution | Complete |
+| **Advanced Analytics** | VaR/CVaR, Attribution, Real-time | Complete |
 
 ---
 
@@ -122,7 +123,7 @@ Hypothesis management (6), data access (6), backtesting (4), ML training (4), qu
 
 ---
 
-## Tier 2.5: Intelligence Extensions (Bayesian Complete, NLP Not Started)
+## Tier 2.5: Intelligence Extensions (Complete)
 
 ### Bayesian Hyperparameter Optimization ✅ Complete
 
@@ -136,25 +137,23 @@ Hypothesis management (6), data access (6), backtesting (4), ML training (4), qu
 - **Files:** `hrp/ml/optimization.py`, `hrp/utils/config.py`
 - **Tests:** 21 tests passing in `tests/test_ml/test_optimization.py`
 
-### Fundamental NLP
+### NLP Sentiment Analysis ✅ Complete
 
-Text-based features from earnings calls, SEC filings, and news.
-
-| Phase | Scope | Details |
-|-------|-------|---------|
-| **1** | SEC EDGAR ingestion | 10-Q/10-K text → new data source + ingestion job |
-| **2** | Earnings sentiment features | FinBERT or Claude API → 6-8 new features |
-| **3** | News sentiment aggregation | Rolling sentiment signals |
-
-**New files:**
-
-- `hrp/data/sources/sec_edgar_source.py` — EDGAR full-text retrieval
-- `hrp/data/ingestion/nlp_text.py` — Text ingestion job
-- `hrp/data/features/nlp_features.py` — Sentiment/NLP feature computation
-
-**Schema:** New `raw_text_data` table; NLP features stored in existing `features` table.
-
-**Integration:** Zero changes to backtest engine, ML pipeline, or risk system — uses existing feature store pattern.
+- **Status:** Merged to main (2026-02-09)
+- **Implementation:** SEC EDGAR ingestion + Claude API sentiment analysis
+- **Key Files:**
+  - `hrp/data/sources/edgar_source.py` — SEC EDGAR API client with rate limiting and retries
+  - `hrp/data/ingestion/sec_ingestion.py` — SEC filing ingestion pipeline with batch processing
+  - `hrp/data/sentiment_analyzer.py` — Claude API-based sentiment analysis (-1.0 to 1.0)
+  - `hrp/data/features/sentiment_features.py` — 6 sentiment feature definitions
+- **6 Sentiment Features:**
+  - `sentiment_score_10k` — Most recent 10-K filing sentiment
+  - `sentiment_score_10q` — Most recent 10-Q filing sentiment
+  - `sentiment_score_8k` — Most recent 8-K filing sentiment
+  - `sentiment_score_avg` — Average across all filing types
+  - `sentiment_momentum` — Change in sentiment over time
+  - `sentiment_category` — Categorical classification
+- **Integration:** Uses existing feature store pattern — zero changes to backtest/ML/risk systems
 
 ---
 
@@ -247,6 +246,16 @@ Text-based features from earnings calls, SEC filings, and news.
 - `record_trade()` - Persist trade execution
 - `get_portfolio_value()` - Portfolio metrics
 
+### Robinhood Broker Integration
+
+- **RobinhoodBroker** (`hrp/execution/robinhood_broker.py`): Full Robinhood API client implementing BaseBroker protocol
+  - 5 order types: market, limit, stop_loss, stop_limit, trailing_stop
+  - Rate limiting: 5 req/15s window, 2s order cooldown
+  - Paper trading mode (safety default)
+- **RobinhoodSession** (`hrp/execution/robinhood_auth.py`): MFA session management with pyotp TOTP
+- **RateLimiter** (`hrp/execution/rate_limiter.py`): Thread-safe token bucket
+- **Broker factory**: `HRP_BROKER_TYPE` env var selects `robinhood` or `ibkr`
+
 ### Safety Features
 
 - Dry-run mode by default
@@ -254,8 +263,67 @@ Text-based features from earnings calls, SEC filings, and news.
 - Minimum order value ($100)
 - Drift monitoring before execution
 - Paper trading default configuration
+- VaR-aware position sizing (see Tier 5)
+- Auto stop-loss generation
 
 ### Documentation
 
 - `docs/operations/ibkr-setup-guide.md` - IBKR configuration
 - `docs/operations/tier4-trading-setup.md` - Complete setup guide
+
+---
+
+## Tier 5: Advanced Analytics (Complete)
+
+### Advanced Risk Metrics (VaR & CVaR)
+
+- **VaRCalculator** (`hrp/risk/var_calculator.py`): Three calculation methods
+  - Parametric (normal/t-distribution)
+  - Historical simulation (empirical distribution)
+  - Monte Carlo (simulated with distribution fitting)
+- **VaRResult**: VaR, CVaR, confidence levels (90/95/99%), time horizons (1/5/10/21 days)
+- **VaR-Aware Position Sizing**: Integrates with LiveTradingAgent for risk-constrained execution
+  - `HRP_MAX_PORTFOLIO_VAR_PCT` (default: 2%)
+  - `HRP_MAX_POSITION_VAR_PCT` (default: 0.5%)
+- **Dashboard**: Risk Metrics page (`11_Risk_Metrics.py`) with portfolio VaR overview, per-symbol breakdown, method comparison, breach rate analysis
+- **Documentation**: `docs/operations/var-risk-metrics.md`
+- **Tests**: 51 tests (19 unit + 32 dashboard)
+
+### Strategy Performance Attribution
+
+- **Factor Attribution** (`hrp/research/attribution/factor_attribution.py`): Brinson-Fachler + regression-based (market model, Fama-French 3/5)
+- **Feature Importance** (`hrp/research/attribution/feature_importance.py`): Permutation + SHAP importance methods
+- **Decision Attribution** (`hrp/research/attribution/decision_attribution.py`): Trade-level P&L decomposition (timing, sizing, rebalancing)
+- **Feature Registry** (`hrp/research/attribution/attribution_features.py`): Feature store integration
+- **Dashboard**: Performance Attribution page (`12_Performance_Attribution.py`) with waterfall charts, factor contribution tables, feature importance heatmaps, decision timelines
+- **Tests**: 57 tests (48 unit, 6 E2E, 3 config)
+
+### Real-Time Data Ingestion
+
+- **Database**: 2 new tables — `intraday_bars` (minute OHLCV), `intraday_features` (computed features)
+- **WebSocket Infrastructure** (`hrp/data/ingestion/intraday.py`):
+  - `PolygonWebSocketClient`: Auto-reconnecting with heartbeat monitoring
+  - `IntradayBarBuffer`: Thread-safe 10K-bar buffer
+  - `IntradayIngestionService`: Orchestrates WebSocket → buffer → batch write → features
+- **IntradayFeatureEngine**: 7 real-time features
+  - `intraday_vwap` — Running VWAP from market open
+  - `intraday_rsi_14` — 14-bar RSI on minute data
+  - `intraday_momentum_20` — 20-minute trailing return
+  - `intraday_volatility_20` — 20-minute realized volatility (annualized)
+  - `intraday_volume_ratio` — Current vs 20-bar average
+  - `intraday_price_to_open` — Price relative to day open
+  - `intraday_range_position` — Position within day range (0-1)
+- **IntradayIngestionJob**: Scheduled 9:25 AM - 4:05 PM ET
+- **PlatformAPI**: `get_intraday_prices()`, `get_intraday_features()`
+- **Tests**: 51 tests (23 features, 18 WebSocket, 10 schema)
+
+### Backtest Performance Dashboard
+
+- **Dashboard Page** (`backtest_performance.py`): Interactive backtest visualization
+  - Equity curves with benchmark comparison
+  - Drawdown/underwater plots
+  - Rolling metrics (Sharpe, volatility, Sortino)
+  - Monthly returns heatmap
+  - Tail risk metrics (VaR, CVaR)
+  - CSV + Excel export (xlsxwriter)
+  - MLflow run integration

@@ -8,6 +8,10 @@ Personal, professional-grade quantitative research platform for systematic tradi
 - **Institutional Rigor** - Walk-forward validation, statistical significance testing, audit trails
 - **ML-Ready** - Ridge, Lasso, ElasticNet, RandomForest, LightGBM with MLflow tracking
 - **10-Agent Pipeline** - Automated signal discovery through CIO scoring
+- **Multi-Broker Trading** - IBKR and Robinhood with VaR-aware position sizing
+- **Real-Time Data** - Polygon WebSocket intraday ingestion with 7 computed features
+- **Performance Attribution** - Brinson-Fachler, Fama-French, SHAP feature importance
+- **NLP Sentiment** - SEC EDGAR filing analysis via Claude API
 - **Agent-Native** - Claude integration via MCP for AI-assisted research
 - **Local-First** - Runs entirely on your Mac, data stays private
 
@@ -150,9 +154,9 @@ Without `ANTHROPIC_API_KEY`, Claude-powered agents (Alpha Researcher, CIO, Repor
 |-----------|----------|--------------|
 | Asset class | US equities | ETFs, crypto, futures |
 | Direction | Long-only | Short selling |
-| Timeframe | Daily | Intraday |
+| Timeframe | Daily + Intraday (minute bars) | Sub-second |
 | Universe | S&P 500 (ex-financials, REITs) | International |
-| Broker | Interactive Brokers | Others |
+| Broker | Interactive Brokers, Robinhood | Others |
 
 ## Usage Examples
 
@@ -220,15 +224,19 @@ print(f"Model is stable: {result.is_stable}")
 - [Decision Pipeline](docs/agents/decision-pipeline.md) - Agent architecture and signal-to-deployment flow
 - [State Machine](docs/agents/state-machine-transitions.md) - Hypothesis lifecycle documentation
 - [Scheduler Guide](docs/setup/Scheduler-Configuration-Guide.md) - launchd job configuration
+- [VaR Risk Metrics](docs/operations/var-risk-metrics.md) - VaR/CVaR calculator and dashboard
+- [Trading Setup](docs/operations/tier4-trading-setup.md) - IBKR and Robinhood broker configuration
+- [Deployment Guide](docs/operations/deployment.md) - Production deployment procedures
 
 ## Development Status
 
 | Tier | Status | Description |
 |------|--------|-------------|
 | Tier 1: Foundation | Complete | Data + Research Core |
-| Tier 2: Intelligence | Complete | ML + Agents |
-| Tier 3: Production | Complete | Security + Ops |
-| Tier 4: Trading | Complete | Live Execution (IBKR) |
+| Tier 2: Intelligence | Complete | ML + Agents + NLP Sentiment |
+| Tier 3: Production | Complete | Security + Ops + Setup Script |
+| Tier 4: Trading | Complete | Live Execution (IBKR + Robinhood) |
+| Tier 5: Advanced Analytics | Complete | VaR/CVaR, Attribution, Real-time Data |
 
 ### Research Agents (10 Implemented)
 
@@ -247,10 +255,28 @@ print(f"Model is stable: {result.is_stable}")
 
 **Pipeline:** Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Quant Developer → Kill Gate Enforcer → Validation Analyst → Risk Manager → CIO Agent → **Human CIO**
 
+### Dashboard Pages (13)
+
+| Page | Purpose |
+|------|---------|
+| Home | System status, recent activity |
+| Data Health | Quality scores, anomalies, trends |
+| Ingestion Status | Job history, source status |
+| Hypotheses | Create, view, update hypotheses |
+| Experiments | MLflow integration, comparison |
+| Pipeline Progress | Kanban view of hypothesis pipeline |
+| Agents Monitor | Real-time agent status and timeline |
+| Job Health | Job execution health, error tracking |
+| Ops | CPU/memory/disk, alert thresholds |
+| Trading | Portfolio, positions, trades, drift |
+| Risk Metrics | VaR/CVaR analysis, breach tracking |
+| Performance Attribution | Brinson-Fachler, factor contributions, SHAP |
+| Backtest Performance | Equity curves, drawdowns, exports |
+
 ## Testing
 
 ```bash
-pytest tests/ -v    # 2,932 tests
+pytest tests/ -v    # 3,193 tests
 ```
 
 ## License

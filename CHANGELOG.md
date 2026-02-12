@@ -1,25 +1,63 @@
 ## [Unreleased]
 
 ### Added
+- **Real-Time Data Ingestion** (TASK-007): WebSocket-based intraday data pipeline:
+  - `PolygonWebSocketClient`: Auto-reconnecting WebSocket with heartbeat monitoring
+  - `IntradayBarBuffer`: Thread-safe 10K-bar buffer with batch writes
+  - `IntradayIngestionService`: Orchestrates WebSocket → buffer → DuckDB → features
+  - `IntradayFeatureEngine`: 7 real-time features (VWAP, RSI-14, momentum-20, volatility-20, volume ratio, price-to-open, range position)
+  - `IntradayIngestionJob`: Scheduled 9:25 AM - 4:05 PM ET
+  - 2 new tables: `intraday_bars`, `intraday_features`
+  - PlatformAPI: `get_intraday_prices()`, `get_intraday_features()`
+- **Strategy Performance Attribution** (TASK-008): Multi-method attribution engine:
+  - Factor attribution: Brinson-Fachler + regression-based (market model, Fama-French 3/5)
+  - Feature importance: Permutation + SHAP methods with rolling windows
+  - Decision attribution: Trade-level P&L decomposition (timing, sizing, rebalancing)
+  - Feature registry integration with existing feature store
+  - Dashboard page (`12_Performance_Attribution.py`) with waterfall charts, factor tables, importance heatmaps
+- **Robinhood Order Execution** (TASK-010): Second broker integration:
+  - `RobinhoodBroker`: Full API client with 5 order types (market, limit, stop_loss, stop_limit, trailing_stop)
+  - `RobinhoodSession`: MFA session management with pyotp TOTP
+  - `RateLimiter`: Thread-safe token bucket (5 req/15s, 2s order cooldown)
+  - Broker factory: `HRP_BROKER_TYPE` env var selects `robinhood` or `ibkr`
+  - VaR-aware position sizing integration with `LiveTradingAgent`
+  - Auto stop-loss generation and order status polling
+- **Advanced Risk Metrics** (TASK-006): VaR & CVaR analytics:
+  - `VaRCalculator`: Parametric (normal/t-distribution), Historical simulation, Monte Carlo
+  - Confidence levels: 90%, 95%, 99% with multi-day scaling (sqrt rule)
+  - VaR-aware position sizing for trade execution (`HRP_MAX_PORTFOLIO_VAR_PCT`, `HRP_MAX_POSITION_VAR_PCT`)
+  - Dashboard page (`11_Risk_Metrics.py`) with portfolio overview, per-symbol breakdown, method comparison, breach analysis
+  - User guide: `docs/operations/var-risk-metrics.md`
+- **NLP Sentiment Analysis** (TASK-004): SEC filings sentiment features:
+  - `EDGARSource`: SEC EDGAR API client with rate limiting and retries
+  - `SecIngestionJob`: Filing ingestion pipeline with batch processing
+  - `SentimentAnalyzer`: Claude API-based sentiment scoring (-1.0 to 1.0)
+  - 6 sentiment features: `sentiment_score_10k`, `sentiment_score_10q`, `sentiment_score_8k`, `sentiment_score_avg`, `sentiment_momentum`, `sentiment_category`
+- **Backtest Performance Dashboard** (TASK-005): Interactive backtest visualization:
+  - Equity curves with benchmark comparison, drawdown/underwater plots
+  - Rolling metrics (Sharpe, volatility, Sortino), monthly returns heatmap
+  - Tail risk metrics (VaR, CVaR), CSV + Excel export, MLflow integration
 - **Interactive Setup Script** (`scripts/setup.sh`): 11-phase onboarding for new machines:
   - Pre-flight checks (OS, Python >=3.11, uv/brew detection)
-  - System dependencies (libomp for LightGBM/XGBoost)
-  - Python venv creation with `.[dev]`, optional `.[ops]` and `.[trading]`
-  - Directory structure (`~/hrp-data/{logs,auth,optuna,cache,output,backups,config,mlflow}`)
-  - Interactive `.env` configuration with auto-generated auth cookie key
-  - Database schema initialization and verification
+  - System dependencies, venv creation, directories, .env config, DB init
   - Config file fixes (`.mcp.json` PYTHONPATH, launchd plist path replacement)
-  - Dashboard user creation, optional data bootstrap, optional launchd job install
+  - Data bootstrap: top 20 most-traded S&P 500 stocks with 2 years of data (~2-5 min)
   - Verification suite (`--check` mode) with PASS/FAIL table
   - Idempotent — safe to re-run on already-configured machines
+- **MIT License** added to repository
 
 ### Fixed
-- **`PlatformAPIError` not exported from `hrp.api.platform`**: Added `PlatformAPIError` to the import from `hrp.exceptions`, fixing 28 test collection failures in modules that import it from the API
-- **`ConnectionPool` import path**: Fixed `from hrp.data.database` → `from hrp.data.connection_pool` in `hrp/data/ingestion/intraday.py` and `hrp/agents/jobs.py` (module `hrp.data.database` does not exist)
-- **`empyrical-reloaded` missing from `pyproject.toml`**: Added `empyrical-reloaded>=0.5.10` to dependencies (was in `requirements.txt` but not `pyproject.toml`, so `pip install -e .` never installed it)
+- **`PlatformAPIError` not exported from `hrp.api.platform`**: Added `PlatformAPIError` to the import from `hrp.exceptions`, fixing 28 test collection failures
+- **`ConnectionPool` import path**: Fixed `from hrp.data.database` → `from hrp.data.connection_pool` in 2 files (`intraday.py`, `jobs.py`)
+- **`empyrical-reloaded` missing from `pyproject.toml`**: Added to dependencies (was in `requirements.txt` only)
+- **Fresh DB bootstrap failures**: Added `_seed_data_sources()` to seed 9 known sources on schema init; universe manager now upserts symbols before inserting universe records (FK constraint fix)
+- **Setup script crashing on Phase 3**: `((var++))` returns exit code 1 when var is 0, killing script under `set -e`; fixed with `|| true`
+- **Trading page blank display**: Renamed `trading.py` → `10_Trading.py` for sidebar ordering, added render() call
+- **18 pre-existing test failures**: Fixed mock targets, assertion values, and connection modes across 8 test files
+- **Dashboard `AttributionMethod` import**: Added missing import to dashboard page
 
 ### Testing
-- 2,932 tests collected, 0 collection errors (was 28 errors before fixes)
+- 3,193 tests collected, 0 errors (was 2,932 before new features)
 
 ---
 
