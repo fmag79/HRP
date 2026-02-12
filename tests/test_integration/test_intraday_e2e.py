@@ -24,7 +24,7 @@ def conn_pool(tmp_path):
     # Initialize schema
     from hrp.data.schema import TABLES, INDEXES
 
-    with pool.get_connection() as conn:
+    with pool.connection() as conn:
         # Create required tables
         for table_name, create_sql in TABLES.items():
             if table_name in ["symbols", "intraday_bars", "intraday_features"]:
@@ -38,9 +38,9 @@ def conn_pool(tmp_path):
         # Insert test symbols
         conn.execute(
             """
-            INSERT INTO symbols (symbol, name, sector, industry, is_active)
-            VALUES ('AAPL', 'Apple Inc.', 'Technology', 'Consumer Electronics', TRUE),
-                   ('MSFT', 'Microsoft Corp.', 'Technology', 'Software', TRUE)
+            INSERT INTO symbols (symbol, name, sector, industry)
+            VALUES ('AAPL', 'Apple Inc.', 'Technology', 'Consumer Electronics'),
+                   ('MSFT', 'Microsoft Corp.', 'Technology', 'Software')
             """
         )
 
@@ -117,7 +117,7 @@ def test_e2e_pipeline_mock_websocket(conn_pool):
                     service.stop()
 
     # Verify data was written to intraday_bars
-    with conn_pool.get_connection() as conn:
+    with conn_pool.connection() as conn:
         result = conn.execute(
             "SELECT COUNT(*) FROM intraday_bars"
         ).fetchone()
@@ -190,7 +190,7 @@ def test_e2e_with_features(conn_pool):
                     service.stop()
 
     # Verify features were computed
-    with conn_pool.get_connection() as conn:
+    with conn_pool.connection() as conn:
         feature_count = conn.execute(
             "SELECT COUNT(*) FROM intraday_features WHERE symbol = 'AAPL'"
         ).fetchone()[0]
@@ -247,7 +247,7 @@ def test_gap_fill_integration(conn_pool):
     _batch_upsert_intraday(initial_bars, conn_pool)
 
     # Verify initial bar exists
-    with conn_pool.get_connection() as conn:
+    with conn_pool.connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM intraday_bars").fetchone()[0]
         assert count == 1
 
@@ -276,7 +276,7 @@ def test_gap_fill_integration(conn_pool):
         backfilled = service.gap_fill_after_reconnect(symbols=["AAPL"])
 
     # Verify gap was filled
-    with conn_pool.get_connection() as conn:
+    with conn_pool.connection() as conn:
         total_bars = conn.execute("SELECT COUNT(*) FROM intraday_bars").fetchone()[0]
         # Should have original bar + gap-fill bars
         assert total_bars > 1, f"Expected more than 1 bar after gap-fill, got {total_bars}"
