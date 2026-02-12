@@ -19,7 +19,7 @@ import pandas as pd
 import pytz
 from loguru import logger
 
-from hrp.data.database import ConnectionPool
+from hrp.data.connection_pool import ConnectionPool
 from hrp.data.features.intraday_features import IntradayBar as FeatureBar
 from hrp.data.features.intraday_features import IntradayFeatureEngine
 from hrp.data.sources.polygon_websocket import PolygonWebSocketClient, WebSocketConfig

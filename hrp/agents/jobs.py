@@ -1235,7 +1235,7 @@ class IntradayIngestionJob(IngestionJob):
         )
 
         # Create and start ingestion service
-        from hrp.data.database import ConnectionPool
+        from hrp.data.connection_pool import ConnectionPool
         from hrp.utils.config import get_config
 
         config = get_config()

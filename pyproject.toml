@@ -19,6 +19,7 @@ dependencies = [
 
     # Backtesting
     "vectorbt>=0.26.0",
+    "empyrical-reloaded>=0.5.10",
 
     # ML
     "scikit-learn>=1.3.0",

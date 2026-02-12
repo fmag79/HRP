@@ -16,7 +16,7 @@ from loguru import logger
 
 from hrp.api.validators import Validator
 from hrp.data.db import get_db
-from hrp.exceptions import NotFoundError, PermissionError
+from hrp.exceptions import NotFoundError, PermissionError, PlatformAPIError
 from hrp.research.config import BacktestConfig
 
 # Strict allowlist pattern for SQL-safe identifiers (ticker symbols, feature names, etc.)
