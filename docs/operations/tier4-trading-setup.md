@@ -43,7 +43,7 @@ See `docs/operations/ibkr-setup-guide.md` for full IBKR configuration.
 export HRP_BROKER_TYPE=robinhood
 export ROBINHOOD_USERNAME=your_email@example.com
 export ROBINHOOD_PASSWORD=your_password
-export ROBINHOOD_MFA_SECRET=your_totp_secret   # from Robinhood authenticator setup
+export ROBINHOOD_TOTP_SECRET=your_totp_secret   # from Robinhood authenticator setup
 ```
 
 **Key files:**
@@ -123,15 +123,28 @@ python -m hrp.agents.run_job --job live-trader --trading-dry-run
 python -m hrp.agents.run_job --job live-trader --execute-trades
 ```
 
-## VaR-Aware Position Sizing
+## Portfolio & Position Sizing
 
-Position sizing can be constrained by VaR budgets (TASK-006):
+All portfolio sizing variables can be set in `.env` (see `.env.example` for the full list):
 
 ```bash
-export HRP_USE_VAR_SIZING=true
-export HRP_MAX_PORTFOLIO_VAR_PCT=0.02    # 2% portfolio VaR (daily, 95% confidence)
-export HRP_MAX_POSITION_VAR_PCT=0.005    # 0.5% per-position VaR
-export HRP_AUTO_STOP_LOSS_PCT=0.05       # 5% auto stop-loss on new positions
+# Portfolio sizing (in .env)
+HRP_PORTFOLIO_VALUE=100000        # Portfolio value in dollars
+HRP_MAX_POSITIONS=20              # Max concurrent positions
+HRP_MAX_POSITION_PCT=0.10         # 10% max per position
+HRP_MIN_ORDER_VALUE=100           # Minimum order value in dollars
+HRP_TRADING_DRY_RUN=true          # Dry-run mode (safe default)
+```
+
+## VaR-Aware Position Sizing
+
+Position sizing can be constrained by VaR budgets. Configure in `.env`:
+
+```bash
+HRP_USE_VAR_SIZING=true
+HRP_MAX_PORTFOLIO_VAR_PCT=0.02    # 2% portfolio VaR (daily, 95% confidence)
+HRP_MAX_POSITION_VAR_PCT=0.005    # 0.5% per-position VaR
+HRP_AUTO_STOP_LOSS_PCT=0.05       # 5% auto stop-loss on new positions
 ```
 
 The `LiveTradingAgent` automatically:

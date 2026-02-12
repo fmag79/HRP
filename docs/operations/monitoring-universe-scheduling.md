@@ -411,7 +411,7 @@ chmod +x ~/hrp-data/scripts/check_universe_health.py
 
 **Run:**
 ```bash
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 python ~/hrp-data/scripts/check_universe_health.py
 ```
 
@@ -455,7 +455,7 @@ echo "✅ Service is healthy"
 
 **Check scheduled jobs:**
 ```bash
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 python -m hrp.agents.cli list-jobs
 ```
 
@@ -504,7 +504,7 @@ Add to crontab (`crontab -e`):
 0 * * * * launchctl list | grep -q hrp || echo "HRP scheduler down!" | mail -s "HRP Alert" you@example.com
 
 # Run health check daily at 7 PM (after universe update)
-0 19 * * * cd /Users/fer/Documents/GitHub/HRP && python ~/hrp-data/scripts/check_universe_health.py || echo "Universe health check failed!" | mail -s "HRP Alert" you@example.com
+0 19 * * * cd /path/to/HRP && python ~/hrp-data/scripts/check_universe_health.py || echo "Universe health check failed!" | mail -s "HRP Alert" you@example.com
 ```
 
 ---
@@ -524,7 +524,7 @@ launchctl list | grep hrp
 ps aux | grep run_scheduler
 
 # Check job is registered
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 python -m hrp.agents.cli list-jobs | grep universe
 ```
 
@@ -553,7 +553,7 @@ ERROR: Failed to fetch S&P 500 constituents: HTTP Error 403
 ```
 **Fix:** User-Agent issue - should be fixed in code, but verify:
 ```bash
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 grep "User-Agent" hrp/data/universe.py
 # Should show: req.add_header('User-Agent', 'Mozilla/5.0...')
 ```
@@ -571,7 +571,7 @@ ERROR: Database error: ...
 **Fix:** Check database accessibility:
 ```bash
 ls -lh ~/hrp-data/hrp.duckdb
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 python -c "from hrp.data.db import DatabaseManager; db = DatabaseManager(); print('DB OK')"
 ```
 
@@ -610,7 +610,7 @@ with db.connection() as conn:
 
 **If universe update fails, run manually:**
 ```bash
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 python -m hrp.agents.cli run-now --job universe
 ```
 
@@ -700,7 +700,7 @@ tail -50 ~/hrp-data/logs/scheduler.error.log | grep -E "(universe_update|complet
 tail -100 ~/hrp-data/logs/scheduler.error.log | grep "$(date +%Y-%m-%d).*universe_update"
 
 # Or run health check
-cd /Users/fer/Documents/GitHub/HRP
+cd /path/to/HRP
 python ~/hrp-data/scripts/check_universe_health.py
 ```
 
@@ -925,7 +925,7 @@ fi
 
 # Step 3: Check last universe update
 echo "3. Last Universe Update:"
-cd /Users/fer/Projects/HRP
+cd /path/to/HRP
 python -c "
 from hrp.data.db import DatabaseManager
 db = DatabaseManager()

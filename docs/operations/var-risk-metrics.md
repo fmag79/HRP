@@ -221,6 +221,17 @@ Shows VaR evolution over time:
   - Breach rate (percentage of days with breaches)
   - Model calibration status
 
+## Environment Configuration
+
+> **All VaR and risk variables are documented in `.env.example`.** Set them in your `.env` file:
+
+```bash
+HRP_USE_VAR_SIZING=true              # Enable VaR-aware position sizing
+HRP_MAX_PORTFOLIO_VAR_PCT=0.02       # 2% portfolio VaR limit (daily, 95%)
+HRP_MAX_POSITION_VAR_PCT=0.005       # 0.5% per-position VaR limit
+HRP_AUTO_STOP_LOSS_PCT=0.05          # 5% auto stop-loss (optional)
+```
+
 ## Integration with Trading
 
 ### VaR-Aware Position Sizing

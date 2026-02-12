@@ -66,16 +66,25 @@ Tables: {'prices': 52340, 'features': 418720, 'hypotheses': 5, ...}
 
 ### 1.3 Environment Variables
 
-Create a `.env` file for configuration:
+Copy `.env.example` to `.env` and edit with your values:
 
 ```bash
-# Database location (optional, defaults to ~/hrp-data/hrp.duckdb)
-HRP_DB_PATH=~/hrp-data/hrp.duckdb
+cp .env.example .env
+# Edit .env with your API keys and preferences
+```
 
-# Email notifications (optional)
-RESEND_API_KEY=your_resend_api_key
-NOTIFICATION_EMAIL=your@email.com
-NOTIFICATION_FROM_EMAIL=hrp@yourdomain.com
+The `.env.example` file contains all ~50 configurable variables with defaults and descriptions. Key categories:
+
+```bash
+# Core: HRP_ENVIRONMENT, HRP_DATA_DIR, HRP_DB_PATH
+# Data Sources: POLYGON_API_KEY, ALPACA_API_KEY, SIMFIN_API_KEY, ...
+# Notifications: RESEND_API_KEY, NOTIFICATION_EMAIL
+# Auth: HRP_AUTH_ENABLED, HRP_AUTH_COOKIE_KEY
+# Trading: HRP_BROKER_TYPE, IBKR_*, ROBINHOOD_*
+# Portfolio: HRP_PORTFOLIO_VALUE, HRP_MAX_POSITIONS, HRP_TRADING_DRY_RUN
+# Risk: HRP_USE_VAR_SIZING, HRP_MAX_PORTFOLIO_VAR_PCT
+# Real-Time: HRP_REALTIME_ENABLED, HRP_REALTIME_SYMBOLS
+# Thresholds: HRP_THRESHOLD_* (11 overrides)
 ```
 
 ### 1.4 Start the System
@@ -1836,7 +1845,7 @@ Enables the complete research agent pipeline:
   Total: 3 running, 0 stopped
 
   Logs directory: /Users/your-username/hrp-data/logs
-  PID directory:  /Users/fer/Documents/GitHub/HRP/.hrp_pids
+  PID directory:  /path/to/HRP/.hrp_pids
 ```
 
 **Troubleshooting Port Conflicts:**

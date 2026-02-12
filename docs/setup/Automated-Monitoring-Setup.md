@@ -426,7 +426,7 @@ Create `~/Library/LaunchAgents/com.hrp.scheduler.plist`:
     <string>com.hrp.scheduler</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Documents/GitHub/HRP/.venv/bin/python</string>
+        <string>/path/to/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.agents.run_scheduler</string>
         <string>--with-quality-monitoring</string>
@@ -436,9 +436,9 @@ Create `~/Library/LaunchAgents/com.hrp.scheduler.plist`:
         <string>--daily-report-time=07:00</string>
     </array>
     <key>StandardOutPath</key>
-    <string>/Users/fer/hrp-data/logs/scheduler.out.log</string>
+    <string>~/hrp-data/logs/scheduler.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/fer/hrp-data/logs/scheduler.error.log</string>
+    <string>~/hrp-data/logs/scheduler.error.log</string>
     <key>RunAtLoad</key>
     <true/>
 </dict>

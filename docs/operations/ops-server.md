@@ -35,6 +35,8 @@ curl http://localhost:8080/health
 
 ### Environment Variables
 
+> **All ops server variables are documented in `.env.example`.** Set them in your `.env` file for persistent configuration.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HRP_OPS_HOST` | Bind host address | `0.0.0.0` |

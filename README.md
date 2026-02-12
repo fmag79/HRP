@@ -62,7 +62,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env with your API keys — see .env.example for all ~50 configurable variables
 mkdir -p ~/hrp-data/{mlflow,logs,auth,backups,cache,optuna,output,config}
 python -m hrp.data.schema --init
 pytest tests/ -v

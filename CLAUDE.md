@@ -192,27 +192,23 @@ Job scheduling: Individual launchd plists in `launchd/`, managed via `scripts/ma
 
 ## Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `HRP_DB_PATH` | Database path (default: `~/hrp-data/hrp.duckdb`) | No |
-| `HRP_DATA_DIR` | Data directory (default: `~/hrp-data/`) | No |
-| `HRP_ENVIRONMENT` | Environment mode: `development`, `staging`, `production` (default: `development`) | No |
-| `RESEND_API_KEY` | Resend API key for email notifications | For alerts |
-| `NOTIFICATION_EMAIL` | Email address for notifications | For alerts |
-| `NOTIFICATION_FROM_EMAIL` | From address (default: `onboarding@resend.dev`) | No |
-| `SIMFIN_API_KEY` | SimFin API key for fundamentals (falls back to YFinance) | For fundamentals |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude agents | For production |
-| `HRP_AUTH_ENABLED` | Enable dashboard authentication (default: `true`) | No |
-| `HRP_AUTH_COOKIE_KEY` | Secret key for auth cookies (32+ chars) | For auth |
-| `HRP_AUTH_USERS_FILE` | Path to users YAML file (default: `~/hrp-data/auth/users.yaml`) | No |
-| `HRP_OPS_HOST` | Ops server bind host (default: `0.0.0.0`) | No |
-| `HRP_OPS_PORT` | Ops server bind port (default: `8080`) | No |
-| `HRP_THRESHOLD_*` | Override alert thresholds (e.g., `HRP_THRESHOLD_HEALTH_SCORE_WARNING=85`) | No |
-| `IBKR_HOST` | IBKR host (default: `127.0.0.1`) | For trading |
-| `IBKR_PORT` | IBKR port (7497 paper, 7496 live) | For trading |
-| `IBKR_CLIENT_ID` | IBKR client ID (default: `1`) | For trading |
-| `IBKR_ACCOUNT` | IBKR account (DU for paper, U for live) | For trading |
-| `IBKR_PAPER_TRADING` | Enable paper trading (default: `true`) | For trading |
+> **See `.env.example` for the complete list of all ~50 configurable variables with defaults and descriptions.**
+
+| Category | Key Variables | Required |
+|----------|--------------|----------|
+| **Core** | `HRP_ENVIRONMENT`, `HRP_DATA_DIR`, `HRP_DB_PATH`, `LOG_LEVEL` | No |
+| **Data Sources** | `POLYGON_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `TIINGO_API_KEY`, `SIMFIN_API_KEY` | No |
+| **Claude API** | `ANTHROPIC_API_KEY` | For production |
+| **Notifications** | `RESEND_API_KEY`, `NOTIFICATION_EMAIL`, `NOTIFICATION_FROM_EMAIL` | For alerts |
+| **Auth** | `HRP_AUTH_ENABLED`, `HRP_AUTH_COOKIE_KEY`, `HRP_AUTH_USERS_FILE`, `HRP_AUTH_COOKIE_NAME`, `HRP_AUTH_COOKIE_EXPIRY_DAYS` | For auth |
+| **Ops Server** | `HRP_OPS_HOST`, `HRP_OPS_PORT` | No |
+| **IBKR** | `IBKR_HOST`, `IBKR_PORT`, `IBKR_CLIENT_ID`, `IBKR_ACCOUNT`, `IBKR_PAPER_TRADING` | For IBKR trading |
+| **Broker** | `HRP_BROKER_TYPE` (`ibkr`, `robinhood`, `paper`) | For trading |
+| **Robinhood** | `ROBINHOOD_USERNAME`, `ROBINHOOD_PASSWORD`, `ROBINHOOD_TOTP_SECRET`, `ROBINHOOD_ACCOUNT_NUMBER`, `ROBINHOOD_PAPER_TRADING` | For Robinhood |
+| **Portfolio** | `HRP_PORTFOLIO_VALUE`, `HRP_MAX_POSITIONS`, `HRP_MAX_POSITION_PCT`, `HRP_MIN_ORDER_VALUE`, `HRP_TRADING_DRY_RUN` | No |
+| **Risk & VaR** | `HRP_USE_VAR_SIZING`, `HRP_AUTO_STOP_LOSS_PCT`, `HRP_MAX_PORTFOLIO_VAR_PCT`, `HRP_MAX_POSITION_VAR_PCT` | No |
+| **Real-Time** | `HRP_REALTIME_ENABLED`, `HRP_REALTIME_SYMBOLS`, `HRP_REALTIME_FLUSH_INTERVAL`, `HRP_REALTIME_MAX_BUFFER_SIZE`, `HRP_REALTIME_RECONNECT_MAX_DELAY` | No |
+| **Thresholds** | `HRP_THRESHOLD_*` (11 overrides, see `docs/operations/alert-thresholds.md`) | No |
 
 ## Project Structure
 

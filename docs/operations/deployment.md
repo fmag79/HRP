@@ -36,6 +36,8 @@ ls -lh ~/hrp-data/hrp.duckdb
 
 ## Environment Variables
 
+> **See `.env.example` for the complete list of all ~50 configurable variables with defaults and descriptions.**
+
 ### Core Configuration
 
 | Variable | Description | Default | Required |
@@ -56,6 +58,8 @@ ls -lh ~/hrp-data/hrp.duckdb
 | `HRP_AUTH_ENABLED` | Enable dashboard authentication | `true` | No |
 | `HRP_AUTH_COOKIE_KEY` | Secret key for auth cookies (32+ chars) | - | For auth |
 | `HRP_AUTH_USERS_FILE` | Path to users YAML file | `~/hrp-data/auth/users.yaml` | No |
+| `HRP_AUTH_COOKIE_NAME` | Auth cookie name | `hrp_auth` | No |
+| `HRP_AUTH_COOKIE_EXPIRY_DAYS` | Cookie expiry in days | `30` | No |
 | `HRP_OPS_HOST` | Ops server bind host | `0.0.0.0` | No |
 | `HRP_OPS_PORT` | Ops server bind port | `8080` | No |
 | `HRP_THRESHOLD_*` | Override alert thresholds (see [Alert Thresholds](alert-thresholds.md)) | - | No |
@@ -72,17 +76,34 @@ ls -lh ~/hrp-data/hrp.duckdb
 | `IBKR_PAPER_TRADING` | Enable paper trading mode | `true` | No |
 | `ROBINHOOD_USERNAME` | Robinhood account email | - | For Robinhood |
 | `ROBINHOOD_PASSWORD` | Robinhood account password | - | For Robinhood |
-| `ROBINHOOD_MFA_SECRET` | Robinhood TOTP MFA secret | - | For Robinhood |
+| `ROBINHOOD_TOTP_SECRET` | Robinhood TOTP MFA secret | - | For Robinhood |
+| `ROBINHOOD_ACCOUNT_NUMBER` | Robinhood account number | - | For Robinhood |
+| `ROBINHOOD_PAPER_TRADING` | Robinhood paper trading mode | `true` | No |
+
+### Portfolio & Position Sizing
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `HRP_PORTFOLIO_VALUE` | Portfolio value in dollars | `100000` | No |
+| `HRP_MAX_POSITIONS` | Maximum concurrent positions | `20` | No |
+| `HRP_MAX_POSITION_PCT` | Max single position fraction | `0.10` | No |
+| `HRP_MIN_ORDER_VALUE` | Minimum order value in dollars | `100` | No |
+| `HRP_TRADING_DRY_RUN` | Dry-run mode (no real trades) | `true` | No |
 
 ### Tier 5: Advanced Analytics
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `POLYGON_API_KEY` | Polygon.io API key for real-time WebSocket data | - | For intraday |
-| `HRP_USE_VAR_SIZING` | Enable VaR-aware position sizing | `false` | No |
+| `HRP_USE_VAR_SIZING` | Enable VaR-aware position sizing | `true` | No |
 | `HRP_AUTO_STOP_LOSS_PCT` | Auto stop-loss percentage for new positions | - | No |
 | `HRP_MAX_PORTFOLIO_VAR_PCT` | Max portfolio VaR % (daily, 95% confidence) | `0.02` | No |
 | `HRP_MAX_POSITION_VAR_PCT` | Max per-position VaR % | `0.005` | No |
+| `HRP_REALTIME_ENABLED` | Enable real-time intraday data ingestion | `false` | No |
+| `HRP_REALTIME_SYMBOLS` | Comma-separated symbols for real-time ingestion | - | No |
+| `HRP_REALTIME_FLUSH_INTERVAL` | Flush interval in seconds | `10` | No |
+| `HRP_REALTIME_MAX_BUFFER_SIZE` | Maximum buffer size before forced flush | `10000` | No |
+| `HRP_REALTIME_RECONNECT_MAX_DELAY` | Max reconnection delay in seconds | `60` | No |
 
 **Environment-specific requirements:**
 - **Development:** No required secrets

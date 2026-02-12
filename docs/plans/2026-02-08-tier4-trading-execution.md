@@ -1160,14 +1160,14 @@ Create `launchd/com.hrp.predictions.plist`:
     <string>com.hrp.predictions</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Projects/HRP/.venv/bin/python</string>
+        <string>/path/to/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.agents.run_job</string>
         <string>--job</string>
         <string>predictions</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/fer/Projects/HRP</string>
+    <string>/path/to/HRP</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -1176,13 +1176,13 @@ Create `launchd/com.hrp.predictions.plist`:
         <integer>15</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/fer/hrp-data/logs/predictions.log</string>
+    <string>~/hrp-data/logs/predictions.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/fer/hrp-data/logs/predictions.error.log</string>
+    <string>~/hrp-data/logs/predictions.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/fer/Projects/HRP</string>
+        <string>/path/to/HRP</string>
     </dict>
 </dict>
 </plist>
@@ -1806,7 +1806,7 @@ Create `launchd/com.hrp.live-trader.plist.disabled`:
     <string>com.hrp.live-trader</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Projects/HRP/.venv/bin/python</string>
+        <string>/path/to/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.agents.run_job</string>
         <string>--job</string>
@@ -1814,7 +1814,7 @@ Create `launchd/com.hrp.live-trader.plist.disabled`:
         <string>--no-trading-dry-run</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/fer/Projects/HRP</string>
+    <string>/path/to/HRP</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -1823,13 +1823,13 @@ Create `launchd/com.hrp.live-trader.plist.disabled`:
         <integer>30</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/fer/hrp-data/logs/live-trader.log</string>
+    <string>~/hrp-data/logs/live-trader.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/fer/hrp-data/logs/live-trader.error.log</string>
+    <string>~/hrp-data/logs/live-trader.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/fer/Projects/HRP</string>
+        <string>/path/to/HRP</string>
     </dict>
 </dict>
 </plist>
@@ -2147,7 +2147,7 @@ Create `launchd/com.hrp.drift-monitor.plist`:
     <string>com.hrp.drift-monitor</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Projects/HRP/.venv/bin/python</string>
+        <string>/path/to/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.agents.run_job</string>
         <string>--job</string>
@@ -2155,7 +2155,7 @@ Create `launchd/com.hrp.drift-monitor.plist`:
         <string>--no-auto-rollback</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/fer/Projects/HRP</string>
+    <string>/path/to/HRP</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -2164,13 +2164,13 @@ Create `launchd/com.hrp.drift-monitor.plist`:
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/fer/hrp-data/logs/drift-monitor.log</string>
+    <string>~/hrp-data/logs/drift-monitor.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/fer/hrp-data/logs/drift-monitor.error.log</string>
+    <string>~/hrp-data/logs/drift-monitor.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/fer/Projects/HRP</string>
+        <string>/path/to/HRP</string>
     </dict>
 </dict>
 </plist>

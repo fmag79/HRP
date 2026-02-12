@@ -246,7 +246,7 @@ Create `~/Library/LaunchAgents/com.hrp.scheduler.plist`:
     <string>com.hrp.scheduler</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/fer/Documents/GitHub/HRP/.venv/bin/python</string>
+        <string>/path/to/HRP/.venv/bin/python</string>
         <string>-m</string>
         <string>hrp.agents.run_scheduler</string>
         <string>--with-quality-monitoring</string>
@@ -256,9 +256,9 @@ Create `~/Library/LaunchAgents/com.hrp.scheduler.plist`:
         <string>--daily-report-time=07:00</string>
     </array>
     <key>StandardOutPath</key>
-    <string>/Users/fer/hrp-data/logs/scheduler.out.log</string>
+    <string>~/hrp-data/logs/scheduler.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/fer/hrp-data/logs/scheduler.error.log</string>
+    <string>~/hrp-data/logs/scheduler.error.log</string>
     <key>RunAtLoad</key>
     <true/>
 </dict>
@@ -397,14 +397,14 @@ launchctl load ~/Library/LaunchAgents/com.hrp.scheduler.plist
 ## Files Created/Modified
 
 ### New Files
-1. `/Users/fer/Documents/GitHub/HRP/hrp/monitoring/quality_monitor.py` - Core monitoring module
-2. `/Users/fer/Documents/GitHub/HRP/docs/setup/Automated-Monitoring-Setup.md` - Complete setup guide
-3. `/Users/fer/Documents/GitHub/HRP/scripts/start_monitoring.sh` - Quick start script
+1. `/path/to/HRP/hrp/monitoring/quality_monitor.py` - Core monitoring module
+2. `/path/to/HRP/docs/setup/Automated-Monitoring-Setup.md` - Complete setup guide
+3. `/path/to/HRP/scripts/start_monitoring.sh` - Quick start script
 
 ### Modified Files
-1. `/Users/fer/Documents/GitHub/HRP/hrp/monitoring/__init__.py` - Added exports
-2. `/Users/fer/Documents/GitHub/HRP/hrp/agents/scheduler.py` - Added `setup_quality_monitoring()` method
-3. `/Users/fer/Documents/GitHub/HRP/hrp/agents/run_scheduler.py` - Added CLI options
+1. `/path/to/HRP/hrp/monitoring/__init__.py` - Added exports
+2. `/path/to/HRP/hrp/agents/scheduler.py` - Added `setup_quality_monitoring()` method
+3. `/path/to/HRP/hrp/agents/run_scheduler.py` - Added CLI options
 
 ## Next Steps
 

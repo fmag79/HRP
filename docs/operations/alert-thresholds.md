@@ -16,6 +16,8 @@ HRP uses the `OpsThresholds` dataclass to define alert thresholds for:
 
 Thresholds are loaded with this priority: **Environment Variables > YAML Config > Defaults**
 
+> **All threshold environment variables are documented in `.env.example`.** You can set them in your `.env` file for persistent configuration.
+
 ---
 
 ## OpsThresholds Dataclass
