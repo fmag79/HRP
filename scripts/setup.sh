@@ -103,15 +103,15 @@ check_result() {
     case "$status" in
         pass)
             echo -e "  ${GREEN}✓${NC} $description"
-            ((PASS_COUNT++))
+            ((PASS_COUNT++)) || true
             ;;
         fail)
             echo -e "  ${RED}✗${NC} $description"
-            ((FAIL_COUNT++))
+            ((FAIL_COUNT++)) || true
             ;;
         skip)
             echo -e "  ${YELLOW}~${NC} $description (skipped)"
-            ((SKIP_COUNT++))
+            ((SKIP_COUNT++)) || true
             ;;
     esac
 }
@@ -285,7 +285,7 @@ phase_python_env() {
             log_success "  import $import_name"
         else
             log_error "  import $import_name FAILED"
-            ((import_failures++))
+            ((import_failures++)) || true
         fi
     done
 
@@ -322,7 +322,7 @@ phase_directories() {
         else
             mkdir -p "$dir"
             log_success "  $dir (created)"
-            ((created++))
+            ((created++)) || true
         fi
     done
 
@@ -560,14 +560,14 @@ with open('$mcp_file', 'w') as f:
 
         for plist in "$plist_dir"/*.plist; do
             [[ -f "$plist" ]] || continue
-            ((plist_count++))
+            ((plist_count++)) || true
 
             if grep -q '/Users/fer/' "$plist" 2>/dev/null; then
                 # Replace all /Users/fer/ references with current user's paths
                 sed -i '' "s|/Users/fer/Projects/HRP/.venv|${PROJECT_ROOT}/.venv|g" "$plist"
                 sed -i '' "s|/Users/fer/Projects/HRP|${PROJECT_ROOT}|g" "$plist"
                 sed -i '' "s|/Users/fer/hrp-data|${current_home}/hrp-data|g" "$plist"
-                ((fixed_count++))
+                ((fixed_count++)) || true
             fi
         done
 
