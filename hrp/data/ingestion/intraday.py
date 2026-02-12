@@ -187,7 +187,17 @@ def _batch_upsert_intraday(bars: list[dict], conn_pool: ConnectionPool) -> int:
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    with conn_pool.get_connection() as conn:
+    # Ensure all required columns exist with defaults
+    default_columns = {
+        "trade_count": None,
+        "vwap": None,
+        "source": "polygon_ws",
+    }
+    for col, default_val in default_columns.items():
+        if col not in df.columns:
+            df[col] = default_val
+
+    with conn_pool.connection() as conn:
         try:
             # Create temporary table
             conn.execute(
@@ -202,13 +212,23 @@ def _batch_upsert_intraday(bars: list[dict], conn_pool: ConnectionPool) -> int:
                     volume BIGINT,
                     vwap DECIMAL(12,4),
                     trade_count INTEGER,
-                    source VARCHAR DEFAULT 'polygon_ws'
+                    source VARCHAR DEFAULT 'polygon_ws',
+                    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
 
-            # Insert data to temp table
-            conn.execute("INSERT INTO temp_intraday_bars SELECT * FROM df")
+            # Insert data to temp table (excluding ingested_at - will use DEFAULT)
+            conn.execute("""
+                INSERT INTO temp_intraday_bars (
+                    symbol, timestamp, open, high, low, close,
+                    volume, vwap, trade_count, source
+                )
+                SELECT
+                    symbol, timestamp, open, high, low, close,
+                    volume, vwap, trade_count, source
+                FROM df
+            """)
 
             # Upsert: ON CONFLICT updates existing rows, preserves ingested_at
             result = conn.execute(
@@ -414,7 +434,7 @@ class IntradayIngestionService:
         for symbol in symbols:
             try:
                 # Find last bar timestamp in DB for this symbol
-                with self.conn_pool.get_connection() as conn:
+                with self.conn_pool.connection() as conn:
                     result = conn.execute(
                         """
                         SELECT MAX(timestamp) as last_timestamp
