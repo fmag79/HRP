@@ -16,6 +16,7 @@ from loguru import logger
 from hrp.api.platform import PlatformAPI
 from hrp.data.ingestion.features import compute_features
 from hrp.data.ingestion.fundamentals import ingest_fundamentals
+from hrp.data.ingestion.intraday import IntradayIngestionService
 from hrp.data.ingestion.prices import ingest_prices
 from hrp.data.universe import UniverseManager
 from hrp.notifications.email import EmailNotifier
@@ -1150,3 +1151,188 @@ class ComprehensiveFundamentalsBackfillJob(IngestionJob):
         )
 
         return stats
+
+
+class IntradayIngestionJob(IngestionJob):
+    """
+    Scheduled job for real-time intraday data ingestion via WebSocket.
+
+    Unlike other ingestion jobs, this is a long-running service that streams
+    data during market hours (9:30 AM - 4:00 PM ET).
+
+    Usage:
+        - Schedule start at 9:25 AM ET (5 min before open)
+        - Schedule stop at 4:05 PM ET (5 min after close)
+        - Runs only on weekdays (market days)
+    """
+
+    def __init__(
+        self,
+        symbols: list[str] | None = None,
+        channels: list[str] | None = None,
+        job_id: str = "intraday_ingestion",
+        max_retries: int = 0,  # No retries for long-running service
+        data_requirements: list[DataRequirement] | None = None,
+    ):
+        """
+        Initialize intraday ingestion job.
+
+        Args:
+            symbols: List of tickers to stream (None = top 50 from universe)
+            channels: WebSocket channels to subscribe (default: ['AM'] for minute bars)
+            job_id: Unique identifier for this job
+            max_retries: Maximum retry attempts (default 0 for market-hours service)
+            data_requirements: Data availability requirements (symbols table must exist)
+        """
+        # Default data requirement: symbols table must have rows
+        if data_requirements is None:
+            data_requirements = [
+                DataRequirement(
+                    table="symbols",
+                    min_rows=1,
+                    description="Universe symbols",
+                )
+            ]
+
+        super().__init__(job_id, max_retries, retry_backoff=0, data_requirements=data_requirements)
+        self._symbols_override = symbols
+        self.symbols = symbols
+        self.channels = channels or ["AM"]
+        self.service: IntradayIngestionService | None = None
+
+    def execute(self) -> dict[str, Any]:
+        """
+        Execute intraday data ingestion service.
+
+        This method starts the WebSocket client and runs until market close
+        or manual stop. It blocks during market hours.
+
+        Returns:
+            Dictionary with session stats (bars_received, bars_written, etc.)
+        """
+        # Resolve symbols from universe if not explicitly provided
+        if self._symbols_override is None:
+            um = UniverseManager()
+            universe = um.get_universe_at_date(date.today())
+            if not universe:
+                raise RuntimeError("Universe is empty — cannot stream intraday data without symbols")
+
+            # Get top 50 symbols by volume (config.realtime.symbols or default)
+            from hrp.utils.config import get_config
+            config = get_config()
+
+            if config.realtime.symbols:
+                self.symbols = config.realtime.symbols
+            else:
+                # Default: top 50 from universe (sorted by recent volume)
+                # For simplicity, just take first 50 from universe
+                self.symbols = universe[:50]
+
+            logger.info(f"Intraday ingestion using {len(self.symbols)} symbols from universe")
+
+        logger.info(
+            f"Starting intraday ingestion for {len(self.symbols)} symbols, channels: {self.channels}"
+        )
+
+        # Create and start ingestion service
+        from hrp.data.database import ConnectionPool
+        from hrp.utils.config import get_config
+
+        config = get_config()
+        conn_pool = ConnectionPool(str(config.data.db_path))
+
+        self.service = IntradayIngestionService(
+            conn_pool=conn_pool,
+            flush_interval=config.realtime.buffer_flush_interval_seconds,
+            max_buffer_size=config.realtime.max_buffer_size,
+        )
+
+        # Start streaming
+        self.service.start(symbols=self.symbols, channels=self.channels)
+
+        # Block until market close or manual stop
+        # In production, this would be stopped by scheduler at 4:05 PM ET
+        # For now, we'll let the service run and rely on external stop signal
+        logger.info(
+            f"Intraday ingestion service running. "
+            f"Stats: {self.service.get_stats()}"
+        )
+
+        # Return current stats (service still running)
+        stats = self.service.get_stats()
+        return {
+            "bars_received": stats["bars_received"],
+            "bars_written": stats["bars_written"],
+            "session_start": stats["session_start"],
+            "is_connected": stats["is_connected"],
+        }
+
+    def stop(self) -> dict[str, Any]:
+        """
+        Gracefully stop the intraday ingestion service.
+
+        Should be called at market close (4:05 PM ET).
+
+        Returns:
+            Final session statistics
+        """
+        if self.service is None:
+            logger.warning("Cannot stop intraday service — not started")
+            return {}
+
+        logger.info("Stopping intraday ingestion service...")
+        final_stats = self.service.stop()
+
+        # Log final stats to lineage (if needed, can be done in scheduler)
+        logger.info(
+            f"Intraday ingestion session complete: "
+            f"{final_stats['bars_received']} bars received, "
+            f"{final_stats['bars_written']} bars written, "
+            f"{final_stats['session_duration_seconds']:.0f}s duration"
+        )
+
+        return final_stats
+
+    def run(self) -> dict[str, Any]:
+        """
+        Override run() to handle long-running nature of this job.
+
+        Unlike batch jobs, this doesn't use retry logic since it's a
+        continuous service during market hours.
+        """
+        # Check data requirements
+        data_ok, data_error = self._check_data_requirements()
+        if not data_ok:
+            logger.error(data_error)
+            self._log_failure(data_error)
+            return {"status": "failed", "error": data_error}
+
+        try:
+            # Start logging
+            self._log_start()
+
+            # Execute (starts WebSocket service)
+            logger.info(f"Starting intraday ingestion service: {self.job_id}")
+            self._set_status(JobStatus.RUNNING)
+            result = self.execute()
+
+            # Note: Service is still running at this point
+            # Success logging will happen when stop() is called
+            logger.info(f"Intraday ingestion service started successfully")
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            self.last_error = error_msg
+
+            logger.error(
+                f"Intraday ingestion job failed: {error_type}: {e}",
+                exc_info=True,
+            )
+
+            self._set_status(JobStatus.FAILED)
+            self._log_failure(error_msg)
+            self._send_failure_notification(error_msg)
+
+            return {"status": "failed", "error": error_msg}

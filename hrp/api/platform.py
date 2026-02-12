@@ -186,6 +186,66 @@ class PlatformAPI:
 
         return df
 
+    def get_intraday_prices(
+        self,
+        symbols: List[str],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> pd.DataFrame:
+        """
+        Get intraday price data for symbols over a datetime range.
+
+        Returns minute-level OHLCV bars from the intraday_bars table.
+
+        Args:
+            symbols: List of ticker symbols
+            start_time: Start datetime (inclusive, UTC)
+            end_time: End datetime (inclusive, UTC)
+
+        Returns:
+            DataFrame with columns: symbol, timestamp, open, high, low, close,
+                                   volume, vwap, trade_count, source
+        """
+        if not symbols:
+            raise ValueError("symbols list cannot be empty")
+
+        # Validate symbols exist in universe
+        self._validate_symbols_in_universe(symbols)
+
+        symbols_str = _sanitize_sql_list(symbols, "symbol")
+        query = f"""
+            SELECT
+                symbol,
+                timestamp,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                vwap,
+                trade_count,
+                source
+            FROM intraday_bars
+            WHERE symbol IN ({symbols_str})
+              AND timestamp >= ?
+              AND timestamp <= ?
+            ORDER BY timestamp, symbol
+        """
+
+        df = self._db.fetchdf(query, (start_time, end_time))
+
+        if df.empty:
+            logger.warning(
+                f"No intraday data found for {len(symbols)} symbols "
+                f"from {start_time} to {end_time}"
+            )
+        else:
+            logger.debug(
+                f"Retrieved {len(df)} intraday bars for {len(symbols)} symbols"
+            )
+
+        return df
+
     def get_features(
         self,
         symbols: List[str],
