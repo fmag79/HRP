@@ -1,7 +1,9 @@
 """Tests for IBKR broker connection."""
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch
-from hrp.execution.broker import IBKRBroker, BrokerConfig
+
+from hrp.execution.broker import BrokerConfig, IBKRBroker
 
 
 def test_broker_config_validation():
@@ -76,7 +78,7 @@ def test_broker_paper_trading_port_warning(caplog):
     import logging
     caplog.set_level(logging.WARNING)
 
-    config = BrokerConfig(
+    _ = BrokerConfig(
         host="127.0.0.1",
         port=7496,  # Live port, not paper
         client_id=1,

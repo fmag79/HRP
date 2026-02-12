@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hrp.execution.broker import IBKRBroker
@@ -18,6 +18,9 @@ class OrderType(Enum):
 
     MARKET = "market"
     LIMIT = "limit"
+    STOP_LOSS = "stop_loss"
+    STOP_LIMIT = "stop_limit"
+    TRAILING_STOP = "trailing_stop"
 
 
 class OrderSide(Enum):
@@ -46,26 +49,54 @@ class Order:
     side: OrderSide
     quantity: int
     order_type: OrderType
-    limit_price: Optional[Decimal] = None
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None  # For stop-loss and stop-limit orders
+    trail_amount: float | None = None  # For trailing stop orders
+    trail_type: str = "percentage"  # "percentage" or "amount"
     status: OrderStatus = OrderStatus.PENDING
     order_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    broker_order_id: Optional[int] = None
-    submitted_at: Optional[datetime] = None
-    filled_at: Optional[datetime] = None
-    filled_price: Optional[Decimal] = None
+    broker_order_id: int | None = None
+    submitted_at: datetime | None = None
+    filled_at: datetime | None = None
+    filled_price: Decimal | None = None
     filled_quantity: int = 0
-    commission: Optional[Decimal] = None
-    hypothesis_id: Optional[str] = None
+    commission: Decimal | None = None
+    hypothesis_id: str | None = None
 
     def __post_init__(self) -> None:
         """Validate order."""
         if self.quantity <= 0:
             raise ValueError("quantity must be positive")
+
+        # Validate LIMIT orders
         if self.order_type == OrderType.LIMIT and self.limit_price is None:
             raise ValueError("Limit orders require limit_price")
         if self.order_type == OrderType.LIMIT and self.limit_price is not None:
             if self.limit_price <= 0:
                 raise ValueError("limit_price must be positive")
+
+        # Validate STOP_LOSS orders
+        if self.order_type == OrderType.STOP_LOSS:
+            if self.stop_price is None:
+                raise ValueError("STOP_LOSS orders require stop_price")
+            if self.stop_price <= 0:
+                raise ValueError("stop_price must be positive")
+
+        # Validate STOP_LIMIT orders
+        if self.order_type == OrderType.STOP_LIMIT:
+            if self.stop_price is None or self.limit_price is None:
+                raise ValueError("STOP_LIMIT orders require both stop_price and limit_price")
+            if self.stop_price <= 0 or self.limit_price <= 0:
+                raise ValueError("stop_price and limit_price must be positive")
+
+        # Validate TRAILING_STOP orders
+        if self.order_type == OrderType.TRAILING_STOP:
+            if self.trail_amount is None:
+                raise ValueError("TRAILING_STOP orders require trail_amount")
+            if self.trail_amount <= 0:
+                raise ValueError("trail_amount must be positive")
+            if self.trail_type not in ("percentage", "amount"):
+                raise ValueError("trail_type must be 'percentage' or 'amount'")
 
 
 class OrderManager:
@@ -92,7 +123,7 @@ class OrderManager:
         Raises:
             ValueError: If broker not connected
         """
-        from ib_insync import Stock, MarketOrder, LimitOrder
+        from ib_insync import LimitOrder, MarketOrder, Stock
 
         if not self.broker.is_connected():
             raise ValueError("Broker not connected")
@@ -133,7 +164,7 @@ class OrderManager:
 
         return order
 
-    def get_order(self, order_id: str) -> Optional[Order]:
+    def get_order(self, order_id: str) -> Order | None:
         """Get order by ID.
 
         Args:
@@ -152,7 +183,7 @@ class OrderManager:
         """
         return list(self._orders.values())
 
-    def cancel_order(self, order_id: str) -> Optional[Order]:
+    def cancel_order(self, order_id: str) -> Order | None:
         """Cancel an order.
 
         Args:

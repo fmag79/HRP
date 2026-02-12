@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hrp.api.platform import PlatformAPI
@@ -21,7 +21,7 @@ class Position:
     entry_price: Decimal
     current_price: Decimal
     as_of_date: date
-    hypothesis_id: Optional[str] = None
+    hypothesis_id: str | None = None
     commission_paid: Decimal = Decimal("0.00")
 
     @property
@@ -113,7 +113,7 @@ class PositionTracker:
         logger.info(f"Synced {len(positions)} positions from broker")
         return positions
 
-    def get_position(self, symbol: str) -> Optional[Position]:
+    def get_position(self, symbol: str) -> Position | None:
         """Get position by symbol.
 
         Args:

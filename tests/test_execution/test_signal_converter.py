@@ -1,9 +1,11 @@
 """Tests for signal-to-order conversion."""
-import pytest
-import pandas as pd
 from decimal import Decimal
-from hrp.execution.signal_converter import SignalConverter, ConversionConfig
+
+import pandas as pd
+import pytest
+
 from hrp.execution.orders import OrderSide, OrderType
+from hrp.execution.signal_converter import ConversionConfig, SignalConverter
 
 
 def test_signal_converter_config_validation():

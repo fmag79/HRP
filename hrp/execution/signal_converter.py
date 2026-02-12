@@ -1,12 +1,14 @@
 """Convert ML predictions/signals to trading orders."""
 import logging
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Literal
 
 import pandas as pd
 
 from hrp.execution.orders import Order, OrderSide, OrderType
+from hrp.execution.position_sizer import PositionSizer
 
 logger = logging.getLogger(__name__)
 
@@ -31,19 +33,33 @@ class ConversionConfig:
 class SignalConverter:
     """Converts ML signals to trading orders with risk limits."""
 
-    def __init__(self, config: ConversionConfig) -> None:
+    def __init__(
+        self,
+        config: ConversionConfig,
+        position_sizer: PositionSizer | None = None,
+    ) -> None:
         """Initialize signal converter.
 
         Args:
             config: Conversion configuration
+            position_sizer: Optional VaR-aware position sizer for risk-based sizing
         """
         self.config = config
+        self.position_sizer = position_sizer
+
+        if position_sizer:
+            logger.info("SignalConverter initialized with VaR-aware position sizing")
+        else:
+            logger.info("SignalConverter initialized with equal-weight sizing")
 
     def signals_to_orders(
         self,
         signals: pd.DataFrame,
         method: Literal["rank", "threshold", "zscore"] = "rank",
         current_prices: dict[str, Decimal] | None = None,
+        use_var_sizing: bool = False,
+        as_of_date: date | None = None,
+        current_positions: dict[str, int] | None = None,
     ) -> list[Order]:
         """Convert signals to trading orders.
 
@@ -53,6 +69,9 @@ class SignalConverter:
             method: Signal generation method used
             current_prices: Optional dict of symbol -> current price
                           (fetched from broker if not provided)
+            use_var_sizing: If True and position_sizer is available, use VaR-based sizing
+            as_of_date: Date for VaR feature lookup (required if use_var_sizing=True)
+            current_positions: Current positions for VaR budget calculation
 
         Returns:
             List of Order objects ready for submission
@@ -72,9 +91,48 @@ class SignalConverter:
 
         logger.info(
             f"Converting {len(buy_signals)} signals to orders "
-            f"(method={method}, max_positions={self.config.max_positions})"
+            f"(method={method}, max_positions={self.config.max_positions}, "
+            f"use_var_sizing={use_var_sizing})"
         )
 
+        # Use VaR-based position sizing if enabled and available
+        if use_var_sizing and self.position_sizer and as_of_date:
+            if current_prices is None:
+                raise ValueError("current_prices required for VaR-based sizing")
+
+            # Use position sizer to determine quantities
+            target_positions = self.position_sizer.size_all_positions(
+                signals=buy_signals,
+                current_positions=current_positions or {},
+                current_prices=current_prices,
+                as_of_date=as_of_date,
+            )
+
+            # Convert to orders
+            orders = []
+            for symbol, quantity in target_positions.items():
+                if quantity > 0:
+                    order = Order(
+                        symbol=symbol,
+                        side=OrderSide.BUY,
+                        quantity=quantity,
+                        order_type=OrderType.MARKET,
+                    )
+                    orders.append(order)
+
+                    price = current_prices[symbol]
+                    order_value = Decimal(quantity) * price
+                    logger.debug(
+                        f"Created VaR-sized order: BUY {quantity} {symbol} @ ${price:.2f} "
+                        f"(value=${order_value:,.2f})"
+                    )
+
+            logger.info(
+                f"Created {len(orders)} VaR-sized orders from {len(buy_signals)} signals"
+            )
+            return orders
+
+        # Fallback to equal-weight sizing
         # Calculate position size for each signal
         max_position_value = self.config.portfolio_value * Decimal(
             str(self.config.max_position_pct)
@@ -131,6 +189,8 @@ class SignalConverter:
         current_positions: dict[str, int],
         target_signals: pd.DataFrame,
         current_prices: dict[str, Decimal],
+        use_var_sizing: bool = False,
+        as_of_date: date | None = None,
     ) -> list[Order]:
         """Generate orders to rebalance from current to target positions.
 
@@ -138,6 +198,8 @@ class SignalConverter:
             current_positions: Dict of symbol -> current quantity
             target_signals: DataFrame with target signals
             current_prices: Dict of symbol -> current price
+            use_var_sizing: If True and position_sizer is available, use VaR-based sizing
+            as_of_date: Date for VaR feature lookup (required if use_var_sizing=True)
 
         Returns:
             List of orders (buys and sells) for rebalancing
@@ -146,7 +208,12 @@ class SignalConverter:
 
         # Get target positions from signals
         target_orders = self.signals_to_orders(
-            target_signals, method="rank", current_prices=current_prices
+            signals=target_signals,
+            method="rank",
+            current_prices=current_prices,
+            use_var_sizing=use_var_sizing,
+            as_of_date=as_of_date,
+            current_positions=current_positions,
         )
         target_positions = {o.symbol: o.quantity for o in target_orders}
 

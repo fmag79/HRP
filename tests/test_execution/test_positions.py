@@ -1,8 +1,10 @@
 """Tests for position tracking."""
-import pytest
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 from unittest.mock import Mock
+
+import pytest
+
 from hrp.execution.positions import Position, PositionTracker
 
 

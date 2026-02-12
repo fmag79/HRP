@@ -1,8 +1,9 @@
 """Tests for order management system."""
-import pytest
-from datetime import datetime
 from decimal import Decimal
-from hrp.execution.orders import Order, OrderType, OrderSide, OrderStatus, OrderManager
+
+import pytest
+
+from hrp.execution.orders import Order, OrderManager, OrderSide, OrderStatus, OrderType
 
 
 def test_order_creation():
@@ -135,7 +136,7 @@ def test_order_manager_get_order(mock_broker):
         order_type=OrderType.MARKET,
     )
 
-    submitted = manager.submit_order(order)
+    manager.submit_order(order)
 
     retrieved = manager.get_order(order.order_id)
     assert retrieved is not None
@@ -154,3 +155,153 @@ def test_order_manager_get_all_orders(mock_broker):
 
     all_orders = manager.get_all_orders()
     assert len(all_orders) == 2
+
+
+# Tests for new order types (STOP_LOSS, STOP_LIMIT, TRAILING_STOP)
+
+
+def test_stop_loss_order_requires_stop_price():
+    """Test STOP_LOSS order requires stop_price."""
+    with pytest.raises(ValueError, match="STOP_LOSS orders require stop_price"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            quantity=10,
+            order_type=OrderType.STOP_LOSS,
+            stop_price=None,
+        )
+
+
+def test_stop_loss_order_valid():
+    """Test creating a valid STOP_LOSS order."""
+    order = Order(
+        symbol="AAPL",
+        side=OrderSide.SELL,
+        quantity=10,
+        order_type=OrderType.STOP_LOSS,
+        stop_price=Decimal("140.00"),
+    )
+
+    assert order.order_type == OrderType.STOP_LOSS
+    assert order.stop_price == Decimal("140.00")
+    assert order.limit_price is None
+
+
+def test_stop_loss_stop_price_must_be_positive():
+    """Test STOP_LOSS stop_price must be positive."""
+    with pytest.raises(ValueError, match="stop_price must be positive"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            quantity=10,
+            order_type=OrderType.STOP_LOSS,
+            stop_price=Decimal("-10.00"),
+        )
+
+
+def test_stop_limit_order_requires_both_prices():
+    """Test STOP_LIMIT order requires both stop_price and limit_price."""
+    with pytest.raises(ValueError, match="STOP_LIMIT orders require both"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=10,
+            order_type=OrderType.STOP_LIMIT,
+            stop_price=Decimal("145.00"),
+            limit_price=None,
+        )
+
+    with pytest.raises(ValueError, match="STOP_LIMIT orders require both"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=10,
+            order_type=OrderType.STOP_LIMIT,
+            stop_price=None,
+            limit_price=Decimal("150.00"),
+        )
+
+
+def test_stop_limit_order_valid():
+    """Test creating a valid STOP_LIMIT order."""
+    order = Order(
+        symbol="AAPL",
+        side=OrderSide.BUY,
+        quantity=10,
+        order_type=OrderType.STOP_LIMIT,
+        stop_price=Decimal("145.00"),
+        limit_price=Decimal("150.00"),
+    )
+
+    assert order.order_type == OrderType.STOP_LIMIT
+    assert order.stop_price == Decimal("145.00")
+    assert order.limit_price == Decimal("150.00")
+
+
+def test_trailing_stop_order_requires_trail_amount():
+    """Test TRAILING_STOP order requires trail_amount."""
+    with pytest.raises(ValueError, match="TRAILING_STOP orders require trail_amount"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            quantity=10,
+            order_type=OrderType.TRAILING_STOP,
+            trail_amount=None,
+        )
+
+
+def test_trailing_stop_order_valid_percentage():
+    """Test creating a valid TRAILING_STOP order with percentage."""
+    order = Order(
+        symbol="AAPL",
+        side=OrderSide.SELL,
+        quantity=10,
+        order_type=OrderType.TRAILING_STOP,
+        trail_amount=5.0,
+        trail_type="percentage",
+    )
+
+    assert order.order_type == OrderType.TRAILING_STOP
+    assert order.trail_amount == 5.0
+    assert order.trail_type == "percentage"
+
+
+def test_trailing_stop_order_valid_amount():
+    """Test creating a valid TRAILING_STOP order with amount."""
+    order = Order(
+        symbol="AAPL",
+        side=OrderSide.SELL,
+        quantity=10,
+        order_type=OrderType.TRAILING_STOP,
+        trail_amount=10.0,
+        trail_type="amount",
+    )
+
+    assert order.order_type == OrderType.TRAILING_STOP
+    assert order.trail_amount == 10.0
+    assert order.trail_type == "amount"
+
+
+def test_trailing_stop_trail_amount_must_be_positive():
+    """Test TRAILING_STOP trail_amount must be positive."""
+    with pytest.raises(ValueError, match="trail_amount must be positive"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            quantity=10,
+            order_type=OrderType.TRAILING_STOP,
+            trail_amount=-5.0,
+        )
+
+
+def test_trailing_stop_trail_type_validation():
+    """Test TRAILING_STOP trail_type must be valid."""
+    with pytest.raises(ValueError, match="trail_type must be"):
+        Order(
+            symbol="AAPL",
+            side=OrderSide.SELL,
+            quantity=10,
+            order_type=OrderType.TRAILING_STOP,
+            trail_amount=5.0,
+            trail_type="invalid",
+        )
