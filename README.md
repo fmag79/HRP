@@ -82,6 +82,30 @@ python -m hrp.agents.run_job --job prices     # ~20-30 min
 python -m hrp.agents.run_job --job features
 ```
 
+### Enabling Automated Reports
+
+The bootstrap loads data but does **not** start scheduled agents. To get the full research pipeline running with automated reports:
+
+1. **Add API keys to `.env`:**
+   - `ANTHROPIC_API_KEY` — powers Claude-based agents (Signal Scientist, Alpha Researcher, CIO, Report Generator)
+   - `RESEND_API_KEY` + `NOTIFICATION_EMAIL` — delivers reports via email
+
+2. **Start the scheduler with agents:**
+   ```bash
+   ./scripts/startup.sh start --full        # scheduler + all research agents
+   # or install as background services:
+   ./scripts/manage_launchd.sh install       # launchd jobs (macOS)
+   ```
+
+3. **Pipeline flow:**
+   ```
+   Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel
+   → Quant Developer → Kill Gate Enforcer → Validation Analyst → Risk Manager
+   → CIO Agent → Report Generator → email
+   ```
+
+Without `ANTHROPIC_API_KEY`, Claude-powered agents (Alpha Researcher, CIO, Report Generator) will not run.
+
 ### Running Services
 
 ```bash

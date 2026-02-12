@@ -702,6 +702,15 @@ print(f'Features computed for {len(symbols)} symbols')
 
     log_success "Data bootstrap complete! (20 stocks, 2 years)"
     log_info "To load the full universe later: python -m hrp.agents.run_job --job prices"
+    echo ""
+    echo -e "${BOLD}To enable automated research reports:${NC}"
+    echo "  1. Add ANTHROPIC_API_KEY to .env  (powers Signal Scientist, Alpha Researcher, CIO, Report Generator)"
+    echo "  2. Add RESEND_API_KEY + NOTIFICATION_EMAIL to .env  (delivers reports via email)"
+    echo "  3. Start the scheduler:  ./scripts/startup.sh start --full"
+    echo "     Or install launchd:   ./scripts/manage_launchd.sh install"
+    echo ""
+    echo -e "${BOLD}Pipeline:${NC} Signal Scientist → Alpha Researcher → ML Scientist → ... → Report Generator"
+    echo "  Without ANTHROPIC_API_KEY, Claude-powered agents will not run."
 }
 
 ###############################################################################
