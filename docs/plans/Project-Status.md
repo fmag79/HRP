@@ -195,6 +195,7 @@ Text-based features from earnings calls, SEC filings, and news.
 - **Version Alignment**: `hrp.__version__` from pyproject.toml metadata
 - **launchd Service**: `launchd/com.hrp.ops-server.plist` for ops server as background service
 - **Service Management**: `scripts/manage_launchd.sh` for install/uninstall/status/reload of all HRP jobs
+- **Interactive Setup**: `scripts/setup.sh` — 11-phase onboarding (pre-flight, system deps, venv, directories, .env, DB init, config fixes, auth, data bootstrap, launchd, verification)
 
 ### Phase 2: Documentation (Complete)
 

@@ -177,12 +177,15 @@ Supports purge/embargo periods to prevent temporal leakage:
 
 | Service | Command | Port |
 |---------|---------|------|
+| **Setup** | `./scripts/setup.sh` | - |
+| **Setup (check only)** | `./scripts/setup.sh --check` | - |
 | Dashboard | `streamlit run hrp/dashboard/app.py` | 8501 |
 | MLflow UI | `mlflow ui --backend-store-uri sqlite:///~/hrp-data/mlflow/mlflow.db` | 5000 |
 | Ops Server | `python -m hrp.ops` | 8080 |
 | Single job | `python -m hrp.agents.run_job --job prices` | - |
 | Scheduler | `python -m hrp.agents.run_scheduler` | - |
 | Scheduler (full) | `python -m hrp.agents.run_scheduler --with-data-jobs --with-research-pipeline` | - |
+| Start/stop services | `./scripts/startup.sh start\|stop\|status` | - |
 | HRP CLI | `hrp --help` | - |
 
 Job scheduling: Individual launchd plists in `launchd/`, managed via `scripts/manage_launchd.sh install|uninstall|status|reload`
@@ -248,6 +251,9 @@ hrp/
 
 | Document | Purpose |
 |----------|---------|
+| `scripts/setup.sh` | Interactive onboarding: venv, deps, .env, DB, config fixes, auth, data bootstrap |
+| `scripts/startup.sh` | Service management: start/stop/restart dashboard, MLflow, scheduler |
+| `scripts/manage_launchd.sh` | launchd job management: install/uninstall/status/reload |
 | `docs/architecture/data-pipeline-diagram.md` | Data pipeline: sources → jobs → DuckDB → agents → outputs |
 | `docs/agents/decision-pipeline.md` | Agent decision workflow: 10 stages, kill gates, scoring, human approval |
 | `docs/agents/state-machine-transitions.md` | Complete state machine documentation: hypothesis states, pipeline stages, events, thresholds |
