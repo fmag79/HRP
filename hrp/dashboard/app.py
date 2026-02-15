@@ -406,6 +406,13 @@ def render_risk_limits() -> None:
     risk_limits.render_risk_limits(api=get_api())
 
 
+def render_optimization() -> None:
+    """Render the Optimization configuration page."""
+    from hrp.dashboard.pages import optimization
+
+    optimization.render_optimization_page(api=get_api())
+
+
 def render_hypotheses() -> None:
     """Render the Hypotheses page for browsing, creating, and viewing hypotheses."""
     st.title("Hypotheses")
@@ -928,7 +935,7 @@ def render_sidebar() -> str:
 
         page = st.selectbox(
             "Select Page",
-            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Backtest Performance", "Risk Limits", "Pipeline Progress", "Agents Monitor", "Job Health"],
+            options=["Home", "Data Health", "Ingestion Status", "Hypotheses", "Experiments", "Backtest Performance", "Risk Limits", "Optimization", "Pipeline Progress", "Agents Monitor", "Job Health"],
             label_visibility="collapsed",
         )
 
@@ -1077,6 +1084,8 @@ def main() -> None:
         render_backtest_performance()
     elif page == "Risk Limits":
         render_risk_limits()
+    elif page == "Optimization":
+        render_optimization()
     elif page == "Pipeline Progress":
         render_pipeline_progress()
     elif page == "Agents Monitor":
