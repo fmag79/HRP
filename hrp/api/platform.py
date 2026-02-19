@@ -2750,3 +2750,180 @@ class PlatformAPI:
         total = result[0] if result and result[0] else 0
 
         return Decimal(str(total))
+
+    # ===================================================================
+    # Advisory Service Methods
+    # ===================================================================
+
+    def get_recommendations(
+        self,
+        status: str | None = None,
+        symbol: str | None = None,
+        batch_id: str | None = None,
+        limit: int = 100,
+    ) -> pd.DataFrame:
+        """Get recommendations with optional filters.
+
+        Args:
+            status: Filter by status (active, closed_profit, etc.)
+            symbol: Filter by symbol
+            batch_id: Filter by batch ID
+            limit: Maximum number of results
+
+        Returns:
+            DataFrame of recommendations
+        """
+        conditions = []
+        params: list = []
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if symbol:
+            conditions.append("symbol = ?")
+            params.append(symbol)
+        if batch_id:
+            conditions.append("batch_id = ?")
+            params.append(batch_id)
+
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(limit)
+
+        return self.query_readonly(
+            f"SELECT * FROM recommendations{where} ORDER BY created_at DESC LIMIT ?",
+            params,
+        )
+
+    def get_recommendation_by_id(self, recommendation_id: str) -> dict | None:
+        """Get a single recommendation by ID.
+
+        Args:
+            recommendation_id: Recommendation ID (e.g., 'REC-2026-001')
+
+        Returns:
+            Dictionary with recommendation data, or None
+        """
+        result = self.fetchone_readonly(
+            "SELECT * FROM recommendations WHERE recommendation_id = ?",
+            [recommendation_id],
+        )
+        if not result:
+            return None
+
+        # Get column names
+        df = self.query_readonly(
+            "SELECT * FROM recommendations WHERE recommendation_id = ?",
+            [recommendation_id],
+        )
+        if df.empty:
+            return None
+        return df.iloc[0].to_dict()
+
+    def get_recommendation_history(self, limit: int = 100) -> pd.DataFrame:
+        """Get recent recommendation history (all statuses).
+
+        Args:
+            limit: Maximum number of results
+
+        Returns:
+            DataFrame of recommendations ordered by creation date
+        """
+        return self.query_readonly(
+            "SELECT recommendation_id, symbol, action, confidence, "
+            "signal_strength, entry_price, close_price, realized_return, "
+            "status, created_at, closed_at "
+            "FROM recommendations ORDER BY created_at DESC LIMIT ?",
+            [limit],
+        )
+
+    def create_user_profile(
+        self,
+        name: str,
+        portfolio_value: float,
+        risk_tolerance: int = 3,
+        max_positions: int = 20,
+        max_position_pct: float = 0.10,
+        excluded_sectors: list[str] | None = None,
+        excluded_symbols: list[str] | None = None,
+        preferred_horizon: str = "medium",
+    ) -> str:
+        """Create a new user profile for personalized recommendations.
+
+        Args:
+            name: Profile name
+            portfolio_value: Total portfolio value
+            risk_tolerance: 1-5 scale (1=conservative, 5=aggressive)
+            max_positions: Maximum number of positions
+            max_position_pct: Maximum single position as fraction
+            excluded_sectors: Sectors to exclude
+            excluded_symbols: Symbols to exclude
+            preferred_horizon: short, medium, or long
+
+        Returns:
+            Profile ID
+        """
+        import json
+
+        # Generate next profile ID
+        result = self._db.fetchone(
+            "SELECT profile_id FROM user_profiles "
+            "ORDER BY profile_id DESC LIMIT 1"
+        )
+        if result:
+            last_num = int(result[0].split("-")[-1])
+            profile_id = f"PROF-{last_num + 1:03d}"
+        else:
+            profile_id = "PROF-001"
+
+        self.execute_write(
+            "INSERT INTO user_profiles ("
+            "profile_id, name, risk_tolerance, portfolio_value, "
+            "max_positions, max_position_pct, excluded_sectors, "
+            "excluded_symbols, preferred_horizon"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                profile_id, name, risk_tolerance, portfolio_value,
+                max_positions, max_position_pct,
+                json.dumps(excluded_sectors) if excluded_sectors else None,
+                json.dumps(excluded_symbols) if excluded_symbols else None,
+                preferred_horizon,
+            ],
+        )
+        logger.info(f"Created user profile {profile_id}: {name}")
+        return profile_id
+
+    def get_user_profile(self, profile_id: str) -> dict | None:
+        """Get a user profile by ID.
+
+        Args:
+            profile_id: Profile ID (e.g., 'PROF-001')
+
+        Returns:
+            Dictionary with profile data, or None
+        """
+        df = self.query_readonly(
+            "SELECT * FROM user_profiles WHERE profile_id = ?",
+            [profile_id],
+        )
+        if df.empty:
+            return None
+        return df.iloc[0].to_dict()
+
+    def get_track_record(
+        self, start_date: date, end_date: date
+    ) -> pd.DataFrame:
+        """Get track record for a date range.
+
+        Args:
+            start_date: Start of period
+            end_date: End of period
+
+        Returns:
+            DataFrame of track record entries
+        """
+        return self.query_readonly(
+            "SELECT * FROM track_record "
+            "WHERE period_start >= ? AND period_end <= ? "
+            "ORDER BY period_start",
+            [start_date, end_date],
+        )

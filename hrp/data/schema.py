@@ -511,6 +511,10 @@ TABLES = {
                    'cio_agent_decision',
                    -- Data events
                    'data_ingestion', 'data_ingested', 'feature_computed', 'universe_update',
+                   -- Advisory service events
+                   'recommendation_generated', 'recommendation_approved',
+                   'recommendation_rejected', 'recommendation_closed',
+                   'track_record_updated', 'circuit_breaker_activated',
                    -- System events
                    'system_error', 'other'))
         )
@@ -656,6 +660,80 @@ TABLES = {
             FOREIGN KEY (symbol) REFERENCES symbols(symbol)
         )
     """,
+    # === Advisory Service tables (Tier 6) ===
+    "recommendations": """
+        CREATE TABLE IF NOT EXISTS recommendations (
+            recommendation_id VARCHAR PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            hypothesis_id VARCHAR,
+            model_name VARCHAR,
+            symbol VARCHAR NOT NULL,
+            action VARCHAR NOT NULL,
+            confidence VARCHAR NOT NULL,
+            signal_strength DECIMAL(10,6),
+            entry_price DECIMAL(12,4),
+            target_price DECIMAL(12,4),
+            stop_price DECIMAL(12,4),
+            position_pct DECIMAL(6,4),
+            thesis_plain TEXT,
+            risk_plain TEXT,
+            time_horizon_days INTEGER,
+            status VARCHAR DEFAULT 'active',
+            closed_at TIMESTAMP,
+            close_price DECIMAL(12,4),
+            realized_return DECIMAL(10,6),
+            batch_id VARCHAR,
+            CHECK (action IN ('BUY', 'HOLD', 'SELL')),
+            CHECK (confidence IN ('HIGH', 'MEDIUM', 'LOW')),
+            CHECK (status IN ('active', 'closed_profit', 'closed_loss',
+                   'closed_stopped', 'expired', 'cancelled', 'pending_approval'))
+        )
+    """,
+    "user_profiles": """
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            profile_id VARCHAR PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            name VARCHAR NOT NULL,
+            risk_tolerance INTEGER DEFAULT 3,
+            portfolio_value DECIMAL(15,2) NOT NULL,
+            max_positions INTEGER DEFAULT 20,
+            max_position_pct DECIMAL(5,4) DEFAULT 0.10,
+            excluded_sectors VARCHAR,
+            excluded_symbols VARCHAR,
+            preferred_horizon VARCHAR DEFAULT 'medium',
+            active BOOLEAN DEFAULT TRUE,
+            CHECK (risk_tolerance BETWEEN 1 AND 5),
+            CHECK (preferred_horizon IN ('short', 'medium', 'long'))
+        )
+    """,
+    "track_record": """
+        CREATE TABLE IF NOT EXISTS track_record (
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            total_recommendations INTEGER,
+            profitable INTEGER,
+            unprofitable INTEGER,
+            avg_return DECIMAL(10,6),
+            avg_win DECIMAL(10,6),
+            avg_loss DECIMAL(10,6),
+            best_pick VARCHAR,
+            worst_pick VARCHAR,
+            benchmark_return DECIMAL(10,6),
+            excess_return DECIMAL(10,6),
+            PRIMARY KEY (period_start, period_end)
+        )
+    """,
+    "universe_history": """
+        CREATE TABLE IF NOT EXISTS universe_history (
+            effective_date DATE NOT NULL,
+            symbol VARCHAR NOT NULL,
+            action VARCHAR NOT NULL,
+            reason VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (effective_date, symbol, action),
+            CHECK (action IN ('ADDED', 'REMOVED'))
+        )
+    """,
 }
 
 # Indexes for performance
@@ -685,6 +763,16 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_intraday_bars_ts ON intraday_bars(timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_intraday_features_symbol_ts ON intraday_features(symbol, timestamp, feature_name)",
     "CREATE INDEX IF NOT EXISTS idx_intraday_features_ts ON intraday_features(timestamp)",
+    # Advisory Service indexes
+    "CREATE INDEX IF NOT EXISTS idx_recommendations_status ON recommendations(status)",
+    "CREATE INDEX IF NOT EXISTS idx_recommendations_symbol ON recommendations(symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_recommendations_batch ON recommendations(batch_id)",
+    "CREATE INDEX IF NOT EXISTS idx_recommendations_created ON recommendations(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_recommendations_closed ON recommendations(closed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_recommendations_model ON recommendations(model_name)",
+    "CREATE INDEX IF NOT EXISTS idx_track_record_period ON track_record(period_start, period_end)",
+    "CREATE INDEX IF NOT EXISTS idx_universe_history_date ON universe_history(effective_date)",
+    "CREATE INDEX IF NOT EXISTS idx_universe_history_symbol ON universe_history(symbol)",
 ]
 
 
