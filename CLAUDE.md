@@ -164,6 +164,8 @@ All agents follow `agent.run()` pattern. Agent pipeline chain:
 | `hrp.agents.prediction_job` | `DailyPredictionJob` for deployed model predictions |
 | `hrp.agents.live_trader` | `LiveTradingAgent`, `TradingConfig` for trade execution |
 | `hrp.agents.drift_monitor_job` | `DriftMonitorJob`, `DriftConfig` for model drift detection |
+| `hrp.advisory` | **[PLANNED]** Recommendation engine, explainer, track record, portfolio construction |
+| `hrp.agents.recommendation_agent` | **[PLANNED]** Weekly recommendation generation agent |
 
 ## Walk-Forward Validation
 
@@ -225,6 +227,7 @@ hrp/
 ├── notifications/  # Email alerts
 ├── ops/            # Ops server (health, metrics, thresholds)
 ├── execution/      # Live trading, broker integration (Tier 4)
+├── advisory/       # Recommendation service, track record, portfolio construction (Tier 6)
 ├── monitoring/     # System health, ops alerting
 └── utils/          # Shared utilities (startup, locks, log_filter)
 ```
@@ -241,6 +244,8 @@ hrp/
 | New risk check | `hrp/risk/` |
 | New dashboard page | `hrp/dashboard/pages/` |
 | New scheduled job | `hrp/agents/jobs.py` |
+| New recommendation logic | `hrp/advisory/` |
+| New portfolio optimization | `hrp/advisory/portfolio_constructor.py` |
 | Expose via API | `hrp/api/platform.py` |
 
 ## Documentation
@@ -255,6 +260,8 @@ hrp/
 | `docs/agents/state-machine-transitions.md` | Complete state machine documentation: hypothesis states, pipeline stages, events, thresholds |
 | `docs/agents/01-*.md` through `docs/agents/10-*.md` | Individual agent specifications (numbered by pipeline order) |
 | `docs/plans/Project-Status.md` | Development roadmap and tier status |
+| `docs/plans/2026-02-19-strategic-analysis-autonomous-recommendations.md` | Strategic analysis: gap assessment, product direction, value proposition |
+| `docs/plans/2026-02-19-recommendation-service-implementation-plan.md` | Implementation plan: advisory service, portfolio construction, consumer interface |
 | `docs/setup/Scheduler-Configuration-Guide.md` | launchd job configuration |
 
 ## Testing
@@ -270,7 +277,9 @@ pytest tests/ -v
 | **Foundation** | Data + Research Core | 100% |
 | **Intelligence** | ML + Agents | 100% |
 | **Production** | Security + Ops | 100% |
-| **Trading** | Live Execution | 0% |
+| **Trading** | Live Execution | 100% |
+| **Advanced Analytics** | VaR/CVaR, Attribution, Real-time | 100% |
+| **Advisory** | Recommendations, Track Record, Consumer Interface | 0% |
 
 See `docs/plans/Project-Status.md` for details.
 
