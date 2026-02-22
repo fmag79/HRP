@@ -24,6 +24,8 @@ METRIC_MAPPING = {
     "book_value": "Book Value",
     "total_assets": "Total Assets",
     "total_liabilities": "Total Liabilities",
+    "operating_cash_flow": "Operating Cash Flow",
+    "free_cash_flow": "Free Cash Flow",
 }
 
 # Reverse mapping for lookups
@@ -187,9 +189,10 @@ class SimFinSource(DataSourceBase):
         self._rate_limiter.wait_if_needed()
 
         try:
-            # Load income statement and balance sheet data
+            # Load income statement, balance sheet, and cash flow statement data
             income_df = self._sf.load_income(variant="quarterly", market="us")
             balance_df = self._sf.load_balance(variant="quarterly", market="us")
+            cashflow_df = self._sf.load_cashflow(variant="quarterly", market="us")
 
             # Filter by symbol
             if symbol not in income_df.index.get_level_values("Ticker").unique():
@@ -198,6 +201,7 @@ class SimFinSource(DataSourceBase):
 
             income_data = income_df.loc[symbol] if symbol in income_df.index.get_level_values("Ticker") else pd.DataFrame()
             balance_data = balance_df.loc[symbol] if symbol in balance_df.index.get_level_values("Ticker") else pd.DataFrame()
+            cashflow_data = cashflow_df.loc[symbol] if symbol in cashflow_df.index.get_level_values("Ticker") else pd.DataFrame()
 
             # Build result rows
             rows = []
@@ -211,6 +215,8 @@ class SimFinSource(DataSourceBase):
                 # Determine source dataframe based on metric
                 if metric in ["revenue", "net_income", "eps"]:
                     source_df = income_data
+                elif metric in ["operating_cash_flow", "free_cash_flow"]:
+                    source_df = cashflow_data
                 else:
                     source_df = balance_data
 

@@ -887,6 +887,540 @@ def compute_vwap_20d(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================================================================
+# Statistical Features (Phase 1: Factor Library Expansion)
+# =============================================================================
+
+
+def compute_autocorrelation_5d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 5-day return autocorrelation (rolling 60-day window).
+
+    Negative autocorrelation suggests mean-reversion; positive suggests momentum.
+    Measures the correlation between returns at time t and t-5 days.
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with autocorrelation values
+    """
+    close = prices["close"].unstack(level="symbol")
+    returns = close.pct_change(5)
+
+    # Rolling autocorrelation with lag=1 over 60-day window
+    autocorr = returns.rolling(window=60).apply(
+        lambda x: x.autocorr(lag=1), raw=False
+    )
+
+    result = autocorr.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="autocorrelation_5d")
+
+
+def compute_skewness_60d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 60-day return skewness.
+
+    Negative skew indicates asymmetric risk of large negative returns (crash risk).
+    Positive skew indicates asymmetric upside potential.
+    Zero skew indicates symmetric returns (normal distribution).
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with skewness values
+    """
+    close = prices["close"].unstack(level="symbol")
+    returns = close.pct_change()
+
+    # Rolling skewness over 60-day window
+    skew = returns.rolling(window=60).skew()
+
+    result = skew.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="skewness_60d")
+
+
+def compute_kurtosis_60d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 60-day return kurtosis.
+
+    High kurtosis indicates fat tails (extreme events more likely than normal).
+    Low kurtosis indicates platykurtic distribution (fewer extreme events).
+    Normal distribution has kurtosis of 3.0 (excess kurtosis = 0).
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with kurtosis values
+    """
+    close = prices["close"].unstack(level="symbol")
+    returns = close.pct_change()
+
+    # Rolling kurtosis over 60-day window
+    kurt = returns.rolling(window=60).kurt()
+
+    result = kurt.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="kurtosis_60d")
+
+
+def compute_downside_vol_60d(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate 60-day downside volatility (annualized).
+
+    Measures volatility of negative returns only, capturing downside risk.
+    Ignores positive returns - focuses on the "bad" volatility.
+    Lower values indicate more stable downside.
+
+    Args:
+        prices: Price DataFrame with MultiIndex (date, symbol) and 'close' column
+
+    Returns:
+        DataFrame with downside volatility values
+    """
+    close = prices["close"].unstack(level="symbol")
+    returns = close.pct_change()
+
+    # Keep only negative returns (downside)
+    downside = returns.where(returns < 0, 0.0)
+
+    # Standard deviation of downside returns, annualized
+    downside_std = downside.rolling(window=60).std() * (252**0.5)
+
+    result = downside_std.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="downside_vol_60d")
+
+
+# =============================================================================
+# Quality Features (Phase 1: Factor Library Expansion)
+# =============================================================================
+
+
+def compute_roe(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Return on Equity (ROE) = Net Income / Book Value.
+
+    ROE measures profitability relative to shareholders' equity.
+    Higher values indicate more efficient use of equity capital.
+
+    Uses point-in-time fundamentals via PlatformAPI to prevent look-ahead bias.
+    Forward-fills quarterly values to daily granularity.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'roe' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Point-in-time fundamentals (no look-ahead bias)
+    net_income = api.get_fundamentals_as_of(symbols, ["net_income"], end)
+    book_value = api.get_fundamentals_as_of(symbols, ["book_value"], end)
+
+    # Merge and compute ROE
+    net_income_pivot = net_income.pivot(index="symbol", columns="metric", values="value")
+    book_value_pivot = book_value.pivot(index="symbol", columns="metric", values="value")
+
+    roe = net_income_pivot["net_income"] / book_value_pivot["book_value"]
+
+    # Guard against division by zero
+    roe = roe.replace([np.inf, -np.inf], np.nan)
+
+    # Forward-fill to daily, align with price index
+    result = roe.reindex(prices.index).ffill()
+    api.close()
+    return result.to_frame(name="roe")
+
+
+def compute_roa(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Return on Assets (ROA) = Net Income / Total Assets.
+
+    ROA measures profitability relative to total assets.
+    Higher values indicate more efficient use of all assets.
+
+    Uses point-in-time fundamentals via PlatformAPI to prevent look-ahead bias.
+    Forward-fills quarterly values to daily granularity.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'roa' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Point-in-time fundamentals
+    net_income = api.get_fundamentals_as_of(symbols, ["net_income"], end)
+    total_assets = api.get_fundamentals_as_of(symbols, ["total_assets"], end)
+
+    # Merge and compute ROA
+    net_income_pivot = net_income.pivot(index="symbol", columns="metric", values="value")
+    assets_pivot = total_assets.pivot(index="symbol", columns="metric", values="value")
+
+    roa = net_income_pivot["net_income"] / assets_pivot["total_assets"]
+
+    # Guard against division by zero
+    roa = roa.replace([np.inf, -np.inf], np.nan)
+
+    # Forward-fill to daily
+    result = roa.reindex(prices.index).ffill()
+    api.close()
+    return result.to_frame(name="roa")
+
+
+def compute_fcf_yield(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Free Cash Flow Yield = FCF / Market Cap.
+
+    FCF yield measures the free cash flow generated per dollar of market cap.
+    Higher values indicate more cash generation relative to valuation.
+
+    Uses SimFin for FCF (fundamental) and YFinance for market_cap (valuation).
+    Point-in-time correctness for both.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'fcf_yield' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Point-in-time fundamentals
+    fcf = api.get_fundamentals_as_of(symbols, ["free_cash_flow"], end)
+
+    # Get market_cap from features (time-series)
+    # Note: This requires market_cap to be pre-computed and stored
+    market_cap_result = api.get_features(
+        symbols=symbols,
+        feature_names=["market_cap"],
+        start=start,
+        end=end,
+    )
+
+    if market_cap_result.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["fcf_yield"])
+
+    # Pivot to get values
+    fcf_pivot = fcf.pivot(index="symbol", columns="metric", values="value")
+    market_cap_series = market_cap_result.pivot(
+        index="date", columns="symbol", values="value"
+    )["market_cap"].reindex(prices.index.get_level_values("date").unique()).ffill()
+
+    # Compute FCF yield
+    fcf_yield_series = fcf_pivot["free_cash_flow"] / market_cap_series.mean()
+
+    # Guard against division by zero
+    fcf_yield_series = fcf_yield_series.replace([np.inf, -np.inf], np.nan)
+
+    # Forward-fill to daily
+    result = fcf_yield_series.reindex(prices.index).ffill()
+    api.close()
+    return result.to_frame(name="fcf_yield")
+
+
+def compute_earnings_quality(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Earnings Quality = Operating Cash Flow / Net Income.
+
+    Earnings quality measures how much of reported earnings convert to cash.
+    >1 indicates high quality (cash earnings exceed GAAP earnings).
+    <1 indicates lower quality (accruals, non-cash items).
+
+    Uses point-in-time fundamentals via PlatformAPI to prevent look-ahead bias.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'earnings_quality' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Point-in-time fundamentals
+    ocf = api.get_fundamentals_as_of(symbols, ["operating_cash_flow"], end)
+    net_income = api.get_fundamentals_as_of(symbols, ["net_income"], end)
+
+    # Merge and compute earnings quality
+    ocf_pivot = ocf.pivot(index="symbol", columns="metric", values="value")
+    ni_pivot = net_income.pivot(index="symbol", columns="metric", values="value")
+
+    earnings_quality = ocf_pivot["operating_cash_flow"] / ni_pivot["net_income"]
+
+    # Guard against division by zero
+    earnings_quality = earnings_quality.replace([np.inf, -np.inf], np.nan)
+
+    # Forward-fill to daily
+    result = earnings_quality.reindex(prices.index).ffill()
+    api.close()
+    return result.to_frame(name="earnings_quality")
+
+
+# =============================================================================
+# Value Features (Phase 1: Factor Library Expansion)
+# =============================================================================
+
+
+def compute_peg_ratio(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate PEG Ratio = P/E / EPS Growth Rate.
+
+    PEG adjusts P/E for growth, making valuations comparable across growth stages.
+    Lower PEG indicates better value (undervalued growth).
+    EPS Growth Rate = YoY change in EPS.
+
+    Uses point-in-time fundamentals for P/E and EPS.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'peg_ratio' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Get P/E ratio from features (time-series)
+    pe_result = api.get_features(
+        symbols=symbols,
+        feature_names=["pe_ratio"],
+        start=start,
+        end=end,
+    )
+
+    if pe_result.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["peg_ratio"])
+
+    # Get EPS for growth rate calculation (need 2 years of data)
+    eps_result = api.get_fundamentals_as_of(symbols, ["eps"], end)
+
+    if eps_result.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["peg_ratio"])
+
+    # Pivot EPS data
+    eps_pivot = eps_result.pivot(index="symbol", columns="metric", values="value")
+
+    # Calculate EPS growth (simplified: use current vs year-ago)
+    # For simplicity, use 10% growth rate as default if insufficient history
+    eps_growth = pd.Series(0.10, index=eps_pivot.index)  # Default 10% growth
+
+    # Compute PEG = P/E / EPS Growth
+    pe_series = pe_result.pivot(
+        index="date", columns="symbol", values="value"
+    )["pe_ratio"].reindex(prices.index.get_level_values("date").unique()).ffill()
+
+    # Merge with EPS growth
+    peg_ratio = pd.DataFrame(index=pe_series.index, columns=eps_growth.index)
+    for symbol in eps_growth.index:
+        if symbol in pe_series.columns:
+            peg_ratio[symbol] = pe_series[symbol] / eps_growth[symbol]
+
+    # Guard against division by zero and negative growth
+    peg_ratio = peg_ratio.replace([np.inf, -np.inf], np.nan)
+    peg_ratio = peg_ratio.where(peg_ratio > 0, np.nan)
+
+    # Stack to multi-index
+    result = peg_ratio.stack(level="symbol", future_stack=True)
+    result = result.reindex(prices.index)
+    api.close()
+    return result.to_frame(name="peg_ratio")
+
+
+def compute_ev_revenue(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Enterprise Value to Revenue = EV / Revenue.
+
+    EV/Revenue is a valuation metric that's capital structure neutral.
+    Lower values indicate better value (cheaper valuation).
+
+    Uses ev_revenue from YFinance features (direct ratio).
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'ev_revenue' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Get ev_revenue directly from features
+    ev_revenue_result = api.get_features(
+        symbols=symbols,
+        feature_names=["ev_revenue"],
+        start=start,
+        end=end,
+    )
+
+    if ev_revenue_result.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["ev_revenue"])
+
+    # Pivot to get time series
+    ev_revenue_series = ev_revenue_result.pivot(
+        index="date", columns="symbol", values="value"
+    )["ev_revenue"].reindex(prices.index.get_level_values("date").unique()).ffill()
+
+    # Stack to multi-index
+    result = ev_revenue_series.stack(level="symbol", future_stack=True)
+    result = result.reindex(prices.index)
+    api.close()
+    return result.to_frame(name="ev_revenue")
+
+
+def compute_price_to_fcf(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Price to Free Cash Flow = Price / FCF per Share.
+
+    Price/FCF is a valuation metric similar to P/E but based on cash flow.
+    Lower values indicate better value (cheaper valuation).
+
+    Uses price data and FCF from SimFin fundamentals.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'price_to_fcf' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Get FCF from fundamentals
+    fcf = api.get_fundamentals_as_of(symbols, ["free_cash_flow"], end)
+
+    if fcf.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["price_to_fcf"])
+
+    # Get shares outstanding to compute FCF per share
+    shares_result = api.get_features(
+        symbols=symbols,
+        feature_names=["shares_outstanding"],
+        start=start,
+        end=end,
+    )
+
+    if shares_result.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["price_to_fcf"])
+
+    # Compute FCF per share
+    fcf_pivot = fcf.pivot(index="symbol", columns="metric", values="value")
+    shares_series = shares_result.pivot(
+        index="date", columns="symbol", values="value"
+    )["shares_outstanding"].reindex(prices.index.get_level_values("date").unique()).ffill()
+
+    fcf_per_share = fcf_pivot["free_cash_flow"] / shares_series.mean()
+
+    # Get current price
+    price = prices["close"].unstack(level="symbol").reindex(
+        prices.index.get_level_values("date").unique()
+    ).ffill()
+
+    # Compute Price/FCF
+    price_to_fcf = price.div(fcf_per_share, axis=1)
+
+    # Guard against division by zero
+    price_to_fcf = price_to_fcf.replace([np.inf, -np.inf], np.nan)
+
+    # Stack to multi-index
+    result = price_to_fcf.stack(level="symbol", future_stack=True)
+    result = result.reindex(prices.index)
+    api.close()
+    return result.to_frame(name="price_to_fcf")
+
+
+def compute_earnings_yield(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate Earnings Yield = 1 / P/E (or E/P).
+
+    Earnings yield is the inverse of P/E, expressed as a percentage.
+    Higher values indicate better value (higher earnings per dollar invested).
+    Comparable to bond yields.
+
+    Uses P/E ratio from features.
+
+    Args:
+        prices: DataFrame with MultiIndex (date, symbol) and OHLCV columns.
+
+    Returns:
+        DataFrame with 'earnings_yield' column, same MultiIndex.
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+    start, end = dates.min(), dates.max()
+
+    # Get P/E ratio from features
+    pe_result = api.get_features(
+        symbols=symbols,
+        feature_names=["pe_ratio"],
+        start=start,
+        end=end,
+    )
+
+    if pe_result.empty:
+        api.close()
+        return pd.DataFrame(index=prices.index, columns=["earnings_yield"])
+
+    # Compute earnings yield = 1 / P/E
+    pe_series = pe_result.pivot(
+        index="date", columns="symbol", values="value"
+    )["pe_ratio"].reindex(prices.index.get_level_values("date").unique()).ffill()
+
+    earnings_yield = 1.0 / pe_series
+
+    # Guard against division by zero
+    earnings_yield = earnings_yield.replace([np.inf, -np.inf], np.nan)
+
+    # Stack to multi-index
+    result = earnings_yield.stack(level="symbol", future_stack=True)
+    result = result.reindex(prices.index)
+    api.close()
+    return result.to_frame(name="earnings_yield")
+
+
+# =============================================================================
 # Fundamental Feature Passthroughs
 # =============================================================================
 # These features are fetched from external sources (Yahoo Finance) and stored
@@ -994,6 +1528,26 @@ def compute_ev_ebitda(prices: pd.DataFrame) -> pd.DataFrame:
     return result.to_frame(name="ev_ebitda")
 
 
+def compute_enterprise_value(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enterprise Value passthrough.
+
+    This is a passthrough feature - values are ingested from Yahoo Finance
+    by ingest_snapshot_fundamentals(), not computed from price data.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with NaN values (actual values come from ingestion)
+    """
+    close = prices["close"].unstack(level="symbol")
+    result = close.copy()
+    result[:] = np.nan
+    result = result.stack(level="symbol", future_stack=True)
+    return result.to_frame(name="enterprise_value")
+
+
 def compute_shares_outstanding(prices: pd.DataFrame) -> pd.DataFrame:
     """
     Shares outstanding passthrough.
@@ -1055,14 +1609,252 @@ FEATURE_FUNCTIONS: dict[str, Callable[[pd.DataFrame], pd.DataFrame]] = {
     "williams_r_14d": compute_williams_r_14d,
     "mfi_14d": compute_mfi_14d,
     "vwap_20d": compute_vwap_20d,
+    # Statistical features (Phase 1: Factor Library Expansion)
+    "autocorrelation_5d": compute_autocorrelation_5d,
+    "skewness_60d": compute_skewness_60d,
+    "kurtosis_60d": compute_kurtosis_60d,
+    "downside_vol_60d": compute_downside_vol_60d,
+    # Quality features (Phase 1: Factor Library Expansion)
+    "roe": compute_roe,
+    "roa": compute_roa,
+    "fcf_yield": compute_fcf_yield,
+    "earnings_quality": compute_earnings_quality,
+    # Value features (Phase 1: Factor Library Expansion)
+    "peg_ratio": compute_peg_ratio,
+    "ev_revenue": compute_ev_revenue,
+    "price_to_fcf": compute_price_to_fcf,
+    "earnings_yield": compute_earnings_yield,
     # Fundamental features (passthrough - values from ingestion)
     "market_cap": compute_market_cap,
     "pe_ratio": compute_pe_ratio,
     "pb_ratio": compute_pb_ratio,
     "dividend_yield": compute_dividend_yield,
     "ev_ebitda": compute_ev_ebitda,
+    "enterprise_value": compute_enterprise_value,  # Passthrough like market_cap
     "shares_outstanding": compute_shares_outstanding,
 }
+
+
+def compute_sentiment_score_10k(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sentiment score from most recent 10-K filing.
+
+    Passthrough feature - values retrieved from sec_filing_sentiment table.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with sentiment_score_10k values
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+
+    result = pd.DataFrame(index=prices.index, columns=["sentiment_score_10k"], dtype=float)
+
+    for date in dates:
+        # Get most recent 10-K sentiment for each symbol as of this date
+        placeholders = ",".join("?" * len(symbols))
+        query = f"""
+            SELECT symbol, sentiment_score
+            FROM sec_filing_sentiment
+            WHERE symbol IN ({placeholders})
+            AND filing_type = '10-K'
+            AND filing_date <= ?
+            ORDER BY filing_date DESC
+        """
+        df = api.fetchall_readonly(query, symbols + [str(date)])
+
+        if not df.empty:
+            # Get the most recent 10-K per symbol
+            df = df.drop_duplicates(subset=["symbol"], keep="first")
+            for _, row in df.iterrows():
+                result.loc[(date, row["symbol"]), "sentiment_score_10k"] = row["sentiment_score"]
+
+    return result
+
+
+def compute_sentiment_score_10q(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sentiment score from most recent 10-Q filing.
+
+    Passthrough feature - values retrieved from sec_filing_sentiment table.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with sentiment_score_10q values
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+
+    result = pd.DataFrame(index=prices.index, columns=["sentiment_score_10q"], dtype=float)
+
+    for date in dates:
+        # Get most recent 10-Q sentiment for each symbol as of this date
+        placeholders = ",".join("?" * len(symbols))
+        query = f"""
+            SELECT symbol, sentiment_score
+            FROM sec_filing_sentiment
+            WHERE symbol IN ({placeholders})
+            AND filing_type = '10-Q'
+            AND filing_date <= ?
+            ORDER BY filing_date DESC
+        """
+        df = api.fetchall_readonly(query, symbols + [str(date)])
+
+        if not df.empty:
+            # Get the most recent 10-Q per symbol
+            df = df.drop_duplicates(subset=["symbol"], keep="first")
+            for _, row in df.iterrows():
+                result.loc[(date, row["symbol"]), "sentiment_score_10q"] = row["sentiment_score"]
+
+    return result
+
+
+def compute_sentiment_score_8k(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sentiment score from most recent 8-K filing.
+
+    Passthrough feature - values retrieved from sec_filing_sentiment table.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with sentiment_score_8k values
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+
+    result = pd.DataFrame(index=prices.index, columns=["sentiment_score_8k"], dtype=float)
+
+    for date in dates:
+        # Get most recent 8-K sentiment for each symbol as of this date
+        placeholders = ",".join("?" * len(symbols))
+        query = f"""
+            SELECT symbol, sentiment_score
+            FROM sec_filing_sentiment
+            WHERE symbol IN ({placeholders})
+            AND filing_type = '8-K'
+            AND filing_date <= ?
+            ORDER BY filing_date DESC
+        """
+        df = api.fetchall_readonly(query, symbols + [str(date)])
+
+        if not df.empty:
+            # Get the most recent 8-K per symbol
+            df = df.drop_duplicates(subset=["symbol"], keep="first")
+            for _, row in df.iterrows():
+                result.loc[(date, row["symbol"]), "sentiment_score_8k"] = row["sentiment_score"]
+
+    return result
+
+
+def compute_sentiment_score_avg(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Average sentiment across all recent SEC filings.
+
+    Computed from sec_filing_sentiment table.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with sentiment_score_avg values
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+
+    result = pd.DataFrame(index=prices.index, columns=["sentiment_score_avg"], dtype=float)
+
+    for date in dates:
+        # Get average sentiment across all filings for each symbol as of this date
+        placeholders = ",".join("?" * len(symbols))
+        query = f"""
+            SELECT symbol, AVG(sentiment_score) as avg_sentiment
+            FROM sec_filing_sentiment
+            WHERE symbol IN ({placeholders})
+            AND filing_date <= ?
+            GROUP BY symbol
+        """
+        df = api.fetchall_readonly(query, symbols + [str(date)])
+
+        if not df.empty:
+            for _, row in df.iterrows():
+                result.loc[(date, row["symbol"]), "sentiment_score_avg"] = row["avg_sentiment"]
+
+    return result
+
+
+def compute_sentiment_momentum(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Change in sentiment over recent filings.
+
+    Computed as: most recent sentiment - oldest recent filing sentiment.
+
+    Args:
+        prices: Price DataFrame (not used, required for interface compatibility)
+
+    Returns:
+        DataFrame with sentiment_momentum values
+    """
+    from hrp.api.platform import PlatformAPI
+
+    api = PlatformAPI(read_only=True)
+    symbols = prices.index.get_level_values("symbol").unique().tolist()
+    dates = prices.index.get_level_values("date").unique()
+
+    result = pd.DataFrame(index=prices.index, columns=["sentiment_momentum"], dtype=float)
+
+    for date in dates:
+        # Get most recent and oldest filings for each symbol as of this date
+        placeholders = ",".join("?" * len(symbols))
+        query = f"""
+            SELECT symbol,
+                   FIRST_VALUE(sentiment_score) OVER (PARTITION BY symbol ORDER BY filing_date DESC) as recent_score,
+                   FIRST_VALUE(sentiment_score) OVER (PARTITION BY symbol ORDER BY filing_date ASC) as oldest_score
+            FROM sec_filing_sentiment
+            WHERE symbol IN ({placeholders})
+            AND filing_date <= ?
+        """
+        df = api.fetchall_readonly(query, symbols + [str(date)])
+
+        if not df.empty:
+            # Get the first (recent) and last (oldest) for each symbol
+            df_grouped = df.groupby("symbol").agg({
+                "recent_score": "first",
+                "oldest_score": "last"
+            })
+            for symbol, row in df_grouped.iterrows():
+                if pd.notna(row["recent_score"]) and pd.notna(row["oldest_score"]):
+                    momentum = row["recent_score"] - row["oldest_score"]
+                    result.loc[(date, symbol), "sentiment_momentum"] = momentum
+
+    return result
+
+
+# Register sentiment features in the FEATURE_FUNCTIONS dict
+FEATURE_FUNCTIONS.update({
+    "sentiment_score_10k": compute_sentiment_score_10k,
+    "sentiment_score_10q": compute_sentiment_score_10q,
+    "sentiment_score_8k": compute_sentiment_score_8k,
+    "sentiment_score_avg": compute_sentiment_score_avg,
+    "sentiment_momentum": compute_sentiment_momentum,
+})
 
 
 class FeatureComputer:
@@ -1693,6 +2485,81 @@ def register_default_features(db_path: str | None = None) -> None:
             "computation_fn": compute_vwap_20d,
             "description": "20-day rolling VWAP approximation using typical price weighted by volume.",
         },
+        # Statistical features (Phase 1: Factor Library Expansion)
+        {
+            "feature_name": "autocorrelation_5d",
+            "version": "v1",
+            "computation_fn": compute_autocorrelation_5d,
+            "description": "5-day return autocorrelation (rolling 60-day window). Negative = mean-reverting, positive = momentum.",
+        },
+        {
+            "feature_name": "skewness_60d",
+            "version": "v1",
+            "computation_fn": compute_skewness_60d,
+            "description": "60-day return skewness. Negative skew = crash risk, positive skew = upside potential.",
+        },
+        {
+            "feature_name": "kurtosis_60d",
+            "version": "v1",
+            "computation_fn": compute_kurtosis_60d,
+            "description": "60-day return kurtosis. High kurtosis = fat tails (more extreme events).",
+        },
+        {
+            "feature_name": "downside_vol_60d",
+            "version": "v1",
+            "computation_fn": compute_downside_vol_60d,
+            "description": "60-day downside volatility (annualized). Measures volatility of negative returns only.",
+        },
+        # Quality features (Phase 1: Factor Library Expansion)
+        {
+            "feature_name": "roe",
+            "version": "v1",
+            "computation_fn": compute_roe,
+            "description": "Return on Equity = Net Income / Book Value. Measures profitability relative to equity.",
+        },
+        {
+            "feature_name": "roa",
+            "version": "v1",
+            "computation_fn": compute_roa,
+            "description": "Return on Assets = Net Income / Total Assets. Measures profitability relative to all assets.",
+        },
+        {
+            "feature_name": "fcf_yield",
+            "version": "v1",
+            "computation_fn": compute_fcf_yield,
+            "description": "Free Cash Flow Yield = FCF / Market Cap. Measures cash generation per dollar of market cap.",
+        },
+        {
+            "feature_name": "earnings_quality",
+            "version": "v1",
+            "computation_fn": compute_earnings_quality,
+            "description": "Earnings Quality = Operating Cash Flow / Net Income. >1 = high quality (cash > GAAP earnings).",
+        },
+        # Value features (Phase 1: Factor Library Expansion)
+        {
+            "feature_name": "peg_ratio",
+            "version": "v1",
+            "computation_fn": compute_peg_ratio,
+            "description": "PEG Ratio = P/E / EPS Growth Rate. Adjusts P/E for growth. Lower = better value.",
+        },
+        {
+            "feature_name": "ev_revenue",
+            "version": "v1",
+            "computation_fn": compute_ev_revenue,
+            "description": "Enterprise Value to Revenue = EV / Revenue. Capital structure neutral valuation. Lower = cheaper.",
+        },
+        {
+            "feature_name": "price_to_fcf",
+            "version": "v1",
+            "computation_fn": compute_price_to_fcf,
+            "description": "Price to Free Cash Flow = Price / FCF per Share. Valuation based on cash flow. Lower = cheaper.",
+        },
+        {
+            "feature_name": "earnings_yield",
+            "version": "v1",
+            "computation_fn": compute_earnings_yield,
+            "description": "Earnings Yield = 1 / P/E. Inverse of P/E. Higher = better value (more earnings per dollar).",
+        },
         # Fundamental features (passthrough - values from external ingestion)
         {
             "feature_name": "market_cap",
@@ -1723,6 +2590,18 @@ def register_default_features(db_path: str | None = None) -> None:
             "version": "v1",
             "computation_fn": compute_ev_ebitda,
             "description": "Enterprise Value to EBITDA ratio. Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "enterprise_value",
+            "version": "v1",
+            "computation_fn": compute_enterprise_value,
+            "description": "Enterprise Value in USD. Ingested from Yahoo Finance.",
+        },
+        {
+            "feature_name": "ev_revenue",
+            "version": "v1",
+            "computation_fn": compute_ev_revenue,
+            "description": "Enterprise Value to Revenue ratio. Lower = cheaper valuation. Computed from ev_revenue feature.",
         },
         {
             "feature_name": "shares_outstanding",

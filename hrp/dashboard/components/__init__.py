@@ -7,6 +7,20 @@ from hrp.dashboard.components.strategy_config import (
     render_ml_predicted_config,
     get_available_features,
 )
+from hrp.dashboard.components.optimization_controls import (
+    render_strategy_selector,
+    render_model_selector,
+    render_sampler_selector,
+    render_trials_slider,
+    render_folds_slider,
+    render_scoring_selector,
+    render_date_range,
+    render_feature_selector,
+    render_optimization_preview,
+    render_results_tab,
+    render_fold_analysis_tab,
+    render_study_history_tab,
+)
 from hrp.dashboard.components.walkforward_viz import (
     render_walkforward_splits,
     render_fold_metrics_heatmap,
@@ -35,6 +49,19 @@ __all__ = [
     "render_multifactor_config",
     "render_ml_predicted_config",
     "get_available_features",
+    # Optimization controls
+    "render_strategy_selector",
+    "render_model_selector",
+    "render_sampler_selector",
+    "render_trials_slider",
+    "render_folds_slider",
+    "render_scoring_selector",
+    "render_date_range",
+    "render_feature_selector",
+    "render_optimization_preview",
+    "render_results_tab",
+    "render_fold_analysis_tab",
+    "render_study_history_tab",
     # Walk-forward visualization
     "render_walkforward_splits",
     "render_fold_metrics_heatmap",

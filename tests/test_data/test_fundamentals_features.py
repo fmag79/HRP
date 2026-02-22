@@ -154,8 +154,8 @@ class TestFundamentalFeatureRegistration:
         assert FEATURE_FUNCTIONS["shares_outstanding"] == compute_shares_outstanding
 
     def test_total_features_count(self):
-        """Should have 45 total features (39 technical + 6 fundamental)."""
-        assert len(FEATURE_FUNCTIONS) == 45
+        """Should have 62 total features (39 technical + 12 Phase 1 + 6 fundamental + 5 Phase 2)."""
+        assert len(FEATURE_FUNCTIONS) == 62
 
 
 # =============================================================================

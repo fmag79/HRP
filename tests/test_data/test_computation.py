@@ -756,7 +756,14 @@ class TestFeatureFunctionsRegistry:
             "price_to_sma_20d", "price_to_sma_50d", "price_to_sma_200d",
             "ema_12d", "ema_26d", "ema_crossover",
             "williams_r_14d", "mfi_14d", "vwap_20d",
-            "market_cap", "pe_ratio", "pb_ratio", "dividend_yield", "ev_ebitda",
+            # Statistical features (Phase 1: Factor Library Expansion)
+            "autocorrelation_5d", "skewness_60d", "kurtosis_60d", "downside_vol_60d",
+            # Quality features (Phase 1: Factor Library Expansion)
+            "roe", "roa", "fcf_yield", "earnings_quality",
+            # Value features (Phase 1: Factor Library Expansion)
+            "peg_ratio", "ev_revenue", "price_to_fcf", "earnings_yield",
+            # Fundamental features (passthrough)
+            "market_cap", "pe_ratio", "pb_ratio", "dividend_yield", "ev_ebitda", "enterprise_value",
         ]
 
         for feature in expected_features:
@@ -769,8 +776,8 @@ class TestFeatureFunctionsRegistry:
 
     def test_registry_function_count(self):
         """FEATURE_FUNCTIONS should have expected count."""
-        # 39 technical + 6 fundamental = 45 features
-        assert len(FEATURE_FUNCTIONS) == 45
+        # 39 technical + 12 new (Phase 1: Factor Library Expansion) + 7 fundamental + 5 Phase 2 (NLP Sentiment) = 63 features
+        assert len(FEATURE_FUNCTIONS) == 63
 
 
 # =============================================================================

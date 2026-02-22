@@ -110,6 +110,19 @@ def run_fundamentals(dry_run: bool = False, source: str = "simfin") -> dict:
     return job.run()
 
 
+def run_sec_ingestion(dry_run: bool = False, lookback_days: int = 180) -> dict:
+    """Run weekly SEC filings ingestion with sentiment analysis."""
+    from hrp.data.ingestion.sec_ingestion import SECIngestionJob
+
+    if dry_run:
+        logger.info(f"[DRY RUN] Would run SEC filings ingestion ({lookback_days} days)")
+        return {"status": "dry_run", "job": "sec-ingestion", "lookback_days": lookback_days}
+
+    job = SECIngestionJob()
+    job.run(lookback_days=lookback_days)
+    return {"status": "success", "job": "sec-ingestion"}
+
+
 def run_fundamentals_backfill(dry_run: bool = False, days: int = 365) -> dict:
     """Run comprehensive fundamentals backfill."""
     from hrp.agents.jobs import ComprehensiveFundamentalsBackfillJob
@@ -441,6 +454,7 @@ JOBS: dict[str, callable] = {
     "backup": run_backup,
     "fundamentals": run_fundamentals,
     "fundamentals-backfill": run_fundamentals_backfill,
+    "sec-ingestion": run_sec_ingestion,
     "signal-scan": run_signal_scan,
     "agent-pipeline": run_agent_pipeline,
     "daily-report": run_daily_report,
@@ -466,6 +480,7 @@ Available jobs:
   backup               Daily database backup
   fundamentals         Weekly fundamentals ingestion
   fundamentals-backfill Comprehensive fundamentals backfill (--days N)
+  sec-ingestion        Weekly SEC filings ingestion with sentiment analysis (--days N)
   signal-scan          Weekly signal discovery scan
   agent-pipeline       Check lineage events, run downstream agents
   daily-report         Generate daily research report
@@ -536,6 +551,8 @@ Available jobs:
             kwargs["source"] = args.fundamentals_source
         elif args.job == "fundamentals-backfill":
             kwargs["days"] = args.days
+        elif args.job == "sec-ingestion":
+            kwargs["lookback_days"] = args.days
         elif args.job == "live-trader":
             # --execute-trades overrides --trading-dry-run
             kwargs["trading_dry_run"] = not args.execute_trades

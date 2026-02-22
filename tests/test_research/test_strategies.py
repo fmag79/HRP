@@ -446,16 +446,23 @@ class TestPresetStrategies:
     """Tests for PRESET_STRATEGIES and get_preset_strategy()."""
 
     def test_preset_registry_contains_expected_presets(self):
-        """Registry should contain all four strategy presets."""
+        """Registry should contain all strategy presets including regime_adaptive."""
         assert "mean_reversion" in PRESET_STRATEGIES
         assert "trend_following" in PRESET_STRATEGIES
         assert "quality_momentum" in PRESET_STRATEGIES
         assert "volume_breakout" in PRESET_STRATEGIES
+        assert "regime_adaptive" in PRESET_STRATEGIES
 
     def test_preset_entries_have_required_fields(self):
         """Each preset should have name, description, feature_weights, default_top_n."""
+        # regime_adaptive has different structure (bull_weights, bear_weights, sideways_weights)
+        regime_switching_presets = ["regime_adaptive"]
+
         required_fields = ["name", "description", "feature_weights", "default_top_n"]
         for preset_name, preset in PRESET_STRATEGIES.items():
+            if preset_name in regime_switching_presets:
+                continue  # Skip regime switching presets
+
             for field in required_fields:
                 assert field in preset, f"{preset_name} missing '{field}'"
             # Validate types
@@ -467,6 +474,9 @@ class TestPresetStrategies:
 
     def test_preset_feature_weights_use_valid_features(self):
         """Feature weights should use valid feature names from the feature store."""
+        # regime_adaptive has different structure (bull_weights, bear_weights, sideways_weights)
+        regime_switching_presets = ["regime_adaptive"]
+
         # Known valid features from CLAUDE.md
         valid_features = {
             "returns_1d", "returns_5d", "returns_20d", "returns_60d", "returns_252d",
@@ -481,6 +491,9 @@ class TestPresetStrategies:
         }
 
         for preset_name, preset in PRESET_STRATEGIES.items():
+            if preset_name in regime_switching_presets:
+                continue  # Skip regime switching presets
+
             for feature in preset["feature_weights"]:
                 assert feature in valid_features, (
                     f"Preset '{preset_name}' uses unknown feature '{feature}'"
@@ -501,7 +514,14 @@ class TestPresetStrategies:
 
     def test_get_preset_strategy_all_presets(self):
         """get_preset_strategy should work for all defined presets."""
+        # Skip regime_adaptive - it has different structure (bull_weights, bear_weights, sideways_weights)
+        # and is handled by generate_regime_switching_signals(), not get_preset_strategy()
+        regime_switching_presets = ["regime_adaptive"]
+
         for preset_name in PRESET_STRATEGIES:
+            if preset_name in regime_switching_presets:
+                continue  # Skip regime switching presets
+
             config = get_preset_strategy(preset_name)
             assert config["feature_weights"] == PRESET_STRATEGIES[preset_name]["feature_weights"]
             assert config["top_n"] == PRESET_STRATEGIES[preset_name]["default_top_n"]
@@ -513,13 +533,17 @@ class TestPresetStrategies:
 
     def test_preset_generates_valid_signals(self, sample_prices, mock_feature_computer):
         """Each preset should generate valid signals when used with generate_multifactor_signals."""
+        # Skip regime_adaptive - it has different structure and is handled by generate_regime_switching_signals()
+        regime_switching_presets = ["regime_adaptive"]
+
         dates = sample_prices.index
         symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
 
         # Create mock features with all required features
         all_features = set()
-        for preset in PRESET_STRATEGIES.values():
-            all_features.update(preset["feature_weights"].keys())
+        for preset_name, preset in PRESET_STRATEGIES.items():
+            if preset_name not in regime_switching_presets:
+                all_features.update(preset["feature_weights"].keys())
 
         mock_data = {
             feature: np.random.randn(len(dates) * len(symbols))
@@ -531,8 +555,11 @@ class TestPresetStrategies:
         )
         mock_feature_computer.get_stored_features.return_value = mock_features
 
-        # Test each preset
+        # Test each preset (except regime_adaptive)
         for preset_name in PRESET_STRATEGIES:
+            if preset_name in regime_switching_presets:
+                continue  # Skip regime switching presets
+
             config = get_preset_strategy(preset_name)
             signals = generate_multifactor_signals(
                 sample_prices,

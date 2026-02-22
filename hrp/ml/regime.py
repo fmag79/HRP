@@ -370,6 +370,68 @@ class RegimeDetector:
             regime_labels=regime_labels,
         )
 
+    def predict_proba(self, prices: pd.DataFrame) -> pd.DataFrame:
+        """
+        Get regime probabilities for each time step.
+
+        Returns DataFrame with columns: P(bull), P(bear), P(sideways), etc.
+        Rows are dates. Probabilities sum to 1.0 per row.
+
+        Uses HMM forward algorithm (not just Viterbi decoding).
+
+        Args:
+            prices: DataFrame with OHLCV data
+
+        Returns:
+            DataFrame with regime probabilities indexed by date
+
+        Raises:
+            ValueError: If model not fitted
+        """
+        if not self._fitted:
+            raise ValueError("Model must be fitted before prediction. Call fit() first.")
+
+        logger.debug("Computing regime probabilities using HMM forward algorithm")
+
+        X = self._prepare_features(prices, fit=False)
+
+        # Handle NaN
+        valid_mask = ~np.isnan(X).any(axis=1)
+        X_clean = X[valid_mask]
+
+        # Get state probabilities using forward algorithm
+        proba = self._model.predict_proba(X_clean)
+
+        # Get regime labels for column names
+        regime_labels_dict = {}
+        # Need to compute regime labels first
+        regime_means_dict = {}
+        for i in range(self.config.n_regimes):
+            means_normalized = self._model.means_[i]
+            means_denorm = (
+                means_normalized * self._feature_stds + self._feature_means
+            )
+            regime_means_dict[i] = {
+                feat: float(means_denorm[j])
+                for j, feat in enumerate(self.config.features)
+            }
+        regime_labels_dict = self._label_regimes(regime_means_dict)
+
+        # Create DataFrame with labeled columns
+        columns = [regime_labels_dict[i].value for i in range(self.config.n_regimes)]
+        proba_df = pd.DataFrame(proba, columns=columns)
+
+        # Create full-length result with NaN for invalid rows
+        full_proba = pd.DataFrame(np.nan, index=prices.index, columns=columns)
+        full_proba.iloc[valid_mask] = proba_df.values
+
+        logger.debug(
+            f"Regime probabilities computed: shape={full_proba.shape}, "
+            f"columns={columns}"
+        )
+
+        return full_proba
+
     def _label_regimes(
         self,
         regime_means: dict[int, dict[str, float]],

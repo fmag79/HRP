@@ -22,6 +22,8 @@ CLEANUP_CUTOFF_DAYS: dict[str, int] = {
     "features": 365 * 3,  # 3 years
     "lineage": 365,  # 1 year
     "ingestion_log": 365,  # 1 year
+    "intraday_bars": 30,  # 30 days (hot: 7, warm: 7-30, cold: delete)
+    "intraday_features": 30,  # 30 days (same retention as bars)
 }
 
 
@@ -177,6 +179,14 @@ class DataCleanupJob:
             elif data_type == "ingestion_log":
                 result.records_deleted = self._cleanup_table(
                     conn, "ingestion_log", "started_at", cutoff_date
+                )
+            elif data_type == "intraday_bars":
+                result.records_deleted = self._cleanup_table(
+                    conn, "intraday_bars", "timestamp", cutoff_date
+                )
+            elif data_type == "intraday_features":
+                result.records_deleted = self._cleanup_table(
+                    conn, "intraday_features", "timestamp", cutoff_date
                 )
             else:
                 result.errors.append(f"Cleanup not implemented for data type: {data_type}")

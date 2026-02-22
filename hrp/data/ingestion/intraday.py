@@ -187,7 +187,17 @@ def _batch_upsert_intraday(bars: list[dict], conn_pool: ConnectionPool) -> int:
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    with conn_pool.get_connection() as conn:
+    # Ensure all required columns exist with defaults
+    default_columns = {
+        "trade_count": None,
+        "vwap": None,
+        "source": "polygon_ws",
+    }
+    for col, default_val in default_columns.items():
+        if col not in df.columns:
+            df[col] = default_val
+
+    with conn_pool.connection() as conn:
         try:
             # Create temporary table
             conn.execute(
@@ -202,13 +212,23 @@ def _batch_upsert_intraday(bars: list[dict], conn_pool: ConnectionPool) -> int:
                     volume BIGINT,
                     vwap DECIMAL(12,4),
                     trade_count INTEGER,
-                    source VARCHAR DEFAULT 'polygon_ws'
+                    source VARCHAR DEFAULT 'polygon_ws',
+                    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
 
-            # Insert data to temp table
-            conn.execute("INSERT INTO temp_intraday_bars SELECT * FROM df")
+            # Insert data to temp table (excluding ingested_at - will use DEFAULT)
+            conn.execute("""
+                INSERT INTO temp_intraday_bars (
+                    symbol, timestamp, open, high, low, close,
+                    volume, vwap, trade_count, source
+                )
+                SELECT
+                    symbol, timestamp, open, high, low, close,
+                    volume, vwap, trade_count, source
+                FROM df
+            """)
 
             # Upsert: ON CONFLICT updates existing rows, preserves ingested_at
             result = conn.execute(
@@ -385,6 +405,114 @@ class IntradayIngestionService:
         market_close = dt_time(16, 0)
 
         return market_open <= now_et <= market_close
+
+    def gap_fill_after_reconnect(self, symbols: list[str]) -> int:
+        """
+        Fill data gaps after WebSocket reconnection using REST API.
+
+        Detects gaps in intraday_bars by finding missing timestamps
+        for each symbol, then backfills using PolygonSource.get_minute_bars().
+
+        Args:
+            symbols: List of symbols being tracked
+
+        Returns:
+            Number of bars backfilled
+        """
+        from hrp.data.sources.polygon_source import PolygonSource
+
+        logger.info("Starting gap-fill after reconnection...")
+
+        try:
+            polygon_source = PolygonSource()
+        except Exception as e:
+            logger.error(f"Could not initialize PolygonSource for gap-fill: {e}")
+            return 0
+
+        total_backfilled = 0
+
+        for symbol in symbols:
+            try:
+                # Find last bar timestamp in DB for this symbol
+                with self.conn_pool.connection() as conn:
+                    result = conn.execute(
+                        """
+                        SELECT MAX(timestamp) as last_timestamp
+                        FROM intraday_bars
+                        WHERE symbol = ?
+                        """,
+                        (symbol,)
+                    ).fetchone()
+
+                    last_timestamp = result[0] if result and result[0] else None
+
+                if not last_timestamp:
+                    logger.debug(f"No existing data for {symbol}, skipping gap-fill")
+                    continue
+
+                # Convert to datetime if needed
+                if isinstance(last_timestamp, str):
+                    last_timestamp = datetime.fromisoformat(last_timestamp)
+
+                # Check if gap exists (more than 2 minutes since last bar during market hours)
+                now = datetime.now(UTC)
+                gap_minutes = (now - last_timestamp).total_seconds() / 60
+
+                if gap_minutes < 2:
+                    logger.debug(f"No gap for {symbol} (last bar {gap_minutes:.1f}m ago)")
+                    continue
+
+                if gap_minutes > 120:  # More than 2 hours - likely not a reconnect gap
+                    logger.warning(
+                        f"Large gap detected for {symbol} ({gap_minutes:.0f} minutes). "
+                        f"Skipping gap-fill to avoid large REST fetch."
+                    )
+                    continue
+
+                logger.info(f"Gap detected for {symbol}: {gap_minutes:.0f} minutes")
+
+                # Backfill using REST API
+                start_time = last_timestamp
+                end_time = now
+
+                bars_df = polygon_source.get_minute_bars(
+                    symbol=symbol,
+                    start=start_time,
+                    end=end_time,
+                )
+
+                if bars_df.empty:
+                    logger.debug(f"No gap-fill data returned for {symbol}")
+                    continue
+
+                # Convert to IntradayBar format
+                bars_to_insert = []
+                for _, row in bars_df.iterrows():
+                    bars_to_insert.append({
+                        "symbol": symbol,
+                        "timestamp": row["timestamp"],
+                        "open": row["open"],
+                        "high": row["high"],
+                        "low": row["low"],
+                        "close": row["close"],
+                        "volume": row["volume"],
+                        "vwap": row.get("vwap"),
+                        "trade_count": row.get("trade_count"),
+                        "source": "polygon_rest_gapfill",
+                    })
+
+                # Upsert backfilled bars
+                if bars_to_insert:
+                    rows_written = _batch_upsert_intraday(bars_to_insert, self.conn_pool)
+                    total_backfilled += rows_written
+                    logger.info(f"Gap-filled {rows_written} bars for {symbol}")
+
+            except Exception as e:
+                logger.error(f"Error gap-filling {symbol}: {e}", exc_info=True)
+                continue
+
+        logger.info(f"Gap-fill complete: {total_backfilled} bars backfilled")
+        return total_backfilled
 
     def _on_message(self, msgs: list[dict]) -> None:
         """

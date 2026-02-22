@@ -734,6 +734,44 @@ TABLES = {
             CHECK (action IN ('ADDED', 'REMOVED'))
         )
     """,
+    # === SEC Filings tables ===
+    "sec_filings": """
+        CREATE TABLE IF NOT EXISTS sec_filings (
+            symbol VARCHAR(10),
+            cik VARCHAR(10),
+            filing_type VARCHAR(10),
+            filing_date DATE,
+            accession_number VARCHAR(30),
+            document_url TEXT,
+            filing_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (accession_number),
+            CHECK (filing_type IN ('10-K', '10-Q', '8-K'))
+        )
+    """,
+    "sec_filing_sentiment": """
+        CREATE TABLE IF NOT EXISTS sec_filing_sentiment (
+            symbol VARCHAR(10),
+            cik VARCHAR(10),
+            filing_type VARCHAR(10),
+            filing_date DATE,
+            accession_number VARCHAR(30),
+            sentiment_score DOUBLE,
+            analysis TEXT,
+            model_used VARCHAR(50),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (accession_number),
+            CHECK (sentiment_score IS NULL OR (sentiment_score >= -1.0 AND sentiment_score <= 1.0))
+        )
+    """,
+    # === Settings and Configuration ===
+    "settings": """
+        CREATE TABLE IF NOT EXISTS settings (
+            key VARCHAR PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
 }
 
 # Indexes for performance
@@ -773,6 +811,11 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_track_record_period ON track_record(period_start, period_end)",
     "CREATE INDEX IF NOT EXISTS idx_universe_history_date ON universe_history(effective_date)",
     "CREATE INDEX IF NOT EXISTS idx_universe_history_symbol ON universe_history(symbol)",
+    # SEC Filings indexes
+    "CREATE INDEX IF NOT EXISTS idx_sec_filings_symbol_date ON sec_filings(symbol, filing_date)",
+    "CREATE INDEX IF NOT EXISTS idx_sec_filings_filing_type ON sec_filings(filing_type)",
+    "CREATE INDEX IF NOT EXISTS idx_sec_sentiment_symbol_date ON sec_filing_sentiment(symbol, filing_date)",
+    "CREATE INDEX IF NOT EXISTS idx_sec_sentiment_filing_type ON sec_filing_sentiment(filing_type)",
 ]
 
 

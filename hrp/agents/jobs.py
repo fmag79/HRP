@@ -1210,6 +1210,20 @@ class IntradayIngestionJob(IngestionJob):
         Returns:
             Dictionary with session stats (bars_received, bars_written, etc.)
         """
+        # Check market calendar before starting
+        from hrp.utils.market_calendar import should_run_intraday_session
+
+        today = date.today()
+        if not should_run_intraday_session(today):
+            logger.info(f"Market closed today ({today}). Skipping intraday ingestion.")
+            return {
+                "bars_received": 0,
+                "bars_written": 0,
+                "session_start": None,
+                "is_connected": False,
+                "skip_reason": "market_closed",
+            }
+
         # Resolve symbols from universe if not explicitly provided
         if self._symbols_override is None:
             um = UniverseManager()

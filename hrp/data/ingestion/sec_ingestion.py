@@ -14,7 +14,7 @@ from loguru import logger
 try:
     from hrp.data.db import get_connection
     from hrp.data.sources.edgar_source import EDGARSource
-    from hrp.sentiment_analyzer import SentimentAnalyzer, create_sentiment_analyzer
+    from hrp.data.sentiment_analyzer import SentimentAnalyzer, create_sentiment_analyzer
 except ImportError:
     logger.warning("Failed to import HRP modules - running in standalone mode")
 

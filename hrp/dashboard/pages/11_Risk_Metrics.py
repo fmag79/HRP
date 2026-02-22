@@ -48,6 +48,11 @@ def render() -> None:
 
     st.divider()
 
+    # Risk Manager Limits (Phase 4)
+    _render_risk_manager_limits(api)
+
+    st.divider()
+
     # Portfolio VaR Overview
     _render_portfolio_var_overview(api, config)
 
@@ -111,6 +116,159 @@ def _render_config_section() -> VaRConfig:
         method=VaRMethod(method),
         distribution=Distribution(distribution),
     )
+
+
+def _render_risk_manager_limits(api: PlatformAPI) -> None:
+    """
+    Render Risk Manager limit controls (Phase 4).
+
+    Exposes key risk parameters that the RiskManager uses when evaluating
+    new hypotheses. These controls allow users to adjust portfolio risk tolerance.
+    """
+    st.subheader("Risk Manager Limits")
+
+    # Initialize session state for risk limits if not present
+    if "risk_limits" not in st.session_state:
+        st.session_state.risk_limits = {
+            "max_drawdown": 0.20,  # 20% max drawdown
+            "max_correlation": 0.70,  # 70% max correlation
+            "max_sector_exposure": 0.30,  # 30% max sector exposure
+        }
+
+    # Load current limits from database if available
+    try:
+        limits_query = """
+        SELECT key, value FROM settings
+        WHERE key IN ('max_drawdown', 'max_correlation', 'max_sector_exposure')
+        """
+        existing_limits = api.query_readonly(limits_query)
+
+        if not existing_limits.empty:
+            for _, row in existing_limits.iterrows():
+                if row["key"] in st.session_state.risk_limits:
+                    try:
+                        st.session_state.risk_limits[row["key"]] = float(row["value"])
+                    except (ValueError, TypeError):
+                        pass
+    except Exception as e:
+        logger.debug(f"Could not load risk limits from database: {e}")
+
+    # Display current limits
+    st.info("💡 These limits control risk tolerance for new hypothesis evaluation")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        max_drawdown = st.slider(
+            "Max Drawdown",
+            min_value=0.05,
+            max_value=0.50,
+            value=st.session_state.risk_limits["max_drawdown"],
+            step=0.05,
+            format_func=lambda x: f"{x*100:.0f}%",
+            help="Maximum allowed portfolio drawdown. Hypotheses exceeding this will be vetoed.",
+        )
+
+    with col2:
+        max_correlation = st.slider(
+            "Max Correlation",
+            min_value=0.50,
+            max_value=0.95,
+            value=st.session_state.risk_limits["max_correlation"],
+            step=0.05,
+            format_func=lambda x: f"{x*100:.0f}%",
+            help="Maximum correlation with existing positions. Limits concentration in similar assets.",
+        )
+
+    with col3:
+        max_sector_exposure = st.slider(
+            "Max Sector Exposure",
+            min_value=0.10,
+            max_value=0.50,
+            value=st.session_state.risk_limits["max_sector_exposure"],
+            step=0.05,
+            format_func=lambda x: f"{x*100:.0f}%",
+            help="Maximum exposure to any single sector. Limits sector concentration risk.",
+        )
+
+    # Save button
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        if st.button("Save Risk Limits", type="primary"):
+            try:
+                # Update database
+                upsert_query = """
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """
+
+                api.query_write(upsert_query, ("max_drawdown", max_drawdown))
+                api.query_write(upsert_query, ("max_correlation", max_correlation))
+                api.query_write(upsert_query, ("max_sector_exposure", max_sector_exposure))
+
+                # Update session state
+                st.session_state.risk_limits = {
+                    "max_drawdown": max_drawdown,
+                    "max_correlation": max_correlation,
+                    "max_sector_exposure": max_sector_exposure,
+                }
+
+                st.success("✅ Risk limits saved successfully!")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"❌ Failed to save risk limits: {e}")
+                logger.error(f"Failed to save risk limits: {e}")
+
+    with col2:
+        if st.button("Reset to Defaults"):
+            try:
+                default_limits = {
+                    "max_drawdown": 0.20,
+                    "max_correlation": 0.70,
+                    "max_sector_exposure": 0.30,
+                }
+
+                for key, value in default_limits.items():
+                    api.query_write(
+                        upsert_query,
+                        (key, value)
+                    )
+
+                st.session_state.risk_limits = default_limits.copy()
+                st.success("✅ Risk limits reset to defaults!")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"❌ Failed to reset risk limits: {e}")
+                logger.error(f"Failed to reset risk limits: {e}")
+
+    # Display current risk posture summary
+    st.divider()
+    st.markdown("**Current Risk Posture**")
+
+    risk_posture = "Conservative"
+    if max_drawdown >= 0.30 and max_correlation >= 0.80:
+        risk_posture = "Aggressive"
+    elif max_drawdown >= 0.25 or max_correlation >= 0.75:
+        risk_posture = "Moderate"
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Risk Posture", risk_posture)
+
+    with col2:
+        # Calculate combined risk score (0-100)
+        risk_score = (
+            (max_drawdown / 0.50) * 40 +  # Drawdown contribution
+            (max_correlation / 0.95) * 30 +  # Correlation contribution
+            (max_sector_exposure / 0.50) * 30  # Sector exposure contribution
+        )
+        st.metric("Risk Score", f"{risk_score:.0f}/100", help="Combined risk score (0-100)")
 
 
 def _render_portfolio_var_overview(api: PlatformAPI, config: VaRConfig) -> None:

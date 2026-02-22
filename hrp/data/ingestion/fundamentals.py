@@ -602,6 +602,8 @@ SNAPSHOT_METRICS = [
     "pb_ratio",
     "dividend_yield",
     "ev_ebitda",
+    "enterprise_value",
+    "ev_revenue",
     "shares_outstanding",
 ]
 

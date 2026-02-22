@@ -387,6 +387,175 @@ def generate_ml_predicted_signals(
     return signals
 
 
+def generate_regime_switching_signals(
+    prices: pd.DataFrame,
+    regime_config: dict | None = None,
+    bull_weights: dict[str, float] | None = None,
+    bear_weights: dict[str, float] | None = None,
+    sideways_weights: dict[str, float] | None = None,
+    top_n: int = 10,
+    lookback: int = 252,
+    retrain_frequency: int = 63,
+) -> pd.DataFrame:
+    """
+    Regime-switching strategy that adapts factor weights based on HMM regime detection.
+
+    1. Fit HMM to detect current regime (bull/bear/sideways)
+    2. Get regime probabilities for smooth blending
+    3. Apply regime-specific factor weights to generate composite signal
+    4. Select top-N stocks by blended score
+
+    Default weights:
+    - Bull: momentum_60d=1.0, volume_ratio=0.5, trend=0.5
+    - Bear: volatility_60d=-1.0, dividend_yield=1.0, pb_ratio=-0.5 (defensive)
+    - Sideways: rsi_14d=-1.0, price_to_sma_20d=-1.0, bb_width_20d=-0.5 (mean-reversion)
+
+    Args:
+        prices: Price data with 'close' level (MultiIndex columns: symbol, field)
+        regime_config: Optional config dict for HMM (n_regimes, features, etc.)
+        bull_weights: Factor weights for bull regime (default: momentum-focused)
+        bear_weights: Factor weights for bear regime (default: defensive)
+        sideways_weights: Factor weights for sideways regime (default: mean-reversion)
+        top_n: Number of top stocks to hold
+        lookback: Lookback period for HMM training (default: 252 days = 1 year)
+        retrain_frequency: How often to refit HMM (default: 63 days = quarterly)
+
+    Returns:
+        Signal DataFrame (1 = long, 0 = no position)
+        Index = dates, columns = symbols
+    """
+    from hrp.ml.regime import RegimeDetector, HMMConfig
+
+    # Set default weights if not provided
+    if bull_weights is None:
+        bull_weights = {
+            "momentum_60d": 1.0,
+            "volume_ratio": 0.5,
+            "trend": 0.5,
+        }
+
+    if bear_weights is None:
+        bear_weights = {
+            "volatility_60d": -1.0,
+            "dividend_yield": 1.0,
+            "pb_ratio": -0.5,
+        }
+
+    if sideways_weights is None:
+        sideways_weights = {
+            "rsi_14d": -1.0,
+            "price_to_sma_20d": -1.0,
+            "bb_width_20d": -0.5,
+        }
+
+    # Set default regime config if not provided
+    if regime_config is None:
+        regime_config = {
+            "n_regimes": 3,
+            "features": ["returns_20d", "volatility_20d"],
+            "covariance_type": "full",
+        }
+
+    # Extract symbols and date range from prices
+    close = prices['close'] if 'close' in prices.columns.get_level_values(0) else prices
+    symbols = list(close.columns)
+    dates = close.index
+
+    logger.info(
+        f"Generating regime-switching signals: {len(symbols)} symbols, "
+        f"top_n={top_n}, lookback={lookback}"
+    )
+
+    # Initialize regime detector
+    hmm_config = HMMConfig(**regime_config)
+    detector = RegimeDetector(hmm_config)
+
+    # Determine rebalance dates for HMM refitting
+    rebalance_indices = list(range(lookback, len(dates), retrain_frequency))
+
+    logger.info(f"Regime refitting at {len(rebalance_indices)} dates")
+
+    # Initialize signals DataFrame
+    signals = pd.DataFrame(0.0, index=dates, columns=symbols)
+
+    # Process each rebalance period
+    for idx in rebalance_indices:
+        current_date = dates[idx]
+
+        # Training window for HMM
+        train_start_idx = max(0, idx - lookback)
+        train_dates = dates[train_start_idx:idx]
+
+        # Fit HMM on historical prices
+        try:
+            detector.fit(close.loc[train_dates])
+        except Exception as e:
+            logger.warning(f"HMM fit failed at {current_date}: {e}")
+            continue
+
+        # Get regime probabilities for prediction period
+        pred_start_idx = idx
+        pred_end_idx = min(idx + retrain_frequency, len(dates))
+        pred_dates = dates[pred_start_idx:pred_end_idx]
+
+        try:
+            regime_proba = detector.predict_proba(close.loc[pred_dates])
+        except Exception as e:
+            logger.warning(f"Regime prediction failed at {current_date}: {e}")
+            continue
+
+        # Generate signals for each date in prediction period
+        for date in pred_dates:
+            try:
+                # Get current regime probabilities
+                if date not in regime_proba.index:
+                    continue
+
+                probs = regime_proba.loc[date]
+
+                # Get regime-specific signals
+                regime_signals = {}
+
+                for regime, weights in [
+                    ("bull", bull_weights),
+                    ("bear", bear_weights),
+                    ("sideways", sideways_weights),
+                ]:
+                    if regime in probs and probs[regime] > 0:
+                        # Generate signals for this regime
+                        regime_signal = generate_multifactor_signals(
+                            prices=close.loc[:date],
+                            feature_weights=weights,
+                            top_n=top_n,
+                        )
+
+                        # Get signal for this date (most recent)
+                        if not regime_signal.empty:
+                            regime_signals[regime] = regime_signal.tail(1).iloc[0]
+
+                # Blend signals by regime probability
+                if regime_signals:
+                    blended_signal = pd.Series(0.0, index=symbols)
+
+                    for regime, signal in regime_signals.items():
+                        if regime in probs:
+                            blended_signal += signal * probs[regime]
+
+                    # Select top N by blended score
+                    top_stocks = blended_signal.nlargest(top_n).index
+                    signals.loc[date, top_stocks] = 1.0
+
+            except Exception as e:
+                logger.warning(f"Signal generation failed at {date}: {e}")
+                continue
+
+    logger.info(
+        f"Regime-switching signals generated: {signals.sum().sum():.0f} total positions"
+    )
+
+    return signals
+
+
 # Strategy registry for dashboard integration
 STRATEGY_REGISTRY: dict[str, dict] = {
     "momentum": {
@@ -411,6 +580,20 @@ STRATEGY_REGISTRY: dict[str, dict] = {
             "signal_method",
             "top_pct",
             "train_lookback",
+            "retrain_frequency",
+        ],
+    },
+    "regime_switching": {
+        "name": "Regime Switching",
+        "description": "Adaptive strategy that blends signals based on HMM regime detection",
+        "generator": "generate_regime_switching_signals",
+        "params": [
+            "regime_config",
+            "bull_weights",
+            "bear_weights",
+            "sideways_weights",
+            "top_n",
+            "lookback",
             "retrain_frequency",
         ],
     },
@@ -458,6 +641,16 @@ PRESET_STRATEGIES: dict[str, dict] = {
             "momentum_20d": 0.5,
         },
         "default_top_n": 10,
+    },
+    "regime_adaptive": {
+        "name": "Regime Adaptive",
+        "description": "Blends momentum, defensive, and mean-reversion based on market regime",
+        "bull_weights": {"momentum_60d": 1.0, "volume_ratio": 0.5, "trend": 0.5},
+        "bear_weights": {"volatility_60d": -1.0, "dividend_yield": 1.0, "pb_ratio": -0.5},
+        "sideways_weights": {"rsi_14d": -1.0, "price_to_sma_20d": -1.0, "bb_width_20d": -0.5},
+        "top_n": 10,
+        "lookback": 252,
+        "retrain_frequency": 63,
     },
 }
 
