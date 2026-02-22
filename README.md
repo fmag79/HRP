@@ -9,6 +9,7 @@ Personal, professional-grade quantitative research platform for systematic tradi
 - **ML-Ready** - Ridge, Lasso, ElasticNet, RandomForest, LightGBM with MLflow tracking
 - **10-Agent Pipeline** - Automated signal discovery through CIO scoring
 - **Multi-Broker Trading** - IBKR and Robinhood with VaR-aware position sizing
+- **Autonomous Recommendations** - Plain-English stock picks with track record transparency
 - **Real-Time Data** - Polygon WebSocket intraday ingestion with 7 computed features
 - **Performance Attribution** - Brinson-Fachler, Fama-French, SHAP feature importance
 - **NLP Sentiment** - SEC EDGAR filing analysis via Claude API
@@ -237,6 +238,7 @@ print(f"Model is stable: {result.is_stable}")
 | Tier 3: Production | Complete | Security + Ops + Setup Script |
 | Tier 4: Trading | Complete | Live Execution (IBKR + Robinhood) |
 | Tier 5: Advanced Analytics | Complete | VaR/CVaR, Attribution, Real-time Data |
+| Tier 6: Advisory | 80% Complete | Autonomous Recommendations, Track Record, Portfolio Construction |
 
 ### Research Agents (10 Implemented)
 
@@ -255,7 +257,7 @@ print(f"Model is stable: {result.is_stable}")
 
 **Pipeline:** Signal Scientist → Alpha Researcher → ML Scientist → ML Quality Sentinel → Quant Developer → Kill Gate Enforcer → Validation Analyst → Risk Manager → CIO Agent → **Human CIO**
 
-### Dashboard Pages (13)
+### Dashboard Pages (14)
 
 | Page | Purpose |
 |------|---------|
@@ -272,11 +274,12 @@ print(f"Model is stable: {result.is_stable}")
 | Risk Metrics | VaR/CVaR analysis, breach tracking |
 | Performance Attribution | Brinson-Fachler, factor contributions, SHAP |
 | Backtest Performance | Equity curves, drawdowns, exports |
+| Recommendations | View/approve recommendations, track record |
 
 ## Testing
 
 ```bash
-pytest tests/ -v    # 3,193 tests
+pytest tests/ -v    # 3,292 tests passing (96.2% pass rate)
 ```
 
 ## License

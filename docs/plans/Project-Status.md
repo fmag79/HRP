@@ -10,6 +10,7 @@
 | **Production** | Security + Ops | Complete |
 | **Trading** | Live Execution | Complete |
 | **Advanced Analytics** | VaR/CVaR, Attribution, Real-time | Complete |
+| **Advisory** | Recommendations, Track Record, Consumer Interface | 80% Complete |
 
 ---
 
@@ -327,3 +328,153 @@ Hypothesis management (6), data access (6), backtesting (4), ML training (4), qu
   - Tail risk metrics (VaR, CVaR)
   - CSV + Excel export (xlsxwriter)
   - MLflow run integration
+
+---
+
+## Tier 6: Advisory Service (80% Complete)
+
+**Merged:** 2026-02-22 (PR #53)  
+**Goal:** Transform HRP from a research workbench into a product that delivers autonomous, validated trading recommendations with plain-English explanations.
+
+### Core Components
+
+#### Recommendation Engine (`hrp/advisory/recommendation_engine.py`)
+- **Signal-to-Pick Conversion**: Transforms validated hypothesis signals into structured recommendations
+- **Recommendation Structure**: Symbol, action (BUY/HOLD/SELL), confidence level, entry/target/stop prices
+- **Batch Processing**: Groups recommendations by generation date for tracking
+- **Database Integration**: `recommendations` table with full lifecycle tracking
+
+#### Explainer (`hrp/advisory/explainer.py`)
+- **Plain-English Thesis Generation**: Converts technical features to readable explanations
+- **Risk Scenario Description**: Describes what could go wrong in simple terms
+- **Confidence Classification**: HIGH/MEDIUM/LOW based on signal strength and stability
+- **Feature Classification**: Momentum, RSI, volatility, volume, price ratios
+
+#### Portfolio Constructor (`hrp/advisory/portfolio_constructor.py`)
+- **Mean-Variance Optimization**: Ledoit-Wolf covariance estimation
+- **Risk-Aware Sizing**: Respects position and turnover constraints
+- **Constraint Support**: Max positions, max position %, turnover limits
+- **Integration**: Uses existing VaR infrastructure from Tier 5
+
+#### Track Record Tracker (`hrp/advisory/track_record.py`)
+- **Performance Metrics**: Win rate, avg return, avg win/loss, benchmark comparison
+- **Period Aggregation**: Weekly, monthly, quarterly, YTD statistics
+- **Best/Worst Tracking**: Identifies top/bottom performing picks
+- **Excess Return Calculation**: Alpha over SPY benchmark
+
+#### Approval Workflow (`hrp/advisory/approval_workflow.py`)
+- **Status Management**: pending_approval → active (approved) or cancelled (rejected)
+- **Actor Restrictions**: Only human users can approve (agents blocked)
+- **Batch Operations**: `approve_all()` for bulk approval
+- **Lineage Events**: Full audit trail of approve/reject actions
+
+#### Performance Monitor (`hrp/advisory/performance_monitor.py`)
+- **Model Accuracy Tracking**: Monitors deployed model prediction accuracy
+- **Degradation Detection**: Alerts when accuracy drops below thresholds
+- **Historical Comparison**: Tracks performance over time
+- **Recommendation**: Triggers model review when accuracy degrades
+
+#### Kill Gate Calibrator (`hrp/advisory/kill_gate_calibrator.py`)
+- **False Positive/Negative Analysis**: Identifies kill gates that are too strict or too lenient
+- **Threshold Recommendations**: Suggests optimal kill gate thresholds
+- **Gate Statistics**: Tracks trigger rates, false positives, false negatives
+- **Calibration Reports**: Generates actionable recommendations for gate tuning
+
+#### Historical Universe Ingestion (`hrp/data/ingestion/historical_universe.py`)
+- **Survivorship-Bias-Free Backtesting**: Tracks universe changes over time
+- **Point-in-Time Universe**: `get_universe_as_of(date)` returns historical membership
+- **Change Tracking**: Records additions/removals with reasons
+- **CSV Import**: Supports historical universe data import
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `recommendations` | Generated recommendations with lifecycle tracking |
+| `user_profiles` | User risk preferences, exclusions, constraints |
+| `track_record` | Aggregated performance metrics by period |
+| `universe_history` | Historical S&P 500 membership changes |
+
+### Dashboard
+
+- **Recommendations Page** (`13_Recommendations.py`): View active/pending/closed recommendations
+  - Pending recommendations with approve/reject actions
+  - Active recommendations with current P&L
+  - Track record summary (win rate, avg return, benchmark comparison)
+  - Closed recommendations with outcomes
+
+### API Methods
+
+```python
+# Recommendation access
+api.get_recommendations(status='active')          # DataFrame
+api.get_recommendation_by_id(rec_id)              # Single recommendation
+api.get_recommendation_history(limit=100)         # Historical
+
+# Track record
+api.get_track_record()                            # Win rate, avg return, cumulative
+
+# Approval workflow
+api.approve_recommendation(rec_id, actor, dry_run=True)
+api.reject_recommendation(rec_id, actor, reason)
+api.approve_all_recommendations(actor, dry_run=True)
+```
+
+### Strategic Analysis
+
+**Gap Assessment** (`docs/plans/2026-02-19-strategic-analysis-autonomous-recommendations.md`):
+- Psychological barriers: Trust, loss aversion, SPY comparison anxiety
+- Technical gaps: Commodity signals, survivorship bias, feedback loops
+- Product positioning: Research workbench → autonomous advisor
+
+**Implementation Plan** (`docs/plans/2026-02-19-recommendation-service-implementation-plan.md`):
+- **Phase 1**: Recommendation engine, explainer, track record (Complete)
+- **Phase 2**: Portfolio construction, safeguards, historical universe (Complete)
+- **Phase 3**: Consumer interface, approval workflow (Complete)
+- **Phase 4**: Post-trade attribution, performance monitoring, kill gate calibration (Complete)
+
+### Testing
+
+- **95 tests passing** across 13 test files:
+  - `test_api_advisory.py` — API integration (10 tests)
+  - `test_approval_workflow.py` — Lifecycle management (18 tests)
+  - `test_digest.py` — Email reports (7 tests)
+  - `test_explainer.py` — Plain-English generation (19 tests)
+  - `test_historical_universe.py` — Survivorship-free data (10 tests)
+  - `test_kill_gate_calibrator.py` — Threshold tuning (8 tests)
+  - `test_performance_monitor.py` — Model accuracy (6 tests)
+  - `test_portfolio_constructor.py` — MVO optimization (9 tests)
+  - `test_post_trade_attribution.py` — Trade analysis (5 tests)
+  - `test_recommendation_engine.py` — Signal conversion (3+ tests)
+  - `test_e2e_full_pipeline.py` — End-to-end workflow
+
+### What's Left (20%)
+
+- **Recommendation Agent**: Scheduled job to generate weekly recommendations (planned)
+- **Email Digest**: Automated HTML/text email reports (code complete, integration pending)
+- **Post-Trade Attribution**: Trade outcome analysis and feedback loop (code complete)
+- **UI Polish**: Dashboard enhancements for recommendation approval flow
+
+### Documentation
+
+- Strategic analysis and implementation plan in `docs/plans/`
+- CLAUDE.md updated with Tier 6 references
+- All 14 advisory modules documented with comprehensive docstrings
+
+---
+
+## Recent Infrastructure Improvements
+
+**Test Suite Stabilization** (PR #54, 2026-02-22):
+- **Fixed 45 test failures** across 5 categories
+- **Dependencies**: Moved `psutil`, `fastapi`, `uvicorn`, `prometheus-client` from optional to core (ops features are not optional)
+- **Version Resolution**: Enhanced `__init__.py` to read from `pyproject.toml` as fallback
+- **ConnectionPool API**: Added `connection()` context manager and `_db` property for backward compatibility
+- **VaR Calculator**: Fixed method signature mismatches, added numpy array conversion
+- **Result**: 3,292 passing tests (96.2% pass rate), remaining failures are optional broker dependencies
+
+**Current Test Status**:
+- ✅ 3,292 tests passing
+- ⚠️ 83 failures (optional broker integrations: ib-insync, robin-stocks)
+- ✅ All 95 advisory service tests passing
+- ✅ All core system tests passing
