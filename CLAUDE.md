@@ -67,6 +67,15 @@ api.deploy_model(model_name, model_version, validation_data, environment, actor)
 api.predict_model(model_name, symbols, as_of_date)
 api.check_model_drift(model_name, current_data, reference_data, ...)
 
+# Advisory operations
+api.get_recommendations(status='active')          # DataFrame of recommendations
+api.get_recommendation_by_id(rec_id)              # Single recommendation dict
+api.get_recommendation_history(limit=100)         # All historical recommendations
+api.get_track_record()                            # Win rate, avg return, cumulative performance
+api.approve_recommendation(rec_id, actor, dry_run=True)    # Approve for execution
+api.reject_recommendation(rec_id, actor, reason)           # Reject with reason
+api.approve_all_recommendations(actor, dry_run=True)       # Batch approve
+
 # Generic DB access (for ad-hoc queries outside data layer)
 api.query_readonly(sql, params)       # Returns DataFrame (SELECT/WITH only)
 api.fetchone_readonly(sql, params)    # Returns single row tuple
@@ -164,6 +173,18 @@ All agents follow `agent.run()` pattern. Agent pipeline chain:
 | `hrp.agents.prediction_job` | `DailyPredictionJob` for deployed model predictions |
 | `hrp.agents.live_trader` | `LiveTradingAgent`, `TradingConfig` for trade execution |
 | `hrp.agents.drift_monitor_job` | `DriftMonitorJob`, `DriftConfig` for model drift detection |
+| `hrp.advisory.recommendation_engine` | `RecommendationEngine`, `Recommendation` for signal-to-pick conversion |
+| `hrp.advisory.explainer` | `RecommendationExplainer` for plain-English thesis/risk generation |
+| `hrp.advisory.portfolio_constructor` | `PortfolioConstructor`, `CovarianceEstimator` for MVO optimization |
+| `hrp.advisory.track_record` | `TrackRecordTracker` for win rate, avg return, cumulative performance |
+| `hrp.advisory.safeguards` | `PreTradeChecks`, `CircuitBreaker` for pre-trade safety validation |
+| `hrp.advisory.digest` | `WeeklyDigest` for HTML/text email reports |
+| `hrp.advisory.post_trade_attribution` | `PostTradeAttributor` for trade outcome analysis |
+| `hrp.advisory.performance_monitor` | `ModelPerformanceMonitor` for deployed model accuracy tracking |
+| `hrp.advisory.approval_workflow` | `ApprovalWorkflow` for recommendation approve/reject lifecycle |
+| `hrp.advisory.kill_gate_calibrator` | `KillGateCalibrator` for false positive/negative analysis, threshold tuning |
+| `hrp.data.ingestion.historical_universe` | `HistoricalUniverseIngestion` for survivorship-bias-free backtesting |
+| `hrp.agents.recommendation_agent` | **[PLANNED]** Weekly recommendation generation agent |
 
 ## Walk-Forward Validation
 
@@ -225,6 +246,7 @@ hrp/
 ├── notifications/  # Email alerts
 ├── ops/            # Ops server (health, metrics, thresholds)
 ├── execution/      # Live trading, broker integration (Tier 4)
+├── advisory/       # Recommendation service, track record, portfolio construction (Tier 6)
 ├── monitoring/     # System health, ops alerting
 └── utils/          # Shared utilities (startup, locks, log_filter)
 ```
@@ -241,6 +263,8 @@ hrp/
 | New risk check | `hrp/risk/` |
 | New dashboard page | `hrp/dashboard/pages/` |
 | New scheduled job | `hrp/agents/jobs.py` |
+| New recommendation logic | `hrp/advisory/` |
+| New portfolio optimization | `hrp/advisory/portfolio_constructor.py` |
 | Expose via API | `hrp/api/platform.py` |
 
 ## Documentation
@@ -255,6 +279,8 @@ hrp/
 | `docs/agents/state-machine-transitions.md` | Complete state machine documentation: hypothesis states, pipeline stages, events, thresholds |
 | `docs/agents/01-*.md` through `docs/agents/10-*.md` | Individual agent specifications (numbered by pipeline order) |
 | `docs/plans/Project-Status.md` | Development roadmap and tier status |
+| `docs/plans/2026-02-19-strategic-analysis-autonomous-recommendations.md` | Strategic analysis: gap assessment, product direction, value proposition |
+| `docs/plans/2026-02-19-recommendation-service-implementation-plan.md` | Implementation plan: advisory service, portfolio construction, consumer interface |
 | `docs/setup/Scheduler-Configuration-Guide.md` | launchd job configuration |
 
 ## Testing
@@ -270,7 +296,9 @@ pytest tests/ -v
 | **Foundation** | Data + Research Core | 100% |
 | **Intelligence** | ML + Agents | 100% |
 | **Production** | Security + Ops | 100% |
-| **Trading** | Live Execution | 0% |
+| **Trading** | Live Execution | 100% |
+| **Advanced Analytics** | VaR/CVaR, Attribution, Real-time | 100% |
+| **Advisory** | Recommendations, Track Record, Consumer Interface | 80% |
 
 See `docs/plans/Project-Status.md` for details.
 

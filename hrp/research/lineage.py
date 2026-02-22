@@ -86,6 +86,14 @@ class EventType(str, Enum):
     # === System events ===
     SYSTEM_ERROR = "system_error"
 
+    # === Advisory service events ===
+    RECOMMENDATION_GENERATED = "recommendation_generated"
+    RECOMMENDATION_APPROVED = "recommendation_approved"
+    RECOMMENDATION_REJECTED = "recommendation_rejected"
+    RECOMMENDATION_CLOSED = "recommendation_closed"
+    TRACK_RECORD_UPDATED = "track_record_updated"
+    CIRCUIT_BREAKER_ACTIVATED = "circuit_breaker_activated"
+
     # === Additional events (in schema for compatibility) ===
     EXPERIMENT_STARTED = "experiment_started"
     BACKTEST_RUN = "backtest_run"
