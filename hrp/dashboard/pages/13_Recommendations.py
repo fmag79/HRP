@@ -2,7 +2,7 @@
 Recommendations dashboard page.
 
 Consumer-facing view showing:
-- This week's recommendations with plain-English explanations
+- This week's recommendations with approve/reject controls
 - Open positions with P&L
 - Recent outcomes (closed recommendations)
 - Cumulative track record vs SPY
@@ -16,6 +16,13 @@ from datetime import date, timedelta
 from hrp.api.platform import PlatformAPI
 
 
+def _get_rw_api() -> PlatformAPI:
+    """Get a read-write API instance for approval actions."""
+    if "api_rw" not in st.session_state:
+        st.session_state.api_rw = PlatformAPI()
+    return st.session_state.api_rw
+
+
 def render():
     """Render the recommendations page."""
     st.title("Recommendations")
@@ -27,6 +34,7 @@ def render():
     # Check if recommendations table exists
     try:
         active = api.get_recommendations(status="active")
+        pending = api.get_recommendations(status="pending_approval")
     except Exception:
         st.info(
             "Advisory service not yet initialized. "
@@ -53,17 +61,45 @@ def render():
             col3.metric("Total Closed", len(closed))
             col4.metric("Open Positions", len(active))
         else:
-            col1.metric("Win Rate", "—")
-            col2.metric("Avg Return", "—")
+            col1.metric("Win Rate", "---")
+            col2.metric("Avg Return", "---")
             col3.metric("Total Closed", 0)
             col4.metric("Open Positions", len(active))
     else:
-        col1.metric("Win Rate", "—")
-        col2.metric("Avg Return", "—")
+        col1.metric("Win Rate", "---")
+        col2.metric("Avg Return", "---")
         col3.metric("Total Closed", 0)
         col4.metric("Open Positions", 0)
 
     st.divider()
+
+    # --- Pending Approval ---
+    if not pending.empty:
+        st.subheader(f"Pending Approval ({len(pending)})")
+
+        # Batch actions
+        batch_col1, batch_col2, _ = st.columns([1, 1, 4])
+        with batch_col1:
+            if st.button("Approve All", type="primary", key="approve_all"):
+                rw_api = _get_rw_api()
+                results = rw_api.approve_all_recommendations(actor="user", dry_run=True)
+                approved = [r for r in results if r["action"] == "approved"]
+                st.success(f"Approved {len(approved)} recommendations (dry-run)")
+                st.rerun()
+        with batch_col2:
+            if st.button("Reject All", key="reject_all"):
+                rw_api = _get_rw_api()
+                for _, row in pending.iterrows():
+                    rw_api.reject_recommendation(
+                        row["recommendation_id"], actor="user", reason="batch_reject"
+                    )
+                st.warning(f"Rejected {len(pending)} recommendations")
+                st.rerun()
+
+        for _, rec in pending.iterrows():
+            _render_recommendation_card(rec, show_actions=True)
+
+        st.divider()
 
     # --- This Week's Recommendations ---
     st.subheader("This Week's Recommendations")
@@ -72,42 +108,17 @@ def render():
     new_recs = api.query_readonly(
         "SELECT recommendation_id, symbol, action, confidence, "
         "signal_strength, entry_price, target_price, stop_price, "
-        "position_pct, thesis_plain, risk_plain "
+        "position_pct, thesis_plain, risk_plain, status "
         "FROM recommendations "
-        "WHERE created_at >= ? ORDER BY signal_strength DESC",
+        "WHERE created_at >= ? AND status = 'active' ORDER BY signal_strength DESC",
         [week_ago],
     )
 
     if new_recs.empty:
-        st.info("No new recommendations this week.")
+        st.info("No new active recommendations this week.")
     else:
         for _, rec in new_recs.iterrows():
-            confidence = rec.get("confidence", "MEDIUM")
-            confidence_color = {
-                "HIGH": "green", "MEDIUM": "orange", "LOW": "red"
-            }.get(confidence, "gray")
-
-            with st.container(border=True):
-                header_col, badge_col = st.columns([4, 1])
-                with header_col:
-                    st.markdown(
-                        f"**{rec.get('action', 'BUY')} {rec.get('symbol', '')}**"
-                    )
-                with badge_col:
-                    st.markdown(
-                        f":{confidence_color}[{confidence}]"
-                    )
-
-                st.write(rec.get("thesis_plain", ""))
-
-                detail_col1, detail_col2, detail_col3 = st.columns(3)
-                detail_col1.metric("Entry", f"${rec.get('entry_price', 0):.2f}")
-                detail_col2.metric("Target", f"${rec.get('target_price', 0):.2f}")
-                detail_col3.metric("Stop", f"${rec.get('stop_price', 0):.2f}")
-
-                with st.expander("Risk Details"):
-                    st.write(rec.get("risk_plain", ""))
-                    st.write(f"Position size: {float(rec.get('position_pct', 0)):.1%} of portfolio")
+            _render_recommendation_card(rec, show_actions=False)
 
     st.divider()
 
@@ -141,7 +152,7 @@ def render():
         for _, rec in recent_closed.iterrows():
             ret = float(rec.get("realized_return", 0))
             icon = "+" if ret > 0 else ""
-            status_emoji = {
+            status_label = {
                 "closed_profit": "profit",
                 "closed_loss": "loss",
                 "closed_stopped": "stopped",
@@ -151,7 +162,7 @@ def render():
             color = "green" if ret > 0 else "red"
             st.markdown(
                 f":{color}[**{icon}{ret:.1%}**] "
-                f"{rec.get('symbol', '')} — {status_emoji} "
+                f"{rec.get('symbol', '')} --- {status_label} "
                 f"(entry ${rec.get('entry_price', 0):.2f} -> "
                 f"close ${rec.get('close_price', 0):.2f})"
             )
@@ -197,6 +208,54 @@ def render():
             st.info("Insufficient data for track record chart.")
     else:
         st.info("No recommendation history available.")
+
+
+def _render_recommendation_card(rec: pd.Series, show_actions: bool = False) -> None:
+    """Render a single recommendation card with optional approve/reject buttons."""
+    confidence = rec.get("confidence", "MEDIUM")
+    confidence_color = {
+        "HIGH": "green", "MEDIUM": "orange", "LOW": "red"
+    }.get(confidence, "gray")
+
+    rec_id = rec.get("recommendation_id", "")
+
+    with st.container(border=True):
+        header_col, badge_col = st.columns([4, 1])
+        with header_col:
+            st.markdown(
+                f"**{rec.get('action', 'BUY')} {rec.get('symbol', '')}**"
+            )
+        with badge_col:
+            st.markdown(f":{confidence_color}[{confidence}]")
+
+        st.write(rec.get("thesis_plain", ""))
+
+        detail_col1, detail_col2, detail_col3 = st.columns(3)
+        detail_col1.metric("Entry", f"${rec.get('entry_price', 0):.2f}")
+        detail_col2.metric("Target", f"${rec.get('target_price', 0):.2f}")
+        detail_col3.metric("Stop", f"${rec.get('stop_price', 0):.2f}")
+
+        with st.expander("Risk Details"):
+            st.write(rec.get("risk_plain", ""))
+            st.write(f"Position size: {float(rec.get('position_pct', 0)):.1%} of portfolio")
+
+        if show_actions and rec_id:
+            action_col1, action_col2, action_col3 = st.columns([1, 1, 4])
+            with action_col1:
+                if st.button("Approve", type="primary", key=f"approve_{rec_id}"):
+                    rw_api = _get_rw_api()
+                    result = rw_api.approve_recommendation(rec_id, actor="user", dry_run=True)
+                    if result["action"] == "approved":
+                        st.success(f"Approved (dry-run)")
+                    else:
+                        st.error(result["message"])
+                    st.rerun()
+            with action_col2:
+                if st.button("Reject", key=f"reject_{rec_id}"):
+                    rw_api = _get_rw_api()
+                    result = rw_api.reject_recommendation(rec_id, actor="user", reason="user_reject")
+                    st.warning("Rejected")
+                    st.rerun()
 
 
 # Streamlit page entry point

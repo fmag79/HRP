@@ -2927,3 +2927,80 @@ class PlatformAPI:
             "ORDER BY period_start",
             [start_date, end_date],
         )
+
+    def approve_recommendation(
+        self, recommendation_id: str, actor: str = "user", dry_run: bool = True
+    ) -> dict:
+        """Approve a recommendation for execution.
+
+        Args:
+            recommendation_id: Recommendation to approve
+            actor: Who is approving (agents not allowed)
+            dry_run: If True, don't submit to broker
+
+        Returns:
+            Dictionary with approval result
+        """
+        from hrp.advisory.approval_workflow import ApprovalWorkflow
+
+        workflow = ApprovalWorkflow(api=self, dry_run=dry_run)
+        result = workflow.approve(recommendation_id, actor)
+        return {
+            "recommendation_id": result.recommendation_id,
+            "action": result.action,
+            "actor": result.actor,
+            "order_id": result.order_id,
+            "message": result.message,
+        }
+
+    def reject_recommendation(
+        self, recommendation_id: str, actor: str = "user", reason: str = ""
+    ) -> dict:
+        """Reject a recommendation.
+
+        Args:
+            recommendation_id: Recommendation to reject
+            actor: Who is rejecting
+            reason: Why it was rejected
+
+        Returns:
+            Dictionary with rejection result
+        """
+        from hrp.advisory.approval_workflow import ApprovalWorkflow
+
+        workflow = ApprovalWorkflow(api=self)
+        result = workflow.reject(recommendation_id, actor, reason)
+        return {
+            "recommendation_id": result.recommendation_id,
+            "action": result.action,
+            "actor": result.actor,
+            "reason": result.reason,
+            "message": result.message,
+        }
+
+    def approve_all_recommendations(
+        self, actor: str = "user", dry_run: bool = True
+    ) -> list[dict]:
+        """Approve all pending recommendations.
+
+        Args:
+            actor: Who is approving
+            dry_run: If True, don't submit to broker
+
+        Returns:
+            List of approval results
+        """
+        from hrp.advisory.approval_workflow import ApprovalWorkflow
+
+        workflow = ApprovalWorkflow(api=self, dry_run=dry_run)
+        results = workflow.approve_all(actor)
+        return [
+            {
+                "recommendation_id": r.recommendation_id,
+                "action": r.action,
+                "actor": r.actor,
+                "order_id": r.order_id,
+                "message": r.message,
+            }
+            for r in results
+        ]
