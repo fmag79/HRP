@@ -9,6 +9,16 @@ try:
 
     __version__ = version("hrp")
 except Exception:
-    __version__ = "0.0.0"  # Fallback for development
+    # Fallback: read version from pyproject.toml
+    try:
+        import tomllib
+        from pathlib import Path
+
+        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+        __version__ = data["project"]["version"]
+    except Exception:
+        __version__ = "0.0.0"  # Final fallback
 
 __author__ = "Fernando"

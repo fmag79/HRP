@@ -10,6 +10,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from typing import TypeVar
 
 import duckdb
@@ -41,6 +42,21 @@ class ConnectionPool:
         self._pool: queue.Queue = queue.Queue(maxsize=max_connections)
         self._lock = threading.Lock()
         self._created = 0
+        self._db_instance = None
+
+    @property
+    def _db(self):
+        """
+        Lazy-load DatabaseManager instance for backward compatibility.
+
+        This property exists for backward compatibility with tests and code
+        that expect ConnectionPool to have a _db attribute.
+        """
+        if self._db_instance is None:
+            from hrp.data.db import get_db
+
+            self._db_instance = get_db(self.database)
+        return self._db_instance
 
     def get_connection(self, timeout: float = 30.0) -> duckdb.DuckDBPyConnection:
         """
@@ -84,6 +100,27 @@ class ConnectionPool:
         except queue.Full:
             # Pool is full, close the connection
             conn.close()
+
+    @contextmanager
+    def connection(self, timeout: float = 30.0):
+        """
+        Context manager for connection pool.
+
+        Usage:
+            with pool.connection() as conn:
+                conn.execute("SELECT 1")
+
+        Args:
+            timeout: Maximum time to wait for a connection
+
+        Yields:
+            DuckDB connection
+        """
+        conn = self.get_connection(timeout=timeout)
+        try:
+            yield conn
+        finally:
+            self.release_connection(conn)
 
     def close_all(self) -> None:
         """Close all connections in the pool."""
