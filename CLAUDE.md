@@ -67,6 +67,15 @@ api.deploy_model(model_name, model_version, validation_data, environment, actor)
 api.predict_model(model_name, symbols, as_of_date)
 api.check_model_drift(model_name, current_data, reference_data, ...)
 
+# Advisory operations
+api.get_recommendations(status='active')          # DataFrame of recommendations
+api.get_recommendation_by_id(rec_id)              # Single recommendation dict
+api.get_recommendation_history(limit=100)         # All historical recommendations
+api.get_track_record()                            # Win rate, avg return, cumulative performance
+api.approve_recommendation(rec_id, actor, dry_run=True)    # Approve for execution
+api.reject_recommendation(rec_id, actor, reason)           # Reject with reason
+api.approve_all_recommendations(actor, dry_run=True)       # Batch approve
+
 # Generic DB access (for ad-hoc queries outside data layer)
 api.query_readonly(sql, params)       # Returns DataFrame (SELECT/WITH only)
 api.fetchone_readonly(sql, params)    # Returns single row tuple
@@ -164,7 +173,17 @@ All agents follow `agent.run()` pattern. Agent pipeline chain:
 | `hrp.agents.prediction_job` | `DailyPredictionJob` for deployed model predictions |
 | `hrp.agents.live_trader` | `LiveTradingAgent`, `TradingConfig` for trade execution |
 | `hrp.agents.drift_monitor_job` | `DriftMonitorJob`, `DriftConfig` for model drift detection |
-| `hrp.advisory` | **[PLANNED]** Recommendation engine, explainer, track record, portfolio construction |
+| `hrp.advisory.recommendation_engine` | `RecommendationEngine`, `Recommendation` for signal-to-pick conversion |
+| `hrp.advisory.explainer` | `RecommendationExplainer` for plain-English thesis/risk generation |
+| `hrp.advisory.portfolio_constructor` | `PortfolioConstructor`, `CovarianceEstimator` for MVO optimization |
+| `hrp.advisory.track_record` | `TrackRecordTracker` for win rate, avg return, cumulative performance |
+| `hrp.advisory.safeguards` | `PreTradeChecks`, `CircuitBreaker` for pre-trade safety validation |
+| `hrp.advisory.digest` | `WeeklyDigest` for HTML/text email reports |
+| `hrp.advisory.post_trade_attribution` | `PostTradeAttributor` for trade outcome analysis |
+| `hrp.advisory.performance_monitor` | `ModelPerformanceMonitor` for deployed model accuracy tracking |
+| `hrp.advisory.approval_workflow` | `ApprovalWorkflow` for recommendation approve/reject lifecycle |
+| `hrp.advisory.kill_gate_calibrator` | `KillGateCalibrator` for false positive/negative analysis, threshold tuning |
+| `hrp.data.ingestion.historical_universe` | `HistoricalUniverseIngestion` for survivorship-bias-free backtesting |
 | `hrp.agents.recommendation_agent` | **[PLANNED]** Weekly recommendation generation agent |
 
 ## Walk-Forward Validation
@@ -279,7 +298,7 @@ pytest tests/ -v
 | **Production** | Security + Ops | 100% |
 | **Trading** | Live Execution | 100% |
 | **Advanced Analytics** | VaR/CVaR, Attribution, Real-time | 100% |
-| **Advisory** | Recommendations, Track Record, Consumer Interface | 0% |
+| **Advisory** | Recommendations, Track Record, Consumer Interface | 80% |
 
 See `docs/plans/Project-Status.md` for details.
 
