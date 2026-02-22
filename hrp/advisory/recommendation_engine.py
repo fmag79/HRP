@@ -233,11 +233,9 @@ class RecommendationEngine:
                 model_name=row.get("model_name", ""),
                 batch_id=batch_id,
             )
-            recommendations.append(rec)
-
-        # 9. Persist
-        for rec in recommendations:
+            # Persist immediately so next ID query reflects it
             self._persist_recommendation(rec)
+            recommendations.append(rec)
 
         logger.info(
             f"Generated {len(recommendations)} recommendations in batch {batch_id}"
