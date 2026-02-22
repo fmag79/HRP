@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Optional, Dict, Any, List
 import math
 
+import numpy as np
 from hrp.data.risk.var_calculator import VaRCalculator, VaRConfig
 from hrp.data.risk.risk_config import VaRMethod
 
@@ -174,9 +175,13 @@ class VaRPositionSizer:
                 proposed_size, price, portfolio_value
             )
 
+        # Convert returns to numpy array if needed
+        if not isinstance(returns, np.ndarray):
+            returns = np.array(returns)
+
         # Calculate VaR for proposed position
         try:
-            var_result = self._var_calculator.calculate(returns, self._var_config)
+            var_result = self._var_calculator.calculate(returns)
             var_at_size = var_result.var
             cvar_at_size = var_result.cvar if self.config.use_cvar else None
 
@@ -358,10 +363,9 @@ class VaRPositionSizer:
 
         # Calculate VaR per share
         try:
-            var_result = self._var_calculator.calculate(
-                [r for r in returns if not math.isnan(r)],
-                self._var_config,
-            )
+            # Filter NaN and convert to numpy array
+            clean_returns = np.array([r for r in returns if not math.isnan(r)])
+            var_result = self._var_calculator.calculate(clean_returns)
             var_per_share = var_result.var
             cvar_per_share = var_result.cvar
 
