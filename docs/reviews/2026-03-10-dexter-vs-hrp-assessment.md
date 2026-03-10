@@ -144,6 +144,65 @@ HRP and Dexter aren't competing — they're complementary. **Dexter is a researc
 | 🟡 4 | LLM-as-judge eval framework for agents | Medium | Fernando / Forge |
 | 🟡 5 | On-demand research mode | Medium | Fernando / Forge |
 | 🟡 6 | Financial Datasets API fundamentals pipeline | High | Fernando / Forge |
+| 🟡 7 | SEC Form 4 insider trading signals | Medium | Fernando / Forge |
+
+---
+
+## Feature: SEC Form 4 Insider Trading Signals
+*Added 2026-03-10 — inspired by [@nolimitgains](https://x.com/nolimitgains/status/2031337305911287967)*
+
+### What It Is
+SEC Form 4 filings track when corporate insiders (CEOs, CFOs, board members, 10%+ shareholders) buy or sell their own stock. Insiders must file within 2 business days of a transaction. Historically one of the most reliable alpha sources — especially **cluster buying** (multiple insiders buying simultaneously).
+
+### Why It Matters for HRP
+- Insiders know their companies better than anyone — their buying/selling is signal, not noise
+- Cluster buys (3+ insiders buying within 30 days) have historically outperformed SPY by 5–8% annually
+- Complements HRP's purely technical/momentum signal stack with fundamental conviction signals
+- Particularly powerful combined with existing momentum features — insider buy + strong momentum = high-conviction entry
+
+### Data Sources
+| Source | Cost | Quality | Notes |
+|---|---|---|---|
+| **SEC EDGAR** | Free | Raw XML | Already integrated in HRP for NLP sentiment — Form 4 endpoint at `/cgi-bin/browse-edgar?action=getcompany&type=4` |
+| **OpenInsider.com** | Free | Clean | Scraped/structured, good for backfill |
+| **Quiver Quantitative** | Paid | Excellent | Structured API, real-time, bulk endpoints |
+| **sec-api.io** | Paid | Excellent | Real-time Form 4 webhooks, clean JSON |
+
+**Recommendation:** Start with SEC EDGAR (free, already have integration pattern) → upgrade to Quiver Quant if signal proves valuable.
+
+### New Features to Add
+| Feature | Description | Window |
+|---|---|---|
+| `insider_buy_count` | # of distinct insiders buying | 30d, 60d, 90d |
+| `insider_sell_count` | # of distinct insiders selling | 30d, 60d, 90d |
+| `insider_net_value` | Total $ bought minus $ sold by insiders | 30d, 90d |
+| `insider_cluster_signal` | 1 if 3+ insiders bought in 30d, 0 otherwise | 30d |
+| `ceo_bought` | 1 if CEO specifically bought in last 60d | 60d |
+
+### Implementation Plan
+1. **New ingestion pipeline** — `hrp/data/ingestion/insider_transactions.py`
+   - Poll EDGAR Form 4 RSS feed or Quiver API daily after market close
+   - Parse: ticker, insider name, title, transaction type (P=purchase, S=sale), shares, price, date
+   - Store in new DuckDB table: `insider_transactions`
+
+2. **Feature computation** — `hrp/data/features/definitions.py`
+   - Add 5 new insider features (see table above)
+   - Roll up per ticker per date for feature store consistency
+
+3. **Agent integration**
+   - Alpha Researcher: include insider summary in hypothesis context (*"3 insiders bought $4.2M in last 30 days"*)
+   - CIO Agent: add insider signal as 5th scoring dimension (current: 4 dimensions)
+
+4. **Dashboard widget** — new panel on Hypotheses or Trading page showing insider activity for universe
+
+### Backtest Hypothesis to Validate First
+> **HYP: Insider cluster buying predicts 60-day outperformance**
+> - Universe: S&P 500 stocks with 3+ insider purchases in a 30-day window
+> - Signal: `insider_cluster_signal = 1`
+> - Target: `returns_60d`
+> - Falsification: Sharpe < SPY or p-value > 0.05 over 5-year walk-forward
+
+Run this through the existing ML pipeline before committing to full integration.
 
 ---
 
